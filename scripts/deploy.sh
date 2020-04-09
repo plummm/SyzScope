@@ -32,16 +32,14 @@ fi
 cd ..
 
 # Check for golang environment
-export GOPATH=`pwd`/gopath && \
-export GOROOT=`pwd`/goroot && \
-export PATH=$GOPATH/bin:$PATH && \
-export PATH=$GOROOT/bin:$PATH && \
+export GOPATH=`pwd`/gopath
+export GOROOT=`pwd`/goroot
 go version || echo "setup golang environment\n" && \
 wget https://dl.google.com/go/go1.14.2.linux-amd64.tar.gz && \
 tar -xf go1.14.2.linux-amd64.tar.gz && \
 mv go goroot && \
 mkdir gopath && \
-rm go1.14.2.linux-amd64.tar.gz && \
+rm go1.14.2.linux-amd64.tar.gz
 
 # Check for image
 if [ ! -d "img" ]; then
@@ -97,5 +95,8 @@ if [ ! -d "workdir" ]; then
   mkdir workdir
 fi
 
-echo $CONFIG_TEMPLATE > workdir/$HASH.cfg
 echo $TESTCASE > workdir/testcase-$HASH
+export PATH=$GOPATH/bin:$PATH
+export PATH=$GOROOT/bin:$PATH
+export PATH=$IMAGE/bin:$PATH
+export PATH=$KERNEL_PATH/bin:$PATH
