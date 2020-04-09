@@ -36,6 +36,9 @@ class Deployer:
         for hash in cases:
             case = cases[hash]
             syzkaller_path = self.__run_delopy_script(hash, case)
+            if syzkaller_path == -1:
+                print("Error occur in deploy.sh")
+                return
             self.__write_config(syzkaller_path, case["syz_repro"])
 
     def clone_linux(self):
@@ -50,7 +53,7 @@ class Deployer:
         syzkaller = case["syzkaller"]
         config = case["config"]
         testcase = case["syz_repro"]
-        print("run: scripts/deploy.sh {} {} {} {}".format(self.linux_path, hash, commit, syzkaller, config, testcase))
+        print("run: scripts/deploy.sh {0} {1} {2} {3} {4} {5}".format(self.linux_path, hash, commit, syzkaller, config, testcase))
         return call(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase], shell=True)
 
     def __write_config(self, syzkaller_path, testcase_url):
