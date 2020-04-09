@@ -5,8 +5,8 @@ import requests
 from subprocess import call
 
 syz_config_template="""
-{ \
-        \"target\": \"linux/amd64\",
+{{ 
+        "target": "linux/amd64",
         \"http\": \"127.0.0.1:56745\",
         \"workdir\": \"$GOPATH/src/github.com/google/syzkaller/workdir\",
         \"kernel_obj\": \"$KERNEL_PATH\",
@@ -16,27 +16,26 @@ syz_config_template="""
         \"procs\": 8,
         \"type\": \"qemu\",
         \"testcase\": \"$GOPATH/src/github.com/google/syzkaller/workdir/testcase-$HASH\",
-        \"vm\": {
+        \"vm\": {{
                 \"count\": 4,
                 \"kernel\": \"$KERNEL_PATH/arch/x86/boot/bzImage\",
                 \"cpu\": 2,
                 \"mem\": 2048
-        },
+        }},
         \"enable_syscalls\" : [
             {}
         ]
-}"""
+}}"""
 
 class Deployer:
     def __init__(self):
         self.linux_path = "linux"
-        #self.clone_linux()
+        self.clone_linux()
 
     def deploy(self, cases):
         for hash in cases:
             case = cases[hash]
-            #syzkaller_path = self.__run_delopy_script(hash, case)
-            syzkaller_path = ''
+            syzkaller_path = self.__run_delopy_script(hash, case)
             self.__write_config(syzkaller_path, case["syz_repro"])
 
     def clone_linux(self):
