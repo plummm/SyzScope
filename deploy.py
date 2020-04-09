@@ -14,6 +14,7 @@ class Deployer:
         self.__run_linux_clone_script()
 
     def __run_linux_clone_script(self):
+        print("run: scripts/linux-clone.sh {}".format(self.linux_path))
         call(["scripts/linux-clone.sh", self.linux_path], shell=True)
 
     def __run_delopy_script(self, hash, case):
@@ -21,6 +22,7 @@ class Deployer:
         syzkaller = case["syzkaller"]
         config = case["config"]
         syz_repro = case["syz_repro"]
+        print("run: cripts/deploy.sh {} {} {} {} {}".format(self.linux_path, hash, commit, syzkaller, syz_repro))
         call(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, syz_repro], shell=True)
 
 
