@@ -100,3 +100,5 @@ export PATH=$GOPATH/bin:$PATH
 export PATH=$GOROOT/bin:$PATH
 export PATH=$IMAGE/bin:$PATH
 export PATH=$KERNEL_PATH/bin:$PATH
+SYZKALLER_PATH=$GOPATH/src/github.com/google/syzkaller
+exit $SYZKALLER_PATH

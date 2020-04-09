@@ -34,7 +34,7 @@ class Deployer:
     def deploy(self, cases):
         for hash in cases:
             case = cases[hash]
-            syzkaller_path = self.__run_delopy_script(hash)
+            syzkaller_path = self.__run_delopy_script(hash, case)
             self.__write_config(syzkaller_path, case["syz_repro"])
             #self.__write_testcase(case["syz_repro"])
 
@@ -45,7 +45,7 @@ class Deployer:
         print("run: scripts/linux-clone.sh {}".format(self.linux_path))
         call(["scripts/linux-clone.sh", self.linux_path], shell=True)
 
-    def __run_delopy_script(self, case):
+    def __run_delopy_script(self, hash, case):
         commit = case["commit"]
         syzkaller = case["syzkaller"]
         config = case["config"]
