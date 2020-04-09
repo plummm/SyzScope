@@ -3,7 +3,7 @@ from subprocess import call
 class Deployer:
     def __init__(self):
         self.linux_path = "linux"
-        self.clone_linux()
+        #self.clone_linux()
 
     def deploy(self, cases):
         for hash in cases:
@@ -22,7 +22,7 @@ class Deployer:
         syzkaller = case["syzkaller"]
         config = case["config"]
         syz_repro = case["syz_repro"]
-        print("run: cripts/deploy.sh {} {} {} {} {}".format(self.linux_path, hash, commit, syzkaller, syz_repro))
-        call(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, syz_repro], shell=True)
+        print("run: scripts/deploy.sh {} {} {} {} {} {}".format(self.linux_path, hash, commit, syzkaller, config, syz_repro))
+        #call(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, syz_repro], shell=True)
 
 

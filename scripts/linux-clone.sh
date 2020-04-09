@@ -6,12 +6,12 @@
 if [ $# -ne 1 ]; then
   echo "Usage ./linux-clone linux_clone_path"
   exit 1
-if
+fi
 
 sudo apt-get update
 sudo apt-get -y install git
 
 mkdir tools
-cd tools
+cd tools || exit 1
 git clone https://github.com/torvalds/linux.git $1
 echo "Linux cloned to $1"

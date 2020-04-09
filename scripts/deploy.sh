@@ -32,22 +32,16 @@ fi
 cd ..
 
 # Check for golang environment
-version=$(go version)
-regex="(go[0-9].[0-9].[0-9])"
-if [[ $version =~ $regex ]]; then
-  echo "golang environment detected\n"
-else
-  echo "setup golang environment\n"
-  wget https://dl.google.com/go/go1.14.2.linux-amd64.tar.gz
-  tar -xf go1.14.2.linux-amd64.tar.gz
-  mv go goroot
-  mkdir gopath
-  export GOPATH=`pwd`/gopath
-  export GOROOT=`pwd`/goroot
-  export PATH=$GOPATH/bin:$PATH
-  export PATH=$GOROOT/bin:$PATH
-  rm go1.14.2.linux-amd64.tar.gz
-fi
+export GOPATH=`pwd`/gopath && \
+export GOROOT=`pwd`/goroot && \
+export PATH=$GOPATH/bin:$PATH && \
+export PATH=$GOROOT/bin:$PATH && \
+go version || echo "setup golang environment\n" && \
+wget https://dl.google.com/go/go1.14.2.linux-amd64.tar.gz && \
+tar -xf go1.14.2.linux-amd64.tar.gz && \
+mv go goroot && \
+mkdir gopath && \
+rm go1.14.2.linux-amd64.tar.gz && \
 
 # Check for image
 if [ ! -d "img" ]; then
@@ -61,7 +55,7 @@ if [ ! -f "stretch.img" ]; then
   sudo apt-get -y install debootstrap
   wget https://raw.githubusercontent.com/google/syzkaller/master/tools/create-image.sh -O create-image.sh
   chmod +x create-image.sh
-  ./create-image.sh
+  sudo ./create-image.sh
 fi
 
 #Back to work directory
