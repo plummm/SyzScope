@@ -30,11 +30,12 @@ class Crawler:
             self.cases[hash]["syz_repro"] = detail[3]
 
     def gather_cases(self):
-        table = self.__get_table(self.url)
-        if table == -1:
+        tables = self.__get_table(self.url)
+        if tables == []:
             print("error occur in gather_cases")
             return
         count = 0
+        table = tables[0]
         for case in table.tbody.contents:
             if type(case) == element.Tag:
                 title = case.find('td', {"class": "title"})
@@ -56,26 +57,29 @@ class Crawler:
 
     def request_detail(self, hash):
         url = syzbot_host_url + syzbot_bug_base_url + hash
-        table = self.__get_table(url)
-        if table == -1:
+        tables = self.__get_table(url)
+        if tables == []:
             print("error occur in request_detail")
             return
-        for case in table.tbody.contents:
-            if type(case) == element.Tag:
-                tags = case.find_all('td', {"class": "tag"})
-                commit = tags[0].text
-                syzkaller = tags[1].text
-                config = syzbot_host_url + case.find('td', {"class": "config"}).next.attrs['href']
-                repros = case.find_all('td', {"class": "repro"})
-                syz_repro = syzbot_host_url + repros[2].next.attrs['href']
-                return [commit, syzkaller, config, syz_repro]
+        for table in tables:
+            if table.caption.text.find('Crash') != -1:
+                for case in table.tbody.contents:
+                    if type(case) == element.Tag:
+                        tags = case.find_all('td', {"class": "tag"})
+                        commit = tags[0].text
+                        syzkaller = tags[1].text
+                        config = syzbot_host_url + case.find('td', {"class": "config"}).next.attrs['href']
+                        repros = case.find_all('td', {"class": "repro"})
+                        syz_repro = syzbot_host_url + repros[2].next.attrs['href']
+                        return [commit, syzkaller, config, syz_repro]
+                break
         return []
 
     def __get_table(self, url):
         req = requests.request(method='GET', url=url)
         soup = BeautifulSoup(req.text, "html.parser")
-        table = soup.find('table', {"class": "list_table"})
-        if len(table) == 0 or table.tbody == None:
+        tables = soup.find_all('table', {"class": "list_table"})
+        if len(tables) == 0:
             print("Fail to retrieve bug cases from list_table")
-            return -1
-        return table
+            return []
+        return tables
