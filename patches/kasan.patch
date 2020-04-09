@@ -1,0 +1,16 @@
+diff --git a/mm/kasan/report.c b/mm/kasan/report.c
+index 621782100eaa..1f6727d74574 100644
+--- a/mm/kasan/report.c
++++ b/mm/kasan/report.c
+@@ -481,6 +481,11 @@ void __kasan_report(unsigned long addr, size_t size, bool is_write, unsigned lon
+ 	if (likely(!report_enabled()))
+ 		return;
+ 
++	if (!is_write) {
++		clear_bit(KASAN_BIT_REPORTED, &kasan_flags);
++		return;
++	}
++
+ 	disable_trace_on_warning();
+ 
+ 	tagged_addr = (void *)addr;
