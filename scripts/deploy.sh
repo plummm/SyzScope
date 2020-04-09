@@ -96,27 +96,6 @@ patch -p1 -i syzkaller.patch
 if [ ! -d "workdir" ]; then
   mkdir workdir
 fi
-CONFIG_TEMPLATE="
-{
-        \"target\": \"linux/amd64\",
-        \"http\": \"127.0.0.1:56745\",
-        \"workdir\": \"$GOPATH/src/github.com/google/syzkaller/workdir\",
-        \"kernel_obj\": \"$KERNEL_PATH\",
-        \"image\": \"$IMAGE/stretch.img\",
-        \"sshkey\": \"$IMAGE/stretch.id_rsa\",
-        \"syzkaller\": \"$GOPATH/src/github.com/google/syzkaller\",
-        \"procs\": 8,
-        \"type\": \"qemu\",
-        \"testcase\": \"$GOPATH/src/github.com/google/syzkaller/workdir/testcase-$HASH\",
-        \"vm\": {
-                \"count\": 4,
-                \"kernel\": \"$KERNEL_PATH/arch/x86/boot/bzImage\",
-                \"cpu\": 2,
-                \"mem\": 2048
-        },
-        \"enable_syscalls\" : [
-        ]
-}
-"
+
 echo $CONFIG_TEMPLATE > workdir/$HASH.cfg
 echo $TESTCASE > workdir/testcase-$HASH
