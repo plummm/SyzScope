@@ -36,7 +36,7 @@ class Deployer:
         for hash in cases:
             case = cases[hash]
             syzkaller_path = self.__run_delopy_script(hash, case)
-            if syzkaller_path == -1:
+            if syzkaller_path == 1:
                 print("Error occur in deploy.sh")
                 return
             self.__write_config(syzkaller_path, case["syz_repro"], hash)
@@ -45,9 +45,10 @@ class Deployer:
         self.__run_linux_clone_script()
 
     def __run_linux_clone_script(self):
-        os.chmod("scripts/linux-clone.sh", stat.S_IEXEC)
+        st = os.stat("scripts/linux-clone.sh")
+        os.chmod("scripts/linux-clone.sh", st.st_mode | stat.S_IEXEC)
         print("run: scripts/linux-clone.sh {}".format(self.linux_path))
-        call(["scripts/linux-clone.sh", self.linux_path], shell=True)
+        call(["/bin/bash", "-c", "scripts/linux-clone.sh", self.linux_path], shell=True)
 
     def __run_delopy_script(self, hash, case):
         commit = case["commit"]
@@ -65,9 +66,10 @@ class Deployer:
             testcase = _testcase[:index] + '\\' + _testcase[index:]
         else:
             testcase = _testcase
-        os.chmod("scripts/deploy.sh", stat.S_IEXEC)
+        st = os.stat("scripts/deploy.sh")
+        os.chmod("scripts/deploy.sh", st.st_mode | stat.S_IEXEC)
         print("run: scripts/deploy.sh {0} {1} {2} {3} {4} {5}".format(self.linux_path, hash, commit, syzkaller, config, testcase))
-        return call(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase], shell=True)
+        return call(["/bin/bash", "-c", "scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase], shell=True)
 
     def __write_config(self, syzkaller_path, testcase_url, hash):
         req = requests.request(method='GET', url=testcase_url)
