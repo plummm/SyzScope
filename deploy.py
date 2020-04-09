@@ -1,5 +1,5 @@
 import re
-import os
+import os, stat
 import requests
 
 from subprocess import call
@@ -39,24 +39,37 @@ class Deployer:
             if syzkaller_path == -1:
                 print("Error occur in deploy.sh")
                 return
-            self.__write_config(syzkaller_path, case["syz_repro"])
+            self.__write_config(syzkaller_path, case["syz_repro"], hash)
 
     def clone_linux(self):
         self.__run_linux_clone_script()
 
     def __run_linux_clone_script(self):
+        os.chmod("scripts/linux-clone.sh", stat.S_IEXEC)
         print("run: scripts/linux-clone.sh {}".format(self.linux_path))
         call(["scripts/linux-clone.sh", self.linux_path], shell=True)
 
     def __run_delopy_script(self, hash, case):
         commit = case["commit"]
         syzkaller = case["syzkaller"]
-        config = case["config"]
-        testcase = case["syz_repro"]
+        _config = case["config"]
+        _testcase = case["syz_repro"]
+        index = _config.find('&')
+        if index != -1:
+            config = _config[:index] + '\\' + _config[index:]
+        else:
+            config = _config
+
+        index = _testcase.find('&')
+        if index != -1:
+            testcase = _testcase[:index] + '\\' + _testcase[index:]
+        else:
+            testcase = _testcase
+        os.chmod("scripts/deploy.sh", stat.S_IEXEC)
         print("run: scripts/deploy.sh {0} {1} {2} {3} {4} {5}".format(self.linux_path, hash, commit, syzkaller, config, testcase))
         return call(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase], shell=True)
 
-    def __write_config(self, syzkaller_path, testcase_url):
+    def __write_config(self, syzkaller_path, testcase_url, hash):
         req = requests.request(method='GET', url=testcase_url)
         testcase = req.content
         syscalls = self.__extract_syscalls(testcase.decode("utf-8"))
@@ -71,7 +84,9 @@ class Deployer:
         syscalls.extend(dependent_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(syscalls)[:-4]
         syz_config_template.format(enable_syscalls)
-        print(enable_syscalls)
+        f = open(os.path.join(syzkaller_path, "work/{}.cfg".format(hash)), "w")
+        f.writelines(syz_config_template)
+        f.close()
 
     def __extract_syscalls(self, testcase):
         res = []
@@ -108,8 +123,7 @@ class Deployer:
                     for line in text:
                         m = re.match('(\w+(\$\w+)?)\(', line)
                         if m == None or len(m.groups()) == 0:
-                            print("Failed to extract syscall from {}".format(line))
-                            return -1
+                            continue
                         syscall = m.groups()[0]
                         res.append(syscall)
                     break

@@ -34,6 +34,8 @@ cd ..
 # Check for golang environment
 export GOPATH=`pwd`/gopath
 export GOROOT=`pwd`/goroot
+export PATH=$GOPATH/bin:$PATH
+export PATH=$GOROOT/bin:$PATH
 go version || echo "setup golang environment\n" && \
 wget https://dl.google.com/go/go1.14.2.linux-amd64.tar.gz && \
 tar -xf go1.14.2.linux-amd64.tar.gz && \
@@ -42,18 +44,21 @@ mkdir gopath && \
 rm go1.14.2.linux-amd64.tar.gz
 
 # Check for image
-if [ ! -d "img" ]; then
-  mkdir img
-fi
-cd img
-IMAGE=$(pwd)
-if [ ! -f "stretch.img" ]; then
-  echo "Making image\n"
-  sudo apt-get update
-  sudo apt-get -y install debootstrap
-  wget https://raw.githubusercontent.com/google/syzkaller/master/tools/create-image.sh -O create-image.sh
-  chmod +x create-image.sh
-  sudo ./create-image.sh
+if [ ! -f ".stamp/MAKE_IMAGE" ]; then
+  if [ ! -d "img" ]; then
+    mkdir img
+  fi
+  cd img
+  IMAGE=$(pwd)
+  if [ ! -f "stretch.img" ]; then
+    echo "Making image\n"
+    sudo apt-get update
+    sudo apt-get -y install debootstrap
+    wget https://raw.githubusercontent.com/google/syzkaller/master/tools/create-image.sh -O create-image.sh
+    chmod +x create-image.sh
+    sudo ./create-image.sh
+    touch .stamp/MAKE_IMAGE
+  fi
 fi
 
 #Back to work directory
@@ -68,16 +73,19 @@ cd $HASH
 
 #Building kernel
 echo "Building kernel\n"
-ln -s ../../tools/$1 ./linux
-cp $PATCHES_PATH/kasan.patch ./linux
-cd linux
-KERNEL_PATH=$(pwd)
-git stash -all
-git checkout $COMMIT
-patch -p1 -i kasan.patch
-#Add a rejection detector in future
-curl $CONFIG > .config
-make -j16
+if [ ! -f ".stamp/BUILD_KERNEL" ]; then
+  ln -s ../../tools/$1 ./linux
+  cp $PATCHES_PATH/kasan.patch ./linux
+  cd linux
+  KERNEL_PATH=$(pwd)
+  git stash -all
+  git checkout $COMMIT
+  patch -p1 -i kasan.patch
+  #Add a rejection detector in future
+  curl $CONFIG > .config
+  make -j16
+  touch .stamp/BUILD_KERNEL
+fi
 
 #Checking for syzkaller
 cd $GOPATH/src/github.com/google
@@ -96,8 +104,6 @@ if [ ! -d "workdir" ]; then
 fi
 
 echo $TESTCASE > workdir/testcase-$HASH
-export PATH=$GOPATH/bin:$PATH
-export PATH=$GOROOT/bin:$PATH
 export PATH=$IMAGE/bin:$PATH
 export PATH=$KERNEL_PATH/bin:$PATH
 SYZKALLER_PATH=$GOPATH/src/github.com/google/syzkaller

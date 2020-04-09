@@ -15,6 +15,7 @@ class Crawler:
         self.keyword = keyword
         self.max_retrieve = max_retrieve
         self.cases = {}
+        self.patches = {}
 
     def run(self):
         cases_hash = self.gather_cases()
@@ -39,6 +40,11 @@ class Crawler:
                 title = case.find('td', {"class": "title"})
                 for keyword in self.keyword:
                     if keyword in title.text:
+                        commit_list = case.find('td', {"class": "commit_list"})
+                        patch_url = commit_list.contents[1].contents[1].attrs['href']
+                        if patch_url in self.patches:
+                            break
+                        self.patches[patch_url] = True
                         count += 1
                         href = title.next.attrs['href']
                         hash = href[8:]
