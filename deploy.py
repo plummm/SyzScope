@@ -33,7 +33,7 @@ class Deployer:
         self.syzkaller_path = ""
         self.image_path = ""
         self.kernel_path = ""
-        #self.clone_linux()
+        self.clone_linux()
 
     def deploy(self, cases):
         for hash in cases:
