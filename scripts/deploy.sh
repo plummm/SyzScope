@@ -36,6 +36,7 @@ if [ $# -ne 6 ]; then
 fi
 
 sudo apt-get update
+sudo apt-get install qemu-system-x86
 
 HASH=$2
 COMMIT=$3

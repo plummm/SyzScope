@@ -71,8 +71,6 @@ class Deployer:
         syzkaller = case["syzkaller"]
         config = case["config"]
         testcase = case["syz_repro"]
-        #config = self.__adjust_url_for_bash(_config)
-        #testcase = self.__adjust_url_for_bash(_testcase)
 
         st = os.stat("scripts/deploy.sh")
         os.chmod("scripts/deploy.sh", st.st_mode | stat.S_IEXEC)
@@ -91,7 +89,7 @@ class Deployer:
         if len(dependent_syscalls) < 1:
             print("Cannot find dependent syscalls for {}.\nTry to continue without them".format(last_syscall))
         syscalls.extend(dependent_syscalls)
-        enable_syscalls = "\"" + "\",\n\t\"".join(syscalls)[:-4]
+        enable_syscalls = "\"" + "\",\n\t\"".join(syscalls) + "\""
         syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash)
         f = open(os.path.join(self.syzkaller_path, "workdir/{}.cfg".format(hash)), "w")
         f.writelines(syz_config)
