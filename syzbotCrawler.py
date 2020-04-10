@@ -49,6 +49,8 @@ class Crawler:
                         count += 1
                         href = title.next.attrs['href']
                         hash = href[8:]
+                        print("Fetch {}".format(hash))
+                        hash = hash[:7]
                         self.cases[hash] = {}
                 if count == self.max_retrieve:
                     break

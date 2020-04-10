@@ -91,7 +91,6 @@ class Deployer:
         if syscalls == []:
             print("No syscalls found in testcase: {}".format(testcase))
             return -1
-        print(syscalls)
         last_syscall = syscalls[len(syscalls)-1]
         dependent_syscalls = self.__extract_dependent_syscalls(last_syscall, self.syzkaller_path)
         if len(dependent_syscalls) < 1:
@@ -99,7 +98,7 @@ class Deployer:
         syscalls.extend(dependent_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(syscalls)[:-4]
         syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls)
-        f = open(os.path.join(self.syzkaller_path, "work/{}.cfg".format(hash)), "w")
+        f = open(os.path.join(self.syzkaller_path, "workdir/{}.cfg".format(hash)), "w")
         f.writelines(syz_config_template)
         f.close()
 

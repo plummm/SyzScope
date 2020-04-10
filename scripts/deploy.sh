@@ -6,10 +6,10 @@
 set -e
 
 function set_git_config() {
-  echo "set user.email for git config\n"
+  echo "set user.email for git config"
   echo "Input email: "
   read email
-  echo "set user.name for git config\n"
+  echo "set user.name for git config"
   echo "Input name: "
   read name
   git config --global user.email $email
@@ -17,8 +17,8 @@ function set_git_config() {
 }
 
 function build_golang() {
-  echo "setup golang environment\n"
-  rm goroot || echo "clean goroot\n"
+  echo "setup golang environment"
+  rm goroot || echo "clean goroot"
   wget https://dl.google.com/go/go1.14.2.linux-amd64.tar.gz
   tar -xf go1.14.2.linux-amd64.tar.gz
   mv go goroot
@@ -43,7 +43,7 @@ TESTCASE=$6
 PATCHES_PATH="$(pwd)/patches"
 
 if [ ! -d "tools/$1" ]; then
-  echo "No linux repositories detected\n"
+  echo "No linux repositories detected"
   exit 1
 fi
 
@@ -51,7 +51,7 @@ TOOLS_PATH="$(pwd)/tools"
 # Check if linux is cloned by git
 cd tools/$1
 if [ ! -d ".git" ]; then
-  echo "This linux repo is not clone by git.\n"
+  echo "This linux repo is not clone by git."
   exit 1
 fi
 
@@ -61,7 +61,7 @@ cd ..
 export GOPATH=`pwd`/gopath
 export GOROOT=`pwd`/goroot
 export PATH=$GOROOT/bin:$PATH
-echo "[+] Downloading golang\n"
+echo "[+] Downloading golang"
 go version || build_golang
 
 if [ ! -d ".stamp" ]; then
@@ -69,7 +69,7 @@ if [ ! -d ".stamp" ]; then
 fi
 
 # Check for image
-echo "[+] Building image\n"
+echo "[+] Building image"
 if [ ! -f "$TOOLS_PATH/.stamp/MAKE_IMAGE" ]; then
   if [ ! -d "img" ]; then
     mkdir img
@@ -98,7 +98,7 @@ fi
 cd $HASH || exit 1
 
 #Building kernel
-echo "[+] Building kernel\n"
+echo "[+] Building kernel"
 if [ ! -f "$TOOLS_PATH/.stamp/BUILD_KERNEL" ]; then
   sudo apt-get -y install flex bison libssl-dev
   ln -s ../../tools/$1 ./linux
@@ -115,7 +115,7 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_KERNEL" ]; then
 fi
 
 #Building for syzkaller
-echo "[+] Building syzkaller\n"
+echo "[+] Building syzkaller"
 if [ ! -f "$TOOLS_PATH/.stamp/BUILD_SYZKALLER" ]; then
   NEW_VERSION=0
   go get -u -d github.com/google/syzkaller/...
@@ -137,12 +137,8 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_SYZKALLER" ]; then
   touch $TOOLS_PATH/.stamp/BUILD_SYZKALLER
 fi
 
-echo -e "\n\e[31mPlace following commands in your \e[33m.bash_profile/.bashrc/.zshrc \e[31mor other startup script\n\e[33m"
-echo "export IMAGE=$IMAGE\n"
-echo "export KERNEL_PATH=$KERNEL_PATH\n"
+echo -e "\n\e[31mPlace following commands in your \e[33m.bash_profile/.bashrc/.zshrc \e[31mor other startup script\n\e[39m"
 echo "export GOPATH=$GOPATH"
 echo "export GOROOT=$GOROOT"
-echo "export PATH=\$IMAGE:\$PATH"
-echo "export PATH=\$KERNEL_PATH:\$PATH"
-echo "export PATH=\$GOROOT/bin:\$PATH\n\n\e[39m"
+echo "export PATH=\$GOROOT/bin:\$PATH"
 exit 0
