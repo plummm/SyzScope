@@ -47,6 +47,7 @@ class Deployer:
             self.image_path = "{}/tools/img".format(os.getcwd())
             self.kernel_path = "{}/work/{}/linux".format(os.getcwd(), hash)
             self.__write_config(case["syz_repro"], hash)
+            self.run_syzkaller(hash)
 
     def clone_linux(self):
         self.__run_linux_clone_script()
@@ -68,10 +69,10 @@ class Deployer:
     def __run_delopy_script(self, hash, case):
         commit = case["commit"]
         syzkaller = case["syzkaller"]
-        _config = case["config"]
-        _testcase = case["syz_repro"]
-        config = self.__adjust_url_for_bash(_config)
-        testcase = self.__adjust_url_for_bash(_testcase)
+        config = case["config"]
+        testcase = case["syz_repro"]
+        #config = self.__adjust_url_for_bash(_config)
+        #testcase = self.__adjust_url_for_bash(_testcase)
 
         st = os.stat("scripts/deploy.sh")
         os.chmod("scripts/deploy.sh", st.st_mode | stat.S_IEXEC)
