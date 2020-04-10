@@ -47,6 +47,7 @@ if [ ! -d "tools/$1" ]; then
   exit 1
 fi
 
+TOOLS_PATH="$(pwd)/tools"
 # Check if linux is cloned by git
 cd tools/$1
 if [ ! -d ".git" ]; then
@@ -67,7 +68,7 @@ if [ ! -d ".stamp" ]; then
 fi
 
 # Check for image
-if [ ! -f ".stamp/MAKE_IMAGE" ]; then
+if [ ! -f "$TOOLS_PATH/.stamp/MAKE_IMAGE" ]; then
   if [ ! -d "img" ]; then
     mkdir img
   fi
@@ -79,7 +80,7 @@ if [ ! -f ".stamp/MAKE_IMAGE" ]; then
     wget https://raw.githubusercontent.com/google/syzkaller/master/tools/create-image.sh -O create-image.sh
     chmod +x create-image.sh
     sudo ./create-image.sh
-    touch ../.stamp/MAKE_IMAGE
+    touch $TOOLS_PATH/.stamp/MAKE_IMAGE
   fi
 fi
 
@@ -97,7 +98,7 @@ cd $HASH || exit 1
 
 #Building kernel
 echo "Building kernel\n"
-if [ ! -f ".stamp/BUILD_KERNEL" ]; then
+if [ ! -f "$TOOLS_PATH/.stamp/BUILD_KERNEL" ]; then
   sudo apt-get -y install flex bison libssl-dev
   ln -s ../../tools/$1 ./linux
   cd linux
@@ -109,35 +110,33 @@ if [ ! -f ".stamp/BUILD_KERNEL" ]; then
   #Add a rejection detector in future
   curl $CONFIG > .config
   make -j16
-  touch ../.stamp/BUILD_KERNEL
+  touch $TOOLS_PATH/.stamp/BUILD_KERNEL
 fi
 
-#Checking for syzkaller
-if [ ! -d "$GOPATH/src/github.com/google/syzkaller" ]; then
+#Building for syzkaller
+echo "[+] Building syzkaller\n"
+if [ ! -f "$TOOLS_PATH/.stamp/BUILD_SYZKALLER" ]; then
   echo "Downloading syzkaller"
   go get -u -d github.com/google/syzkaller/...
+  cd $GOPATH/src/github.com/google/syzkaller || exit 1
+  git stash --all || set_git_config
+  git checkout $SYZKALLER
+  cp $PATCHES_PATH/syzkaller.patch ./
+  patch -p1 -i syzkaller.patch
+  make
+  if [ ! -d "workdir" ]; then
+    mkdir workdir
+  fi
+  echo $TESTCASE > workdir/testcase-$HASH
+  touch $TOOLS_PATH/.stamp/BUILD_SYZKALLER
 fi
-cd $GOPATH/src/github.com/google/syzkaller || exit 1
-git stash --all || set_git_config
-git checkout $SYZKALLER
-cp $PATCHES_PATH/syzkaller.patch ./
-patch -p1 -i syzkaller.patch
 
-if [ ! -d "workdir" ]; then
-  mkdir workdir
-fi
-
-echo $TESTCASE > workdir/testcase-$HASH
-export PATH=$IMAGE:$PATH
-export PATH=$KERNEL_PATH:$PATH
-
-echo "\e[31mPlace following commands in your \e[34m.bash_profile/.bashrc/.zshrc \e[31mor other startup script\n"
+echo -e "\n\e[31mPlace following commands in your \e[33m.bash_profile/.bashrc/.zshrc \e[31mor other startup script\n\e[33m"
 echo "export IMAGE=$IMAGE\n"
 echo "export KERNEL_PATH=$KERNEL_PATH\n"
 echo "export GOPATH=$GOPATH"
 echo "export GOROOT=$GOROOT"
 echo "export PATH=\$IMAGE:\$PATH"
 echo "export PATH=\$KERNEL_PATH:\$PATH"
-echo "export PATH=\$GOROOT/bin:\$PATH"
-SYZKALLER_PATH=$GOPATH/src/github.com/google/syzkaller
-exit $SYZKALLER_PATH
+echo "export PATH=\$GOROOT/bin:\$PATH\n\e[39m"
+exit 0

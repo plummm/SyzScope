@@ -8,41 +8,54 @@ syz_config_template="""
 {{ 
         "target": "linux/amd64",
         \"http\": \"127.0.0.1:56745\",
-        \"workdir\": \"$GOPATH/src/github.com/google/syzkaller/workdir\",
-        \"kernel_obj\": \"$KERNEL_PATH\",
-        \"image\": \"$IMAGE/stretch.img\",
-        \"sshkey\": \"$IMAGE/stretch.id_rsa\",
-        \"syzkaller\": \"$GOPATH/src/github.com/google/syzkaller\",
+        \"workdir\": \"{0}/workdir\",
+        \"kernel_obj\": \"{1}\",
+        \"image\": \"{2}/stretch.img\",
+        \"sshkey\": \"{2}/stretch.id_rsa\",
+        \"syzkaller\": \"{0}\",
         \"procs\": 8,
         \"type\": \"qemu\",
-        \"testcase\": \"$GOPATH/src/github.com/google/syzkaller/workdir/testcase-$HASH\",
+        \"testcase\": \"{0}/workdir/testcase-$HASH\",
         \"vm\": {{
                 \"count\": 4,
-                \"kernel\": \"$KERNEL_PATH/arch/x86/boot/bzImage\",
+                \"kernel\": \"{1}/arch/x86/boot/bzImage\",
                 \"cpu\": 2,
                 \"mem\": 2048
         }},
         \"enable_syscalls\" : [
-            {}
+            {3}
         ]
 }}"""
 
 class Deployer:
     def __init__(self):
         self.linux_path = "linux"
+        self.syzkaller_path = ""
+        self.image_path = ""
+        self.kernel_path = ""
         self.clone_linux()
 
     def deploy(self, cases):
         for hash in cases:
             case = cases[hash]
-            syzkaller_path = self.__run_delopy_script(hash, case)
-            if syzkaller_path == 1:
+            r = self.__run_delopy_script(hash, case)
+            if r == 1:
                 print("Error occur in deploy.sh")
                 return
-            self.__write_config(syzkaller_path, case["syz_repro"], hash)
+            self.syzkaller_path = "{}/tools/gopath/src/github.com/google/syzkaller".format(os.getcwd())
+            self.image_path = "{}/tools/img".format(os.getcwd())
+            self.kernel_path = "{}/work/{}/linux".format(os.getcwd(), hash)
+            self.__write_config(case["syz_repro"], hash)
 
     def clone_linux(self):
         self.__run_linux_clone_script()
+
+    def run_syzkaller(self, hash, debug=False):
+        syzkaller = os.path.join(self.syzkaller_path, "bin/syz-manager")
+        if debug:
+            call([syzkaller, "--config=work/{}.cfg".format(hash), "--debug"])
+        else:
+            call([syzkaller, "--config=work/{}.cfg".format(hash)])
 
     def __run_linux_clone_script(self):
         st = os.stat("scripts/linux-clone.sh")
@@ -71,7 +84,7 @@ class Deployer:
         print("run: scripts/deploy.sh {0} {1} {2} {3} {4} {5}".format(self.linux_path, hash, commit, syzkaller, config, testcase))
         return call(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase], shell=False)
 
-    def __write_config(self, syzkaller_path, testcase_url, hash):
+    def __write_config(self, testcase_url, hash):
         req = requests.request(method='GET', url=testcase_url)
         testcase = req.content
         syscalls = self.__extract_syscalls(testcase.decode("utf-8"))
@@ -80,13 +93,13 @@ class Deployer:
             return -1
         print(syscalls)
         last_syscall = syscalls[len(syscalls)-1]
-        dependent_syscalls = self.__extract_dependent_syscalls(last_syscall, syzkaller_path)
+        dependent_syscalls = self.__extract_dependent_syscalls(last_syscall, self.syzkaller_path)
         if len(dependent_syscalls) < 1:
             print("Cannot find dependent syscalls for {}.\nTry to continue without them".format(last_syscall))
         syscalls.extend(dependent_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(syscalls)[:-4]
-        syz_config_template.format(enable_syscalls)
-        f = open(os.path.join(syzkaller_path, "work/{}.cfg".format(hash)), "w")
+        syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls)
+        f = open(os.path.join(self.syzkaller_path, "work/{}.cfg".format(hash)), "w")
         f.writelines(syz_config_template)
         f.close()
 
