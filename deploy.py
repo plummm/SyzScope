@@ -15,7 +15,7 @@ syz_config_template="""
         \"syzkaller\": \"{0}\",
         \"procs\": 8,
         \"type\": \"qemu\",
-        \"testcase\": \"{0}/workdir/testcase-$HASH\",
+        \"testcase\": \"{0}/workdir/testcase-{4}\",
         \"vm\": {{
                 \"count\": 4,
                 \"kernel\": \"{1}/arch/x86/boot/bzImage\",
@@ -55,9 +55,9 @@ class Deployer:
     def run_syzkaller(self, hash, debug=False):
         syzkaller = os.path.join(self.syzkaller_path, "bin/syz-manager")
         if debug:
-            call([syzkaller, "--config=work/{}.cfg".format(hash), "--debug"])
+            call([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash), "--debug"])
         else:
-            call([syzkaller, "--config=work/{}.cfg".format(hash)])
+            call([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash)])
         self.__clean_stamps()
 
     def __run_linux_clone_script(self):
@@ -92,7 +92,7 @@ class Deployer:
             print("Cannot find dependent syscalls for {}.\nTry to continue without them".format(last_syscall))
         syscalls.extend(dependent_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(syscalls)[:-4]
-        syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls)
+        syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash)
         f = open(os.path.join(self.syzkaller_path, "workdir/{}.cfg".format(hash)), "w")
         f.writelines(syz_config_template)
         f.close()
