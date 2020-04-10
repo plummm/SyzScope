@@ -48,7 +48,7 @@ class Deployer:
         st = os.stat("scripts/linux-clone.sh")
         os.chmod("scripts/linux-clone.sh", st.st_mode | stat.S_IEXEC)
         print("run: scripts/linux-clone.sh {}".format(self.linux_path))
-        call(["scripts/linux-clone.sh", self.linux_path], shell=True)
+        call(["scripts/linux-clone.sh", self.linux_path], shell=False)
 
     def __run_delopy_script(self, hash, case):
         commit = case["commit"]
@@ -69,7 +69,7 @@ class Deployer:
         st = os.stat("scripts/deploy.sh")
         os.chmod("scripts/deploy.sh", st.st_mode | stat.S_IEXEC)
         print("run: scripts/deploy.sh {0} {1} {2} {3} {4} {5}".format(self.linux_path, hash, commit, syzkaller, config, testcase))
-        return call(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase], shell=True)
+        return call(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase], shell=False)
 
     def __write_config(self, syzkaller_path, testcase_url, hash):
         req = requests.request(method='GET', url=testcase_url)
