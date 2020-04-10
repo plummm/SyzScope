@@ -43,6 +43,10 @@ mv go goroot && \
 mkdir gopath && \
 rm go1.14.2.linux-amd64.tar.gz
 
+if [ ! -d ".stamp" ]; then
+  mkdir .stamp
+fi
+
 # Check for image
 if [ ! -f ".stamp/MAKE_IMAGE" ]; then
   if [ ! -d "img" ]; then
