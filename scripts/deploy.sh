@@ -3,9 +3,10 @@
 #
 # Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase
 
-set -e
+set -ex
 
 function set_git_config() {
+  set +x
   echo "set user.email for git config"
   echo "Input email: "
   read email
@@ -14,6 +15,7 @@ function set_git_config() {
   read name
   git config --global user.email $email
   git config --global user.name $name
+  set -x
 }
 
 function build_golang() {
@@ -75,7 +77,6 @@ if [ ! -f "$TOOLS_PATH/.stamp/MAKE_IMAGE" ]; then
     mkdir img
   fi
   cd img
-  IMAGE=$(pwd)
   if [ ! -f "stretch.img" ]; then
     sudo apt-get -y install debootstrap
     wget https://raw.githubusercontent.com/google/syzkaller/master/tools/create-image.sh -O create-image.sh
@@ -101,9 +102,11 @@ cd $HASH || exit 1
 echo "[+] Building kernel"
 if [ ! -f "$TOOLS_PATH/.stamp/BUILD_KERNEL" ]; then
   sudo apt-get -y install flex bison libssl-dev
-  ln -s ../../tools/$1 ./linux
+  if [ ! -d "./linux" ]; then
+    ln -s ../../tools/$1 ./linux
+  fi
   cd linux
-  KERNEL_PATH=$(pwd)
+  make clean
   git stash --all || set_git_config
   git checkout $COMMIT
   cp $PATCHES_PATH/kasan.patch ./
@@ -118,8 +121,11 @@ fi
 echo "[+] Building syzkaller"
 if [ ! -f "$TOOLS_PATH/.stamp/BUILD_SYZKALLER" ]; then
   NEW_VERSION=0
-  go get -u -d github.com/google/syzkaller/...
+  if [ ! -d "$GOPATH/src/github.com/google/syzkaller" ]; then
+    go get -u -d github.com/google/syzkaller/...
+  fi
   cd $GOPATH/src/github.com/google/syzkaller || exit 1
+  make clean
   git stash --all || set_git_config
   git checkout $SYZKALLER
   git rev-list 9b1f3e6 | grep $(git rev-parse HEAD) || NEW_VERSION=1
@@ -137,6 +143,7 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_SYZKALLER" ]; then
   touch $TOOLS_PATH/.stamp/BUILD_SYZKALLER
 fi
 
+set +x
 echo -e "\n\e[31mPlace following commands in your \e[33m.bash_profile/.bashrc/.zshrc \e[31mor other startup script\n\e[39m"
 echo "export GOPATH=$GOPATH"
 echo "export GOROOT=$GOROOT"

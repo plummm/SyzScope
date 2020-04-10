@@ -57,6 +57,7 @@ class Deployer:
             call([syzkaller, "--config=work/{}.cfg".format(hash), "--debug"])
         else:
             call([syzkaller, "--config=work/{}.cfg".format(hash)])
+        self.__clean_stamps()
 
     def __run_linux_clone_script(self):
         st = os.stat("scripts/linux-clone.sh")
@@ -143,3 +144,7 @@ class Deployer:
                         res.append(syscall)
                     break
         return res
+
+    def __clean_stamps(self):
+        os.remove(os.path.join(os.getcwd(), "/tools/.stamp/BUILD_KERNEL"))
+        os.remove(os.path.join(os.getcwd(), "/tools/.stamp/BUILD_SYZKALLER"))
