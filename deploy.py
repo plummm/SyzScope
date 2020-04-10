@@ -33,7 +33,7 @@ class Deployer:
         self.syzkaller_path = ""
         self.image_path = ""
         self.kernel_path = ""
-        self.clone_linux()
+        #self.clone_linux()
 
     def deploy(self, cases):
         for hash in cases:
@@ -70,17 +70,9 @@ class Deployer:
         syzkaller = case["syzkaller"]
         _config = case["config"]
         _testcase = case["syz_repro"]
-        index = _config.find('&')
-        if index != -1:
-            config = _config[:index] + '\\' + _config[index:]
-        else:
-            config = _config
+        config = self.__adjust_url_for_bash(_config)
+        testcase = self.__adjust_url_for_bash(_testcase)
 
-        index = _testcase.find('&')
-        if index != -1:
-            testcase = _testcase[:index] + '\\' + _testcase[index:]
-        else:
-            testcase = _testcase
         st = os.stat("scripts/deploy.sh")
         os.chmod("scripts/deploy.sh", st.st_mode | stat.S_IEXEC)
         print("run: scripts/deploy.sh {0} {1} {2} {3} {4} {5}".format(self.linux_path, hash, commit, syzkaller, config, testcase))
@@ -110,7 +102,7 @@ class Deployer:
         for line in text:
             if len(line)==0 or line[0] == '#':
                 continue
-            m = re.search('(\w+(\$\w+)?)\(', line)
+            m = re.search(r'(\w+(\$\w+)?)\(', line)
             if m == None or len(m.groups()) == 0:
                 print("Failed to extract syscall from {}".format(line))
                 return res
@@ -137,13 +129,31 @@ class Deployer:
 
                 if find_it:
                     for line in text:
-                        m = re.match('(\w+(\$\w+)?)\(', line)
+                        m = re.match(r'(\w+(\$\w+)?)\(', line)
                         if m == None or len(m.groups()) == 0:
                             continue
                         syscall = m.groups()[0]
                         res.append(syscall)
                     break
         return res
+
+    def __adjust_url_for_bash(self, str):
+        str = self.__place_escape_before(str, '&')
+        str = self.__place_escape_before(str, '\?')
+        str = self.__place_escape_before(str, '=')
+        return str
+
+    def __place_escape_before(self, str, sym):
+        pattern = r"[^\\]{}".format(sym)
+        while(1):
+            tmp = str
+            m = re.search(pattern, tmp)
+            if m != None:
+                index = m.span()[0]+1
+                str = tmp[:index] + '\\' + tmp[index:]
+            else:
+                break
+        return str
 
     def __clean_stamps(self):
         os.remove(os.path.join(os.getcwd(), "/tools/.stamp/BUILD_KERNEL"))

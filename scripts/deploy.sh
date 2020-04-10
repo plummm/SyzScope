@@ -139,7 +139,7 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_SYZKALLER" ]; then
   if [ ! -d "workdir" ]; then
     mkdir workdir
   fi
-  echo $TESTCASE > workdir/testcase-$HASH
+  curl $TESTCASE > workdir/testcase-$HASH
   touch $TOOLS_PATH/.stamp/BUILD_SYZKALLER
 fi
 
