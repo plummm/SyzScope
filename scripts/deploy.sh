@@ -61,6 +61,7 @@ cd ..
 export GOPATH=`pwd`/gopath
 export GOROOT=`pwd`/goroot
 export PATH=$GOROOT/bin:$PATH
+echo "[+] Downloading golang\n"
 go version || build_golang
 
 if [ ! -d ".stamp" ]; then
@@ -68,6 +69,7 @@ if [ ! -d ".stamp" ]; then
 fi
 
 # Check for image
+echo "[+] Building image\n"
 if [ ! -f "$TOOLS_PATH/.stamp/MAKE_IMAGE" ]; then
   if [ ! -d "img" ]; then
     mkdir img
@@ -75,7 +77,6 @@ if [ ! -f "$TOOLS_PATH/.stamp/MAKE_IMAGE" ]; then
   cd img
   IMAGE=$(pwd)
   if [ ! -f "stretch.img" ]; then
-    echo "Making image\n"
     sudo apt-get -y install debootstrap
     wget https://raw.githubusercontent.com/google/syzkaller/master/tools/create-image.sh -O create-image.sh
     chmod +x create-image.sh
@@ -97,7 +98,7 @@ fi
 cd $HASH || exit 1
 
 #Building kernel
-echo "Building kernel\n"
+echo "[+] Building kernel\n"
 if [ ! -f "$TOOLS_PATH/.stamp/BUILD_KERNEL" ]; then
   sudo apt-get -y install flex bison libssl-dev
   ln -s ../../tools/$1 ./linux
@@ -116,12 +117,17 @@ fi
 #Building for syzkaller
 echo "[+] Building syzkaller\n"
 if [ ! -f "$TOOLS_PATH/.stamp/BUILD_SYZKALLER" ]; then
-  echo "Downloading syzkaller"
+  NEW_VERSION=0
   go get -u -d github.com/google/syzkaller/...
   cd $GOPATH/src/github.com/google/syzkaller || exit 1
   git stash --all || set_git_config
   git checkout $SYZKALLER
-  cp $PATCHES_PATH/syzkaller.patch ./
+  git rev-list 9b1f3e6 | grep $(git rev-parse HEAD) || NEW_VERSION=1
+  if [[ "$NEW_VERSION" -eq 1 ]]; then
+    cp $PATCHES_PATH/syzkaller_new.patch ./syzkaller.patch
+  else
+    cp $PATCHES_PATH/syzkaller_old.patch ./syzkaller.patch
+  fi
   patch -p1 -i syzkaller.patch
   make
   if [ ! -d "workdir" ]; then
@@ -138,5 +144,5 @@ echo "export GOPATH=$GOPATH"
 echo "export GOROOT=$GOROOT"
 echo "export PATH=\$IMAGE:\$PATH"
 echo "export PATH=\$KERNEL_PATH:\$PATH"
-echo "export PATH=\$GOROOT/bin:\$PATH\n\e[39m"
+echo "export PATH=\$GOROOT/bin:\$PATH\n\n\e[39m"
 exit 0

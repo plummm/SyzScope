@@ -386,7 +386,7 @@ index d815a58b..7529bdee 100644
 +	fuzzerSnapshot := proc.fuzzer.snapshot()
 +	for i := 0; i < 100; i++ {
 +		p := item.p.Clone()
-+		p.Mutate(proc.rnd, prog.RecommendedCalls, proc.fuzzer.choiceTable, fuzzerSnapshot.corpus)
++		p.Mutate(proc.rnd, programLength, proc.fuzzer.choiceTable, fuzzerSnapshot.corpus)
 +		proc.execute(proc.execOpts, p, ProgNormal, StatSmash)
 +	}
 +}
