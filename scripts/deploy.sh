@@ -5,6 +5,26 @@
 
 set -ex
 
+function set_git_config() {
+  echo "set user.email for git config\n"
+  echo "email: "
+  read email
+  echo "set user.name for git config\n"
+  echo "name: "
+  read name
+  git config --global user.email $email
+  git config --global user.name $name
+}
+
+function build_golang() {
+  echo "setup golang environment\n" && \
+  wget https://dl.google.com/go/go1.14.2.linux-amd64.tar.gz && \
+  tar -xf go1.14.2.linux-amd64.tar.gz && \
+  mv go goroot && \
+  mkdir gopath && \
+  rm go1.14.2.linux-amd64.tar.gz
+}
+
 if [ $# -ne 6 ]; then
   echo "Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase"
   exit 1
@@ -36,12 +56,7 @@ export GOPATH=`pwd`/gopath
 export GOROOT=`pwd`/goroot
 export PATH=$GOPATH/bin:$PATH
 export PATH=$GOROOT/bin:$PATH
-go version || echo "setup golang environment\n" && \
-wget https://dl.google.com/go/go1.14.2.linux-amd64.tar.gz && \
-tar -xf go1.14.2.linux-amd64.tar.gz && \
-mv go goroot && \
-mkdir gopath && \
-rm go1.14.2.linux-amd64.tar.gz
+go version || build_golang
 
 if [ ! -d ".stamp" ]; then
   mkdir .stamp
@@ -50,7 +65,7 @@ fi
 # Check for image
 if [ ! -f ".stamp/MAKE_IMAGE" ]; then
   if [ ! -d "img" ]; then
-    mkdir img
+    mkdir imgls
   fi
   cd img
   IMAGE=$(pwd)
@@ -61,7 +76,7 @@ if [ ! -f ".stamp/MAKE_IMAGE" ]; then
     wget https://raw.githubusercontent.com/google/syzkaller/master/tools/create-image.sh -O create-image.sh
     chmod +x create-image.sh
     sudo ./create-image.sh
-    touch .stamp/MAKE_IMAGE
+    touch ../.stamp/MAKE_IMAGE
   fi
 fi
 
@@ -82,13 +97,13 @@ if [ ! -f ".stamp/BUILD_KERNEL" ]; then
   cp $PATCHES_PATH/kasan.patch ./linux
   cd linux
   KERNEL_PATH=$(pwd)
-  git stash -all
+  git stash --all || set_git_config
   git checkout $COMMIT
   patch -p1 -i kasan.patch
   #Add a rejection detector in future
   curl $CONFIG > .config
   make -j16
-  touch .stamp/BUILD_KERNEL
+  touch ../.stamp/BUILD_KERNEL
 fi
 
 #Checking for syzkaller
