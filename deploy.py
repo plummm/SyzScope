@@ -38,6 +38,7 @@ class Deployer:
     def deploy(self, cases):
         for hash in cases:
             case = cases[hash]
+            hash = hash[:7]
             r = self.__run_delopy_script(hash, case)
             if r == 1:
                 print("Error occur in deploy.sh")
