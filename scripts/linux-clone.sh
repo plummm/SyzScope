@@ -11,7 +11,7 @@ fi
 sudo apt-get update
 sudo apt-get -y install git
 
-mkdir tools
+mkdir tools || echo "Directory exists\n"
 cd tools || exit 1
 git clone https://github.com/torvalds/linux.git $1
 echo "Linux cloned to $1"
