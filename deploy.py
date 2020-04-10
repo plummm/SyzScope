@@ -92,9 +92,9 @@ class Deployer:
             print("Cannot find dependent syscalls for {}.\nTry to continue without them".format(last_syscall))
         syscalls.extend(dependent_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(syscalls)[:-4]
-        syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash)
+        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash)
         f = open(os.path.join(self.syzkaller_path, "workdir/{}.cfg".format(hash)), "w")
-        f.writelines(syz_config_template)
+        f.writelines(syz_config)
         f.close()
 
     def __extract_syscalls(self, testcase):

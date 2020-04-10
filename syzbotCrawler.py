@@ -10,7 +10,7 @@ class Crawler:
     def __init__(self,
                  url="https://syzkaller.appspot.com/upstream/fixed",
                  keyword=['slab-out-of-bounds Read'],
-                 max_retrieve=50):
+                 max_retrieve=10):
         self.url = url
         self.keyword = keyword
         self.max_retrieve = max_retrieve
@@ -20,14 +20,17 @@ class Crawler:
     def run(self):
         cases_hash = self.gather_cases()
         for hash in cases_hash:
-            detail = self.request_detail(hash)
-            if len(detail) < 4:
-                print("Failed to get detail of a case {}".format(hash))
-                return -1
-            self.cases[hash]["commit"] = detail[0]
-            self.cases[hash]["syzkaller"] = detail[1]
-            self.cases[hash]["config"] = detail[2]
-            self.cases[hash]["syz_repro"] = detail[3]
+            self.retreive_case(hash)
+
+    def retreive_case(self, hash):
+        detail = self.request_detail(hash)
+        if len(detail) < 4:
+            print("Failed to get detail of a case {}".format(hash))
+            return -1
+        self.cases[hash]["commit"] = detail[0]
+        self.cases[hash]["syzkaller"] = detail[1]
+        self.cases[hash]["config"] = detail[2]
+        self.cases[hash]["syz_repro"] = detail[3]
 
     def gather_cases(self):
         tables = self.__get_table(self.url)
