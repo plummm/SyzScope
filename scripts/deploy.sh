@@ -36,7 +36,7 @@ if [ $# -ne 6 ]; then
 fi
 
 sudo apt-get update
-sudo apt-get install qemu-system-x86
+sudo apt-get -y install qemu-system-x86 debootstrap flex bison libssl-dev
 
 HASH=$2
 COMMIT=$3
@@ -79,10 +79,9 @@ if [ ! -f "$TOOLS_PATH/.stamp/MAKE_IMAGE" ]; then
   fi
   cd img
   if [ ! -f "stretch.img" ]; then
-    sudo apt-get -y install debootstrap
     wget https://raw.githubusercontent.com/google/syzkaller/master/tools/create-image.sh -O create-image.sh
     chmod +x create-image.sh
-    sudo ./create-image.sh
+    ./create-image.sh
     touch $TOOLS_PATH/.stamp/MAKE_IMAGE
   fi
 fi
@@ -102,7 +101,6 @@ cd $HASH || exit 1
 #Building kernel
 echo "[+] Building kernel"
 if [ ! -f "$TOOLS_PATH/.stamp/BUILD_KERNEL" ]; then
-  sudo apt-get -y install flex bison libssl-dev
   if [ ! -d "./linux" ]; then
     ln -s ../../tools/$1 ./linux
   fi
@@ -145,8 +143,10 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_SYZKALLER" ]; then
 fi
 
 set +x
+echo "------------------------------------------------------------------------------------"
 echo -e "\n\e[31mPlace following commands in your \e[33m.bash_profile/.bashrc/.zshrc \e[31mor other startup script\n\e[39m"
 echo "export GOPATH=$GOPATH"
 echo "export GOROOT=$GOROOT"
 echo "export PATH=\$GOROOT/bin:\$PATH"
+echo "------------------------------------------------------------------------------------"
 exit 0

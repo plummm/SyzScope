@@ -136,24 +136,6 @@ class Deployer:
                     break
         return res
 
-    def __adjust_url_for_bash(self, str):
-        str = self.__place_escape_before(str, '&')
-        str = self.__place_escape_before(str, '\?')
-        str = self.__place_escape_before(str, '=')
-        return str
-
-    def __place_escape_before(self, str, sym):
-        pattern = r"[^\\]{}".format(sym)
-        while(1):
-            tmp = str
-            m = re.search(pattern, tmp)
-            if m != None:
-                index = m.span()[0]+1
-                str = tmp[:index] + '\\' + tmp[index:]
-            else:
-                break
-        return str
-
     def __clean_stamps(self):
-        os.remove(os.path.join(os.getcwd(), "/tools/.stamp/BUILD_KERNEL"))
-        os.remove(os.path.join(os.getcwd(), "/tools/.stamp/BUILD_SYZKALLER"))
+        os.remove("{}/tools/.stamp/BUILD_KERNEL".format(os.getcwd()))
+        os.remove("{}/tools/.stamp/BUILD_SYZKALLER".format(os.getcwd()))
