@@ -148,20 +148,25 @@ index 5a181956..a92b9b3f 100644
  	p.sanitizeFix()
 diff --git a/prog/mutation_custom.go b/prog/mutation_custom.go
 new file mode 100644
-index 00000000..e354995b
+index 00000000..2abfc024
 --- /dev/null
 +++ b/prog/mutation_custom.go
-@@ -0,0 +1,184 @@
+@@ -0,0 +1,212 @@
 +package prog
 +
 +import (
 +	"fmt"
++	"strings"
 +)
 +
 +var NOfCalls = 0
++var PocProg string
 +
 +func (ctx *mutator) spliceCus() bool {
 +	p, r := ctx.p, ctx.r
++	if !containPoC(p.Serialize()) {
++		return ctx.splice()
++	}
 +	if len(ctx.corpus) == 0 || len(p.Calls)-NOfCalls <= 0 || len(p.Calls) >= ctx.ncalls {
 +		return false
 +	}
@@ -179,6 +184,9 @@ index 00000000..e354995b
 +// Subsequently, if the ANY contains blobs, mutates a random blob.
 +func (ctx *mutator) squashAnyCus() bool {
 +	p, r := ctx.p, ctx.r
++	if !containPoC(p.Serialize()) {
++		return ctx.squashAny()
++	}
 +	complexPtrs := p.complexPtrsCus()
 +	if len(complexPtrs) == 0 {
 +		return false
@@ -218,6 +226,9 @@ index 00000000..e354995b
 +
 +func (ctx *mutator) insertCallCus() bool {
 +	p, r := ctx.p, ctx.r
++	if !containPoC(p.Serialize()) {
++		return ctx.insertCall()
++	}
 +	if len(p.Calls) >= ctx.ncalls {
 +		return false
 +	}
@@ -241,6 +252,9 @@ index 00000000..e354995b
 +// Removes a random call from program.
 +func (ctx *mutator) removeCallCus() bool {
 +	p, r := ctx.p, ctx.r
++	if !containPoC(p.Serialize()) {
++		return ctx.removeCall()
++	}
 +	if len(p.Calls) == 0 {
 +		return false
 +	}
@@ -253,6 +267,9 @@ index 00000000..e354995b
 +func (ctx *mutator) mutateArgCus() bool {
 +	start := NOfCalls
 +	p, r := ctx.p, ctx.r
++	if !containPoC(p.Serialize()) {
++		return ctx.mutateArg()
++	}
 +	if len(p.Calls) == 0 {
 +		return false
 +	}
@@ -336,6 +353,17 @@ index 00000000..e354995b
 +	}
 +	return
 +}
++
++func containPoC(prog []byte) bool {
++	sProg := string(prog)
++	if len(sProg) < len(PocProg) {
++		return false
++	}
++	if strings.Compare(PocProg, sProg[:len(PocProg)]) == 0 {
++		return true
++	}
++	return false
++}
 diff --git a/syz-fuzzer/fuzzer.go b/syz-fuzzer/fuzzer.go
 index b6e8be4b..92eceb5d 100644
 --- a/syz-fuzzer/fuzzer.go
@@ -355,7 +383,7 @@ index b6e8be4b..92eceb5d 100644
  }
  
 diff --git a/syz-fuzzer/proc.go b/syz-fuzzer/proc.go
-index d815a58b..7529bdee 100644
+index d815a58b..85df90b6 100644
 --- a/syz-fuzzer/proc.go
 +++ b/syz-fuzzer/proc.go
 @@ -13,6 +13,7 @@ import (
@@ -406,7 +434,7 @@ index d815a58b..7529bdee 100644
  		proc.enqueueCallTriage(p, flags, callIndex, info.Calls[callIndex])
  	}
  	if extra {
-@@ -343,3 +361,36 @@ func (proc *Proc) logProgram(opts *ipc.ExecOpts, p *prog.Prog) {
+@@ -343,3 +361,37 @@ func (proc *Proc) logProgram(opts *ipc.ExecOpts, p *prog.Prog) {
  		log.Fatalf("unknown output type: %v", proc.fuzzer.outputType)
  	}
  }
@@ -435,6 +463,7 @@ index d815a58b..7529bdee 100644
 +			//fuzzer.addInputToCorpus(p, sign, sig)
 +			flags := ProgNormal
 +			prog.NOfCalls = len(p.Calls)
++			prog.PocProg = string(pq.Prog)
 +			proc.fuzzer.workQueue.enqueue(&WorkGrow{
 +				p:     p,
 +				flags: flags,
@@ -552,13 +581,14 @@ index 91e31dbd..6283d2a6 100644
 +}
 diff --git a/syz-manager/utilities.go b/syz-manager/utilities.go
 new file mode 100644
-index 00000000..b4f8c4db
+index 00000000..e48902ad
 --- /dev/null
 +++ b/syz-manager/utilities.go
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,54 @@
 +package main
 +
 +import (
++	"bytes"
 +	"io/ioutil"
 +	_ "net/http/pprof"
 +	"os"
@@ -577,10 +607,11 @@ index 00000000..b4f8c4db
 +				return err
 +			}
 +			defer fileCache.Close()
-+			testcase, err := ioutil.ReadFile(path)
++			testcase_raw, err := ioutil.ReadFile(path)
 +			if err != nil {
 +				return err
 +			}
++			testcase := removeComments(testcase_raw)
 +			log.Logf(0, "testcase: %s\n", testcase)
 +			appendTestcase(testcase)
 +			return nil
@@ -591,4 +622,20 @@ index 00000000..b4f8c4db
 +
 +func appendTestcase(testcase []byte) {
 +	courier.AppendMutatingQueue(testcase)
++}
++
++func removeComments(text []byte) []byte {
++	var res []byte
++	start := 0
++	lines := bytes.SplitAfter(text, []byte("\n"))
++	for i, line := range lines {
++		if line[0] != '#' {
++			start = i
++			break
++		}
++	}
++	for i := start; i < len(lines); i++ {
++		res = append(res, lines[i]...)
++	}
++	return res
 +}

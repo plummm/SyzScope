@@ -1,7 +1,8 @@
 from syzbotCrawler import Crawler
 from deploy import Deployer
+from subprocess import call
 
-import argparse
+import argparse, os, stat
 
 def args_parse():
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
@@ -34,9 +35,17 @@ def print_args_info(args):
     print("[*] max: {}".format(args.max))
     print("[*] key: {}".format(args.key))
 
+def check_kvm():
+    st = os.stat("scripts/check_kvm.sh")
+    os.chmod("scripts/check_kvm.sh", st.st_mode | stat.S_IEXEC)
+    r = call(['scripts/check_kvm.sh'], shell=False)
+    if r == 1:
+        exit(0)
+
 if __name__ == '__main__':
     args = args_parse()
     print_args_info(args)
+    check_kvm()
     crawler = Crawler(url=args.url, keyword=args.key, max_retrieve=int(args.max))
     if args.input != None:
         crawler.retreive_case(args.input)
