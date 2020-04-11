@@ -22,6 +22,10 @@ class Crawler:
         for hash in cases_hash:
             self.retreive_case(hash)
 
+    def run_one_case(self, hash):
+        self.cases[hash] = {}
+        self.retreive_case(hash)
+
     def retreive_case(self, hash):
         detail = self.request_detail(hash)
         if len(detail) < 4:

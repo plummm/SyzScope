@@ -144,7 +144,7 @@ fi
 
 set +x
 echo "------------------------------------------------------------------------------------"
-echo -e "\n\e[31mPlace following commands in your \e[33m.bash_profile/.bashrc/.zshrc \e[31mor other startup script\n\e[39m"
+echo -e "\e[31mPlace following commands in your \e[33m.bash_profile/.bashrc/.zshrc \e[31mor other startup script\n\e[39m"
 echo "export GOPATH=$GOPATH"
 echo "export GOROOT=$GOROOT"
 echo "export PATH=\$GOROOT/bin:\$PATH"
