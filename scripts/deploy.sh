@@ -84,6 +84,7 @@ if [ ! -f "$TOOLS_PATH/.stamp/MAKE_IMAGE" ]; then
     ./create-image.sh
     touch $TOOLS_PATH/.stamp/MAKE_IMAGE
   fi
+  cd ..
 fi
 
 #Back to work directory
