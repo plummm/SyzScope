@@ -1,6 +1,8 @@
 import re
 import os, stat
 import requests
+import shutil
+import syzbotCrawler
 
 from subprocess import call
 
@@ -30,23 +32,26 @@ syz_config_template="""
 class Deployer:
     def __init__(self):
         self.linux_path = "linux"
+        self.project_path = ""
         self.syzkaller_path = ""
         self.image_path = ""
+        self.current_case_path = ""
         self.kernel_path = ""
         self.clone_linux()
 
     def deploy(self, cases):
         for hash in cases:
             case = cases[hash]
-            hash = hash[:7]
-            r = self.__run_delopy_script(hash, case)
+            r = self.__run_delopy_script(hash[:7], case)
             if r == 1:
                 print("Error occur in deploy.sh")
                 return
-            self.syzkaller_path = "{}/tools/gopath/src/github.com/google/syzkaller".format(os.getcwd())
-            self.image_path = "{}/tools/img".format(os.getcwd())
-            self.kernel_path = "{}/work/{}/linux".format(os.getcwd(), hash)
-            self.__write_config(case["syz_repro"], hash)
+            self.project_path = os.getcwd()
+            self.syzkaller_path = "{}/tools/gopath/src/github.com/google/syzkaller".format(self.project_path)
+            self.image_path = "{}/tools/img".format(self.project_path)
+            self.current_case_path = "{}/work/{}".format(self.project_path, hash[:7])
+            self.kernel_path = "{}/linux".format(self.current_case_path)
+            self.__write_config(case["syz_repro"], hash[:7])
             self.run_syzkaller(hash)
 
     def clone_linux(self):
@@ -55,9 +60,10 @@ class Deployer:
     def run_syzkaller(self, hash, debug=False):
         syzkaller = os.path.join(self.syzkaller_path, "bin/syz-manager")
         if debug:
-            call([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash), "--debug"])
+            call([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash[:7]), "--debug"])
         else:
-            call([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash)])
+            call([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash[:7])])
+        self.__save_case(hash)
         self.__clean_stamps()
 
     def __run_linux_clone_script(self):
@@ -136,6 +142,22 @@ class Deployer:
                     break
         return res
 
+    def __save_case(self, hash):
+        self.__copy_crashes()
+        f = open(os.path.join(self.current_case_path, "info"), "w")
+        url = syzbotCrawler.syzbot_host_url + syzbotCrawler.syzbot_bug_base_url + hash
+        f.write(url)
+        f.close()
+
+        f = open(os.path.join(self.project_path, "work/success"), "a+")
+        f.write(hash+"\n")
+        f.close()
+
+    def __copy_crashes(self):
+        crash_path = "{}/workdir/crashes".format(self.syzkaller_path)
+        if os.path.isdir(crash_path):
+            shutil.copytree(crash_path, self.current_case_path)
+
     def __clean_stamps(self):
-        os.remove("{}/tools/.stamp/BUILD_KERNEL".format(os.getcwd()))
-        os.remove("{}/tools/.stamp/BUILD_SYZKALLER".format(os.getcwd()))
+        os.remove("{}/tools/.stamp/BUILD_KERNEL".format(self.project_path))
+        os.remove("{}/tools/.stamp/BUILD_SYZKALLER".format(self.project_path))
