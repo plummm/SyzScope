@@ -120,7 +120,7 @@ index 9a71dd06..e3f64e0c 100644
  			continue
  		}
 diff --git a/prog/mutation.go b/prog/mutation.go
-index f70a62cb..ce4c6e28 100644
+index c9f647ae..99ef27ac 100644
 --- a/prog/mutation.go
 +++ b/prog/mutation.go
 @@ -35,15 +35,17 @@ func (p *Prog) Mutate(rs rand.Source, ncalls int, ct *ChoiceTable, corpus []*Pro
@@ -444,7 +444,7 @@ index 38659aa7..02fa3cd1 100644
  	if needCandidates && len(r.Candidates) == 0 && atomic.LoadUint32(&fuzzer.triagedCandidates) == 0 {
  		atomic.StoreUint32(&fuzzer.triagedCandidates, 1)
 diff --git a/syz-fuzzer/proc.go b/syz-fuzzer/proc.go
-index cbac400a..c2f724f1 100644
+index 7cf222c6..f467cb6d 100644
 --- a/syz-fuzzer/proc.go
 +++ b/syz-fuzzer/proc.go
 @@ -13,6 +13,7 @@ import (
@@ -634,10 +634,18 @@ index 62648336..e31b664a 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index 65910b6d..51cab1a7 100644
+index dc1ce471..a4207b49 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
-@@ -268,6 +268,11 @@ func RunManager(cfg *mgrconfig.Config, target *prog.Target, sysTarget *targets.T
+@@ -16,6 +16,7 @@ import (
+ 	"sync"
+ 	"sync/atomic"
+ 	"time"
++	"strings"
+ 
+ 	"github.com/google/syzkaller/dashboard/dashapi"
+ 	"github.com/google/syzkaller/pkg/cover"
+@@ -266,6 +267,11 @@ func RunManager(cfg *mgrconfig.Config, target *prog.Target, sysTarget *targets.T
  		<-vm.Shutdown
  		return
  	}
@@ -649,19 +657,30 @@ index 65910b6d..51cab1a7 100644
  	mgr.vmLoop()
  }
  
+@@ -416,6 +422,10 @@ func (mgr *Manager) vmLoop() {
+ 				}
+ 			} else {
+ 				mgr.saveRepro(res.res, res.stats, res.hub)
++				log.Logf(0, "SaveRepro %s", res.report0.Title)
++				if strings.Contains(res.report0.Title, "slab-out-of-bounds Write") {
++					shutdown = nil
++				}
+ 			}
+ 		case <-shutdown:
+ 			log.Logf(1, "loop: shutting down...")
 diff --git a/syz-manager/rpc.go b/syz-manager/rpc.go
-index d52bbcc4..64dafddf 100644
+index 69d0d69a..3b5cc174 100644
 --- a/syz-manager/rpc.go
 +++ b/syz-manager/rpc.go
-@@ -10,6 +10,7 @@ import (
+@@ -7,6 +7,7 @@ import (
+ 	"net"
  	"sync"
- 	"time"
  
 +	"github.com/google/syzkaller/courier"
  	"github.com/google/syzkaller/pkg/cover"
  	"github.com/google/syzkaller/pkg/log"
  	"github.com/google/syzkaller/pkg/rpctype"
-@@ -305,3 +306,25 @@ func (serv *RPCServer) Poll(a *rpctype.PollArgs, r *rpctype.PollRes) error {
+@@ -188,3 +189,28 @@ func (serv *RPCServer) Poll(a *rpctype.PollArgs, r *rpctype.PollRes) error {
  		a.Name, len(r.Candidates), len(r.NewInputs), len(r.MaxSignal.Elems))
  	return nil
  }
@@ -682,7 +701,10 @@ index d52bbcc4..64dafddf 100644
 +
 +func (serv *RPCServer) RetrieveArgsQueue(a *rpctype.ProgQueue, pq *rpctype.ProgQueue) error {
 +	courier.Mutex.Lock()
-+	pq.Prog = courier.RetrieveFirstArg(courier.Mutating).([]byte)
++	p := courier.RetrieveFirstArg(courier.Mutating)
++	if p != nil {
++		pq.Prog = p.([]byte)
++	}
 +	courier.Mutex.Unlock()
 +	log.Logf(0, "Retrive %s\n", pq.Prog)
 +	return nil
