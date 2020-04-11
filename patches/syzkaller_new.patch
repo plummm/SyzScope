@@ -98,10 +98,10 @@ index fcc01a99..c4193696 100644
 +	Length int
 +}
 diff --git a/prog/minimization.go b/prog/minimization.go
-index 93a98655..6641b34c 100644
+index 9a71dd06..e3f64e0c 100644
 --- a/prog/minimization.go
 +++ b/prog/minimization.go
-@@ -29,7 +29,7 @@ func Minimize(p0 *Prog, callIndex0 int, crash bool, pred0 func(*Prog, int) bool)
+@@ -31,7 +31,7 @@ func Minimize(p0 *Prog, callIndex0 int, crash bool, pred0 func(*Prog, int) bool)
  	p0, callIndex0 = removeCalls(p0, callIndex0, crash, pred)
  
  	// Try to minimize individual args.
@@ -110,7 +110,7 @@ index 93a98655..6641b34c 100644
  		ctx := &minimizeArgsCtx{
  			target:     p0.Target,
  			p0:         &p0,
-@@ -58,7 +58,7 @@ func Minimize(p0 *Prog, callIndex0 int, crash bool, pred0 func(*Prog, int) bool)
+@@ -60,7 +60,7 @@ func Minimize(p0 *Prog, callIndex0 int, crash bool, pred0 func(*Prog, int) bool)
  }
  
  func removeCalls(p0 *Prog, callIndex0 int, crash bool, pred func(*Prog, int) bool) (*Prog, int) {
@@ -120,10 +120,10 @@ index 93a98655..6641b34c 100644
  			continue
  		}
 diff --git a/prog/mutation.go b/prog/mutation.go
-index 5a181956..a92b9b3f 100644
+index f70a62cb..ce4c6e28 100644
 --- a/prog/mutation.go
 +++ b/prog/mutation.go
-@@ -38,15 +38,17 @@ func (p *Prog) Mutate(rs rand.Source, ncalls int, ct *ChoiceTable, corpus []*Pro
+@@ -35,15 +35,17 @@ func (p *Prog) Mutate(rs rand.Source, ncalls int, ct *ChoiceTable, corpus []*Pro
  		case r.oneOf(5):
  			// Not all calls have anything squashable,
  			// so this has lower priority in reality.
@@ -145,7 +145,7 @@ index 5a181956..a92b9b3f 100644
 +			}
  		}
  	}
- 	p.sanitizeFix()
+ 	for _, c := range p.Calls {
 diff --git a/prog/mutation_custom.go b/prog/mutation_custom.go
 new file mode 100644
 index 00000000..2abfc024
@@ -365,10 +365,20 @@ index 00000000..2abfc024
 +	return false
 +}
 diff --git a/syz-fuzzer/fuzzer.go b/syz-fuzzer/fuzzer.go
-index b6e8be4b..92eceb5d 100644
+index 38659aa7..02fa3cd1 100644
 --- a/syz-fuzzer/fuzzer.go
 +++ b/syz-fuzzer/fuzzer.go
-@@ -259,6 +259,13 @@ func main() {
+@@ -102,6 +102,9 @@ const (
+ 	OutputFile
+ )
+ 
++var executePoCOnly = true
++var lastEnqueue time.Time
++
+ func main() {
+ 	debug.SetGCPercent(50)
+ 
+@@ -259,6 +262,13 @@ func main() {
  		go proc.loop()
  	}
  
@@ -382,8 +392,59 @@ index b6e8be4b..92eceb5d 100644
  	fuzzer.pollLoop()
  }
  
+@@ -327,6 +337,10 @@ func (fuzzer *Fuzzer) pollLoop() {
+ 			log.Logf(0, "alive, executed %v", execTotal)
+ 			lastPrint = time.Now()
+ 		}
++		if time.Since(lastEnqueue) > 3*time.Minute && time.Since(lastEnqueue) < 5*time.Minute && executePoCOnly {
++			log.Logf(0, "set fuzzer free")
++			executePoCOnly = false
++		}
+ 		if poll || time.Since(lastPoll) > 10*time.Second {
+ 			needCandidates := fuzzer.workQueue.wantCandidates()
+ 			if poll && !needCandidates {
+@@ -367,22 +381,24 @@ func (fuzzer *Fuzzer) poll(needCandidates bool, stats map[string]uint64) bool {
+ 	for _, inp := range r.NewInputs {
+ 		fuzzer.addInputFromAnotherFuzzer(inp)
+ 	}
+-	for _, candidate := range r.Candidates {
+-		p, err := fuzzer.target.Deserialize(candidate.Prog, prog.NonStrict)
+-		if err != nil {
+-			log.Fatalf("failed to parse program from manager: %v", err)
+-		}
+-		flags := ProgCandidate
+-		if candidate.Minimized {
+-			flags |= ProgMinimized
+-		}
+-		if candidate.Smashed {
+-			flags |= ProgSmashed
++	if !executePoCOnly {
++		for _, candidate := range r.Candidates {
++			p, err := fuzzer.target.Deserialize(candidate.Prog, prog.NonStrict)
++			if err != nil {
++				log.Fatalf("failed to parse program from manager: %v", err)
++			}
++			flags := ProgCandidate
++			if candidate.Minimized {
++				flags |= ProgMinimized
++			}
++			if candidate.Smashed {
++				flags |= ProgSmashed
++			}
++			fuzzer.workQueue.enqueue(&WorkCandidate{
++				p:     p,
++				flags: flags,
++			})
+ 		}
+-		fuzzer.workQueue.enqueue(&WorkCandidate{
+-			p:     p,
+-			flags: flags,
+-		})
+ 	}
+ 	if needCandidates && len(r.Candidates) == 0 && atomic.LoadUint32(&fuzzer.triagedCandidates) == 0 {
+ 		atomic.StoreUint32(&fuzzer.triagedCandidates, 1)
 diff --git a/syz-fuzzer/proc.go b/syz-fuzzer/proc.go
-index d815a58b..85df90b6 100644
+index cbac400a..c2f724f1 100644
 --- a/syz-fuzzer/proc.go
 +++ b/syz-fuzzer/proc.go
 @@ -13,6 +13,7 @@ import (
@@ -394,7 +455,7 @@ index d815a58b..85df90b6 100644
  	"github.com/google/syzkaller/pkg/cover"
  	"github.com/google/syzkaller/pkg/hash"
  	"github.com/google/syzkaller/pkg/ipc"
-@@ -76,6 +77,8 @@ func (proc *Proc) loop() {
+@@ -80,29 +81,45 @@ func (proc *Proc) loop() {
  				proc.execute(proc.execOpts, item.p, item.flags, StatCandidate)
  			case *WorkSmash:
  				proc.smashInput(item)
@@ -403,7 +464,38 @@ index d815a58b..85df90b6 100644
  			default:
  				log.Fatalf("unknown work type: %#v", item)
  			}
-@@ -99,6 +102,18 @@ func (proc *Proc) loop() {
+ 			continue
+ 		}
+ 
+-		ct := proc.fuzzer.choiceTable
+-		fuzzerSnapshot := proc.fuzzer.snapshot()
+-		if len(fuzzerSnapshot.corpus) == 0 || i%generatePeriod == 0 {
+-			// Generate a new prog.
+-			p := proc.fuzzer.target.Generate(proc.rnd, programLength, ct)
+-			log.Logf(1, "#%v: generated", proc.pid)
+-			proc.execute(proc.execOpts, p, ProgNormal, StatGenerate)
+-		} else {
+-			// Mutate an existing prog.
+-			p := fuzzerSnapshot.chooseProgram(proc.rnd).Clone()
+-			p.Mutate(proc.rnd, programLength, ct, fuzzerSnapshot.corpus)
+-			log.Logf(1, "#%v: mutated", proc.pid)
+-			proc.execute(proc.execOpts, p, ProgNormal, StatFuzz)
++		if !executePoCOnly {
++			ct := proc.fuzzer.choiceTable
++			fuzzerSnapshot := proc.fuzzer.snapshot()
++			if len(fuzzerSnapshot.corpus) == 0 || i%generatePeriod == 0 {
++				// Generate a new prog.
++				p := proc.fuzzer.target.Generate(proc.rnd, programLength, ct)
++				log.Logf(1, "#%v: generated", proc.pid)
++				proc.execute(proc.execOpts, p, ProgNormal, StatGenerate)
++			} else {
++				// Mutate an existing prog.
++				p := fuzzerSnapshot.chooseProgram(proc.rnd).Clone()
++				p.Mutate(proc.rnd, programLength, ct, fuzzerSnapshot.corpus)
++				log.Logf(1, "#%v: mutated", proc.pid)
++				proc.execute(proc.execOpts, p, ProgNormal, StatFuzz)
++			}
+ 		}
  	}
  }
  
@@ -422,7 +514,7 @@ index d815a58b..85df90b6 100644
  func (proc *Proc) triageInput(item *WorkTriage) {
  	log.Logf(1, "#%v: triaging type=%x", proc.pid, item.flags)
  
-@@ -250,7 +265,10 @@ func (proc *Proc) executeHintSeed(p *prog.Prog, call int) {
+@@ -254,7 +271,10 @@ func (proc *Proc) executeHintSeed(p *prog.Prog, call int) {
  func (proc *Proc) execute(execOpts *ipc.ExecOpts, p *prog.Prog, flags ProgTypes, stat Stat) *ipc.ProgInfo {
  	info := proc.executeRaw(execOpts, p, stat)
  	calls, extra := proc.fuzzer.checkNewSignal(p, info)
@@ -434,7 +526,7 @@ index d815a58b..85df90b6 100644
  		proc.enqueueCallTriage(p, flags, callIndex, info.Calls[callIndex])
  	}
  	if extra {
-@@ -343,3 +361,37 @@ func (proc *Proc) logProgram(opts *ipc.ExecOpts, p *prog.Prog) {
+@@ -347,3 +367,37 @@ func (proc *Proc) logProgram(opts *ipc.ExecOpts, p *prog.Prog) {
  		log.Fatalf("unknown output type: %v", proc.fuzzer.outputType)
  	}
  }
@@ -473,10 +565,18 @@ index d815a58b..85df90b6 100644
 +	}
 +}
 diff --git a/syz-fuzzer/workqueue.go b/syz-fuzzer/workqueue.go
-index 62648336..c8e9a1cd 100644
+index 62648336..e31b664a 100644
 --- a/syz-fuzzer/workqueue.go
 +++ b/syz-fuzzer/workqueue.go
-@@ -20,6 +20,7 @@ type WorkQueue struct {
+@@ -5,6 +5,7 @@ package main
+ 
+ import (
+ 	"sync"
++	"time"
+ 
+ 	"github.com/google/syzkaller/pkg/ipc"
+ 	"github.com/google/syzkaller/prog"
+@@ -20,6 +21,7 @@ type WorkQueue struct {
  	candidate       []*WorkCandidate
  	triage          []*WorkTriage
  	smash           []*WorkSmash
@@ -484,7 +584,7 @@ index 62648336..c8e9a1cd 100644
  
  	procs          int
  	needCandidates chan struct{}
-@@ -61,6 +62,11 @@ type WorkSmash struct {
+@@ -61,6 +63,11 @@ type WorkSmash struct {
  	call int
  }
  
@@ -496,7 +596,15 @@ index 62648336..c8e9a1cd 100644
  func newWorkQueue(procs int, needCandidates chan struct{}) *WorkQueue {
  	return &WorkQueue{
  		procs:          procs,
-@@ -82,6 +88,8 @@ func (wq *WorkQueue) enqueue(item interface{}) {
+@@ -71,6 +78,7 @@ func newWorkQueue(procs int, needCandidates chan struct{}) *WorkQueue {
+ func (wq *WorkQueue) enqueue(item interface{}) {
+ 	wq.mu.Lock()
+ 	defer wq.mu.Unlock()
++	lastEnqueue = time.Now()
+ 	switch item := item.(type) {
+ 	case *WorkTriage:
+ 		if item.flags&ProgCandidate != 0 {
+@@ -82,6 +90,8 @@ func (wq *WorkQueue) enqueue(item interface{}) {
  		wq.candidate = append(wq.candidate, item)
  	case *WorkSmash:
  		wq.smash = append(wq.smash, item)
@@ -505,7 +613,7 @@ index 62648336..c8e9a1cd 100644
  	default:
  		panic("unknown work type")
  	}
-@@ -89,7 +97,7 @@ func (wq *WorkQueue) enqueue(item interface{}) {
+@@ -89,7 +99,7 @@ func (wq *WorkQueue) enqueue(item interface{}) {
  
  func (wq *WorkQueue) dequeue() (item interface{}) {
  	wq.mu.RLock()
@@ -514,7 +622,7 @@ index 62648336..c8e9a1cd 100644
  		wq.mu.RUnlock()
  		return nil
  	}
-@@ -113,6 +121,10 @@ func (wq *WorkQueue) dequeue() (item interface{}) {
+@@ -113,6 +123,10 @@ func (wq *WorkQueue) dequeue() (item interface{}) {
  		last := len(wq.smash) - 1
  		item = wq.smash[last]
  		wq.smash = wq.smash[:last]
@@ -526,10 +634,10 @@ index 62648336..c8e9a1cd 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index 2a0b7dd4..443fe3e9 100644
+index 65910b6d..51cab1a7 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
-@@ -267,6 +267,11 @@ func RunManager(cfg *mgrconfig.Config, target *prog.Target, sysTarget *targets.T
+@@ -268,6 +268,11 @@ func RunManager(cfg *mgrconfig.Config, target *prog.Target, sysTarget *targets.T
  		<-vm.Shutdown
  		return
  	}
@@ -542,7 +650,7 @@ index 2a0b7dd4..443fe3e9 100644
  }
  
 diff --git a/syz-manager/rpc.go b/syz-manager/rpc.go
-index 91e31dbd..6283d2a6 100644
+index d52bbcc4..64dafddf 100644
 --- a/syz-manager/rpc.go
 +++ b/syz-manager/rpc.go
 @@ -10,6 +10,7 @@ import (
@@ -553,7 +661,7 @@ index 91e31dbd..6283d2a6 100644
  	"github.com/google/syzkaller/pkg/cover"
  	"github.com/google/syzkaller/pkg/log"
  	"github.com/google/syzkaller/pkg/rpctype"
-@@ -309,3 +310,25 @@ func (serv *RPCServer) Poll(a *rpctype.PollArgs, r *rpctype.PollRes) error {
+@@ -305,3 +306,25 @@ func (serv *RPCServer) Poll(a *rpctype.PollArgs, r *rpctype.PollRes) error {
  		a.Name, len(r.Candidates), len(r.NewInputs), len(r.MaxSignal.Elems))
  	return nil
  }
