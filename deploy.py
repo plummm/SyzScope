@@ -155,8 +155,9 @@ class Deployer:
 
     def __copy_crashes(self):
         crash_path = "{}/workdir/crashes".format(self.syzkaller_path)
+        dest_path = "{}/crashes".format(self.current_case_path)
         if os.path.isdir(crash_path):
-            shutil.copytree(crash_path, self.current_case_path)
+            shutil.copytree(crash_path, dest_path)
 
     def __clean_stamps(self):
         os.remove("{}/tools/.stamp/BUILD_KERNEL".format(self.project_path))
