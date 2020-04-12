@@ -67,7 +67,7 @@ index 00000000..9808fcc0
 +	return nil
 +}
 diff --git a/pkg/mgrconfig/mgrconfig.go b/pkg/mgrconfig/mgrconfig.go
-index 8859ac7e..7bd7aaf1 100644
+index e4c9efc0..43239669 100644
 --- a/pkg/mgrconfig/mgrconfig.go
 +++ b/pkg/mgrconfig/mgrconfig.go
 @@ -93,6 +93,7 @@ type Config struct {
@@ -79,7 +79,7 @@ index 8859ac7e..7bd7aaf1 100644
  
  func LoadData(data []byte) (*Config, error) {
 diff --git a/pkg/rpctype/rpctype.go b/pkg/rpctype/rpctype.go
-index 66b61601..7140781b 100644
+index 61d98dac..1d45801c 100644
 --- a/pkg/rpctype/rpctype.go
 +++ b/pkg/rpctype/rpctype.go
 @@ -127,3 +127,16 @@ type RunTestDoneArgs struct {
@@ -100,7 +100,7 @@ index 66b61601..7140781b 100644
 +	Length int
 +}
 diff --git a/prog/minimization.go b/prog/minimization.go
-index 1762bbba..dda15bcd 100644
+index 5f3e9f60..d7e0d1bf 100644
 --- a/prog/minimization.go
 +++ b/prog/minimization.go
 @@ -31,7 +31,7 @@ func Minimize(p0 *Prog, callIndex0 int, crash bool, pred0 func(*Prog, int) bool)
@@ -122,10 +122,17 @@ index 1762bbba..dda15bcd 100644
  			continue
  		}
 diff --git a/prog/mutation.go b/prog/mutation.go
-index 86cf487a..76d8bcf1 100644
+index 86cf487a..36671ec2 100644
 --- a/prog/mutation.go
 +++ b/prog/mutation.go
-@@ -25,15 +25,17 @@ func (p *Prog) Mutate(rs rand.Source, ncalls int, ct *ChoiceTable, corpus []*Pro
+@@ -21,19 +21,24 @@ func (p *Prog) Mutate(rs rand.Source, ncalls int, ct *ChoiceTable, corpus []*Pro
+ 		corpus: corpus,
+ 	}
+ 	for stop, ok := false, false; !stop; stop = ok && r.oneOf(3) {
++		if len(p.Calls) == NOfCalls {
++			ctx.insertCallAtEnd()
++		}
+ 		switch {
  		case r.oneOf(5):
  			// Not all calls have anything squashable,
  			// so this has lower priority in reality.
@@ -150,15 +157,16 @@ index 86cf487a..76d8bcf1 100644
  	for _, c := range p.Calls {
 diff --git a/prog/mutation_custom.go b/prog/mutation_custom.go
 new file mode 100644
-index 00000000..2abfc024
+index 00000000..5ffd1791
 --- /dev/null
 +++ b/prog/mutation_custom.go
-@@ -0,0 +1,212 @@
+@@ -0,0 +1,203 @@
 +package prog
 +
 +import (
-+	"fmt"
 +	"strings"
++
++	"github.com/google/syzkaller/pkg/log"
 +)
 +
 +var NOfCalls = 0
@@ -166,6 +174,7 @@ index 00000000..2abfc024
 +
 +func (ctx *mutator) spliceCus() bool {
 +	p, r := ctx.p, ctx.r
++	log.Logf(0, "[+] spliceCus")
 +	if !containPoC(p.Serialize()) {
 +		return ctx.splice()
 +	}
@@ -186,6 +195,7 @@ index 00000000..2abfc024
 +// Subsequently, if the ANY contains blobs, mutates a random blob.
 +func (ctx *mutator) squashAnyCus() bool {
 +	p, r := ctx.p, ctx.r
++	log.Logf(0, "[+] squashAnyCus")
 +	if !containPoC(p.Serialize()) {
 +		return ctx.squashAny()
 +	}
@@ -219,15 +229,39 @@ index 00000000..2abfc024
 +	arg.data = mutateData(r, arg.Data(), 0, maxBlobLen)
 +	// Update base pointer if size has increased.
 +	if baseSize < base.Res.Size() {
-+		s := analyze(ctx.ct, ctx.corpus, p, p.Calls[0])
++		s := analyze(ctx.ct, p, p.Calls[0])
 +		newArg := r.allocAddr(s, base.Type(), base.Res.Size(), base.Res)
 +		*base = *newArg
 +	}
 +	return true
 +}
 +
++func (ctx *mutator) insertCallAtEnd() bool {
++	p, r := ctx.p, ctx.r
++	log.Logf(0, "[+] insertCallAtEnd")
++	if !containPoC(p.Serialize()) {
++		return ctx.insertCall()
++	}
++	if len(p.Calls) >= ctx.ncalls {
++		return false
++	}
++	idx := len(p.Calls)
++	var c *Call
++	if idx < len(p.Calls) {
++		c = p.Calls[idx]
++	}
++	s := analyze(ctx.ct, p, c)
++	calls := r.generateCall(s, p)
++	p.insertBefore(c, calls)
++	for len(p.Calls) > ctx.ncalls {
++		p.removeCall(idx)
++	}
++	return true
++}
++
 +func (ctx *mutator) insertCallCus() bool {
 +	p, r := ctx.p, ctx.r
++	log.Logf(0, "[+] insertCallCus")
 +	if !containPoC(p.Serialize()) {
 +		return ctx.insertCall()
 +	}
@@ -242,8 +276,8 @@ index 00000000..2abfc024
 +	if idx < len(p.Calls) {
 +		c = p.Calls[idx]
 +	}
-+	s := analyze(ctx.ct, ctx.corpus, p, c)
-+	calls := r.generateCall(s, p, idx)
++	s := analyze(ctx.ct, p, c)
++	calls := r.generateCall(s, p)
 +	p.insertBefore(c, calls)
 +	for len(p.Calls) > ctx.ncalls {
 +		p.removeCall(idx)
@@ -254,6 +288,7 @@ index 00000000..2abfc024
 +// Removes a random call from program.
 +func (ctx *mutator) removeCallCus() bool {
 +	p, r := ctx.p, ctx.r
++	log.Logf(0, "[+] removeCallCus")
 +	if !containPoC(p.Serialize()) {
 +		return ctx.removeCall()
 +	}
@@ -267,19 +302,19 @@ index 00000000..2abfc024
 +
 +// Mutate an argument of a random call.
 +func (ctx *mutator) mutateArgCus() bool {
-+	start := NOfCalls
 +	p, r := ctx.p, ctx.r
++	log.Logf(0, "[+] mutateArgCus")
 +	if !containPoC(p.Serialize()) {
 +		return ctx.mutateArg()
 +	}
 +	if len(p.Calls) == 0 {
 +		return false
 +	}
-+	idx := chooseCallCus(p, r, start)
-+	if idx < 0 {
++	c := p.Calls[r.Intn(len(p.Calls)-NOfCalls)+NOfCalls]
++	if len(c.Args) == 0 {
 +		return false
 +	}
-+	c := p.Calls[idx]
++	s := analyze(ctx.ct, p, c)
 +	updateSizes := true
 +	for stop, ok := false, false; !stop; stop = ok && r.oneOf(3) {
 +		ok = true
@@ -288,57 +323,20 @@ index 00000000..2abfc024
 +		if len(ma.args) == 0 {
 +			return false
 +		}
-+		s := analyze(ctx.ct, ctx.corpus, p, c)
-+		chosenIdx := randomChoice(ma.priorities, r)
-+		arg, argCtx := ma.args[chosenIdx], ma.ctxes[chosenIdx]
-+		calls, ok1 := p.Target.mutateArg(r, s, arg, argCtx, &updateSizes)
++		idx := r.Intn(len(ma.args))
++		arg, ctx := ma.args[idx], ma.ctxes[idx]
++		calls, ok1 := p.Target.mutateArg(r, s, arg, ctx, &updateSizes)
 +		if !ok1 {
 +			ok = false
 +			continue
 +		}
 +		p.insertBefore(c, calls)
-+		idx += len(calls)
-+		for len(p.Calls) > ctx.ncalls {
-+			idx--
-+			p.removeCall(idx)
-+		}
-+		if idx < 0 || idx >= len(p.Calls) || p.Calls[idx] != c {
-+			panic(fmt.Sprintf("wrong call index: idx=%v calls=%v p.Calls=%v ncalls=%v",
-+				idx, len(calls), len(p.Calls), ctx.ncalls))
-+		}
 +		if updateSizes {
 +			p.Target.assignSizesCall(c)
 +		}
++		p.Target.SanitizeCall(c)
 +	}
 +	return true
-+}
-+
-+// Select a call based on the complexity of the arguments.
-+func chooseCallCus(p *Prog, r *randGen, start int) int {
-+	var callPriorities []float64
-+	noArgs := true
-+
-+	for i, c := range p.Calls {
-+		if i < start {
-+			continue
-+		}
-+		totalPrio := float64(0)
-+		ForeachArg(c, func(arg Arg, ctx *ArgCtx) {
-+			prio, stopRecursion := arg.Type().getMutationPrio(p.Target, arg, false)
-+			totalPrio += prio
-+			ctx.Stop = stopRecursion
-+		})
-+		callPriorities = append(callPriorities, totalPrio)
-+		if len(c.Args) > 0 {
-+			noArgs = false
-+		}
-+	}
-+
-+	// Calls without arguments.
-+	if noArgs {
-+		return -1
-+	}
-+	return start + randomChoice(callPriorities, r)
 +}
 +
 +func (p *Prog) complexPtrsCus() (res []*PointerArg) {
@@ -367,10 +365,10 @@ index 00000000..2abfc024
 +	return false
 +}
 diff --git a/syz-fuzzer/fuzzer.go b/syz-fuzzer/fuzzer.go
-index 177755b1..aff0ec50 100644
+index 6c581cb9..99278970 100644
 --- a/syz-fuzzer/fuzzer.go
 +++ b/syz-fuzzer/fuzzer.go
-@@ -89,6 +89,9 @@ const (
+@@ -92,6 +92,9 @@ const (
  	OutputFile
  )
  
@@ -380,7 +378,7 @@ index 177755b1..aff0ec50 100644
  func main() {
  	debug.SetGCPercent(50)
  
-@@ -236,6 +239,13 @@ func main() {
+@@ -246,6 +249,13 @@ func main() {
  		go proc.loop()
  	}
  
@@ -394,7 +392,7 @@ index 177755b1..aff0ec50 100644
  	fuzzer.pollLoop()
  }
  
-@@ -256,6 +266,10 @@ func (fuzzer *Fuzzer) pollLoop() {
+@@ -290,6 +300,10 @@ func (fuzzer *Fuzzer) pollLoop() {
  			log.Logf(0, "alive, executed %v", execTotal)
  			lastPrint = time.Now()
  		}
@@ -405,51 +403,26 @@ index 177755b1..aff0ec50 100644
  		if poll || time.Since(lastPoll) > 10*time.Second {
  			needCandidates := fuzzer.workQueue.wantCandidates()
  			if poll && !needCandidates {
-@@ -296,22 +310,24 @@ func (fuzzer *Fuzzer) poll(needCandidates bool, stats map[string]uint64) bool {
- 	for _, inp := range r.NewInputs {
+@@ -331,6 +345,9 @@ func (fuzzer *Fuzzer) poll(needCandidates bool, stats map[string]uint64) bool {
  		fuzzer.addInputFromAnotherFuzzer(inp)
  	}
--	for _, candidate := range r.Candidates {
--		p, err := fuzzer.target.Deserialize(candidate.Prog)
--		if err != nil {
--			log.Fatalf("failed to parse program from manager: %v", err)
--		}
--		flags := ProgCandidate
--		if candidate.Minimized {
--			flags |= ProgMinimized
--		}
--		if candidate.Smashed {
--			flags |= ProgSmashed
-+	if !executePoCOnly {
-+		for _, candidate := range r.Candidates {
-+			p, err := fuzzer.target.Deserialize(candidate.Prog)
-+			if err != nil {
-+				log.Fatalf("failed to parse program from manager: %v", err)
-+			}
-+			flags := ProgCandidate
-+			if candidate.Minimized {
-+				flags |= ProgMinimized
-+			}
-+			if candidate.Smashed {
-+				flags |= ProgSmashed
-+			}
-+			fuzzer.workQueue.enqueue(&WorkCandidate{
-+				p:     p,
-+				flags: flags,
-+			})
- 		}
--		fuzzer.workQueue.enqueue(&WorkCandidate{
--			p:     p,
--			flags: flags,
--		})
- 	}
- 	return len(r.NewInputs) != 0 || len(r.Candidates) != 0 || maxSignal.Len() != 0
- }
+ 	for _, candidate := range r.Candidates {
++		if !executePoCOnly {
++			break
++		}
+ 		p, err := fuzzer.target.Deserialize(candidate.Prog, prog.NonStrict)
+ 		if err != nil {
+ 			log.Fatalf("failed to parse program from manager: %v", err)
 diff --git a/syz-fuzzer/proc.go b/syz-fuzzer/proc.go
-index 2ad6a172..b0780f5e 100644
+index 3b884b2a..318fc5f2 100644
 --- a/syz-fuzzer/proc.go
 +++ b/syz-fuzzer/proc.go
-@@ -13,6 +13,7 @@ import (
+@@ -9,10 +9,12 @@ import (
+ 	"math/rand"
+ 	"os"
+ 	"runtime/debug"
++	"strings"
+ 	"sync/atomic"
  	"syscall"
  	"time"
  
@@ -457,7 +430,7 @@ index 2ad6a172..b0780f5e 100644
  	"github.com/google/syzkaller/pkg/cover"
  	"github.com/google/syzkaller/pkg/hash"
  	"github.com/google/syzkaller/pkg/ipc"
-@@ -80,29 +81,45 @@ func (proc *Proc) loop() {
+@@ -80,12 +82,17 @@ func (proc *Proc) loop() {
  				proc.execute(proc.execOpts, item.p, item.flags, StatCandidate)
  			case *WorkSmash:
  				proc.smashInput(item)
@@ -469,41 +442,18 @@ index 2ad6a172..b0780f5e 100644
  			continue
  		}
  
--		ct := proc.fuzzer.choiceTable
--		corpus := proc.fuzzer.corpusSnapshot()
--		if len(corpus) == 0 || i%generatePeriod == 0 {
--			// Generate a new prog.
--			p := proc.fuzzer.target.Generate(proc.rnd, programLength, ct)
--			log.Logf(1, "#%v: generated", proc.pid)
--			proc.execute(proc.execOpts, p, ProgNormal, StatGenerate)
--		} else {
--			// Mutate an existing prog.
--			p := corpus[proc.rnd.Intn(len(corpus))].Clone()
--			p.Mutate(proc.rnd, programLength, ct, corpus)
--			log.Logf(1, "#%v: mutated", proc.pid)
--			proc.execute(proc.execOpts, p, ProgNormal, StatFuzz)
 +		if !executePoCOnly {
-+			ct := proc.fuzzer.choiceTable
-+			corpus := proc.fuzzer.corpusSnapshot()
-+			if len(corpus) == 0 || i%generatePeriod == 0 {
-+				// Generate a new prog.
-+				p := proc.fuzzer.target.Generate(proc.rnd, programLength, ct)
-+				log.Logf(1, "#%v: generated", proc.pid)
-+				proc.execute(proc.execOpts, p, ProgNormal, StatGenerate)
-+			} else {
-+				// Mutate an existing prog.
-+				p := corpus[proc.rnd.Intn(len(corpus))].Clone()
-+				p.Mutate(proc.rnd, programLength, ct, corpus)
-+				log.Logf(1, "#%v: mutated", proc.pid)
-+				proc.execute(proc.execOpts, p, ProgNormal, StatFuzz)
-+			}
- 		}
++			continue
++		}
+ 		ct := proc.fuzzer.choiceTable
+ 		corpus := proc.fuzzer.corpusSnapshot()
+ 		if len(corpus) == 0 || i%generatePeriod == 0 {
+@@ -103,6 +110,17 @@ func (proc *Proc) loop() {
  	}
  }
  
 +func (proc *Proc) growInput(execOpts *ipc.ExecOpts, item *WorkGrow, stat Stat) {
 +	log.Logf(1, "#%v: growInput type=%x", proc.pid, item.flags)
-+
 +	proc.executeRaw(execOpts, item.p, stat)
 +	corpus := proc.fuzzer.corpusSnapshot()
 +	for i := 0; i < 100; i++ {
@@ -516,19 +466,19 @@ index 2ad6a172..b0780f5e 100644
  func (proc *Proc) triageInput(item *WorkTriage) {
  	log.Logf(1, "#%v: triaging type=%x", proc.pid, item.flags)
  
-@@ -232,7 +249,10 @@ func (proc *Proc) executeHintSeed(p *prog.Prog, call int) {
- 
+@@ -254,7 +272,10 @@ func (proc *Proc) executeHintSeed(p *prog.Prog, call int) {
  func (proc *Proc) execute(execOpts *ipc.ExecOpts, p *prog.Prog, flags ProgTypes, stat Stat) *ipc.ProgInfo {
  	info := proc.executeRaw(execOpts, p, stat)
--	for _, callIndex := range proc.fuzzer.checkNewSignal(p, info) {
-+	for i, callIndex := range proc.fuzzer.checkNewSignal(p, info) {
+ 	calls, extra := proc.fuzzer.checkNewSignal(p, info)
+-	for _, callIndex := range calls {
++	for i, callIndex := range calls {
 +		if i < prog.NOfCalls {
 +			continue
 +		}
- 		info := info.Calls[callIndex]
- 		// info.Signal points to the output shmem region, detach it before queueing.
- 		info.Signal = append([]uint32{}, info.Signal...)
-@@ -325,3 +345,37 @@ func (proc *Proc) logProgram(opts *ipc.ExecOpts, p *prog.Prog) {
+ 		proc.enqueueCallTriage(p, flags, callIndex, info.Calls[callIndex])
+ 	}
+ 	if extra {
+@@ -347,3 +368,38 @@ func (proc *Proc) logProgram(opts *ipc.ExecOpts, p *prog.Prog) {
  		log.Fatalf("unknown output type: %v", proc.fuzzer.outputType)
  	}
  }
@@ -552,12 +502,13 @@ index 2ad6a172..b0780f5e 100644
 +			if err != nil {
 +				log.Fatalf("checkArgsQueueLoop: failed to parse program from manager: %v", err)
 +			}
-+			//sig := hash.Hash(pq.Prog)
-+			//sign := pq.Prog.Signal.Deserialize()
-+			//fuzzer.addInputToCorpus(p, sign, sig)
 +			flags := ProgNormal
 +			prog.NOfCalls = len(p.Calls)
 +			prog.PocProg = string(pq.Prog)
++			if strings.Compare(string(pq.Prog), string(p.Serialize())) != 0 {
++				prog.PocProg = string(p.Serialize())
++				log.Logf(0, "Prog is not minimized\n")
++			}
 +			proc.fuzzer.workQueue.enqueue(&WorkGrow{
 +				p:     p,
 +				flags: flags,
@@ -636,18 +587,18 @@ index 62648336..e31b664a 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index b3d2ede9..ef02cf06 100644
+index f92b5172..05005b74 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
-@@ -18,6 +18,7 @@ import (
+@@ -16,6 +16,7 @@ import (
+ 	"sync"
  	"sync/atomic"
  	"time"
++	"strings"
  
-+	"github.com/google/syzbot/courier"
  	"github.com/google/syzkaller/dashboard/dashapi"
  	"github.com/google/syzkaller/pkg/cover"
- 	"github.com/google/syzkaller/pkg/csource"
-@@ -293,6 +294,11 @@ func RunManager(cfg *mgrconfig.Config, target *prog.Target, sysTarget *targets.T
+@@ -264,6 +265,11 @@ func RunManager(cfg *mgrconfig.Config, target *prog.Target, sysTarget *targets.T
  		<-vm.Shutdown
  		return
  	}
@@ -659,7 +610,7 @@ index b3d2ede9..ef02cf06 100644
  	mgr.vmLoop()
  }
  
-@@ -436,6 +442,10 @@ func (mgr *Manager) vmLoop() {
+@@ -414,6 +420,10 @@ func (mgr *Manager) vmLoop() {
  				}
  			} else {
  				mgr.saveRepro(res.res, res.stats, res.hub)
@@ -670,12 +621,24 @@ index b3d2ede9..ef02cf06 100644
  			}
  		case <-shutdown:
  			log.Logf(1, "loop: shutting down...")
-@@ -1188,3 +1198,25 @@ func publicWebAddr(addr string) string {
- 	}
- 	return "http://" + addr
+diff --git a/syz-manager/rpc.go b/syz-manager/rpc.go
+index ed7a7811..650ff34e 100644
+--- a/syz-manager/rpc.go
++++ b/syz-manager/rpc.go
+@@ -7,6 +7,7 @@ import (
+ 	"net"
+ 	"sync"
+ 
++	"github.com/google/syzkaller/courier"
+ 	"github.com/google/syzkaller/pkg/cover"
+ 	"github.com/google/syzkaller/pkg/log"
+ 	"github.com/google/syzkaller/pkg/rpctype"
+@@ -173,3 +174,28 @@ func (serv *RPCServer) Poll(a *rpctype.PollArgs, r *rpctype.PollRes) error {
+ 		a.Name, len(r.Candidates), len(r.NewInputs), len(r.MaxSignal.Elems))
+ 	return nil
  }
 +
-+func (mgr *Manager) GetQueueLen(a *rpctype.GetQueueLenArgs, r *rpctype.GetQueueLenRes) error {
++func (serv *RPCServer) GetQueueLen(a *rpctype.GetQueueLenArgs, r *rpctype.GetQueueLenRes) error {
 +	switch a.Flag {
 +	case courier.Mutating:
 +		r.Length = len(courier.MutateArgsQueue)
@@ -689,9 +652,12 @@ index b3d2ede9..ef02cf06 100644
 +	return nil
 +}
 +
-+func (mgr *Manager) RetrieveArgsQueue(a *rpctype.ProgQueue, pq *rpctype.ProgQueue) error {
++func (serv *RPCServer) RetrieveArgsQueue(a *rpctype.ProgQueue, pq *rpctype.ProgQueue) error {
 +	courier.Mutex.Lock()
-+	pq.Prog = courier.RetrieveFirstArg(courier.Mutating).([]byte)
++	p := courier.RetrieveFirstArg(courier.Mutating)
++	if p != nil {
++		pq.Prog = p.([]byte)
++	}
 +	courier.Mutex.Unlock()
 +	log.Logf(0, "Retrive %s\n", pq.Prog)
 +	return nil

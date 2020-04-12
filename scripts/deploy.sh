@@ -5,6 +5,8 @@
 
 set -ex
 
+LATEST="9b1f3e6"
+
 function set_git_config() {
   set +x
   echo "set user.email for git config"
@@ -28,6 +30,23 @@ function build_golang() {
     mkdir gopath
   fi
   rm go1.14.2.linux-amd64.tar.gz
+}
+
+function back_to_newest_version() {
+  git checkout $LATEST
+  cp $PATCHES_PATH/syzkaller-9b1f3e6.patch ./syzkaller.patch
+}
+
+function retrieve_proper_patch() {
+  git rev-list HEAD | grep $(git rev-parse b5df78d) || back_to_newest_version
+  git rev-list b5df78d | grep $(git rev-parse HEAD) || cp $PATCHES_PATH/syzkaller-b5df78d.patch ./syzkaller.patch
+  git rev-list 4d4a442 | grep $(git rev-parse HEAD) || cp $PATCHES_PATH/syzkaller-4d4a442.patch ./syzkaller.patch
+  git rev-list e503f04 | grep $(git rev-parse HEAD) || cp $PATCHES_PATH/syzkaller-e503f04.patch ./syzkaller.patch
+  git rev-list dbd627e | grep $(git rev-parse HEAD) || cp $PATCHES_PATH/syzkaller-dbd627e.patch ./syzkaller.patch
+  git rev-list 5de425b | grep $(git rev-parse HEAD) || cp $PATCHES_PATH/syzkaller-5de425b.patch ./syzkaller.patch
+  git rev-list 1e9788a | grep $(git rev-parse HEAD) || cp $PATCHES_PATH/syzkaller-1e9788a.patch ./syzkaller.patch
+  git rev-list 2cad5aa | grep $(git rev-parse HEAD) || cp $PATCHES_PATH/syzkaller-2cad5aa.patch ./syzkaller.patch
+  git rev-list 9b1f3e6 | grep $(git rev-parse HEAD) || cp $PATCHES_PATH/syzkaller-9b1f3e6.patch ./syzkaller.patch
 }
 
 if [ $# -ne 6 ]; then
@@ -99,12 +118,7 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_SYZKALLER" ]; then
   make clean
   git stash --all || set_git_config
   git checkout $SYZKALLER
-  git rev-list 9b1f3e6 | grep $(git rev-parse HEAD) || NEW_VERSION=1
-  if [[ "$NEW_VERSION" -eq 1 ]]; then
-    cp $PATCHES_PATH/syzkaller_new.patch ./syzkaller.patch
-  else
-    cp $PATCHES_PATH/syzkaller_old.patch ./syzkaller.patch
-  fi
+  retrieve_proper_patch
   patch -p1 -i syzkaller.patch
   make
   if [ ! -d "workdir" ]; then
