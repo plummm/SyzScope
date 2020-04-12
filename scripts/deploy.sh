@@ -43,7 +43,8 @@ COMMIT=$3
 SYZKALLER=$4
 CONFIG=$5
 TESTCASE=$6
-PATCHES_PATH="$(pwd)/patches"
+PROJECT_PATH="$(pwd)"
+PATCHES_PATH="$PROJECT_PATH/patches"
 
 if [ ! -d "tools/$1" ]; then
   echo "No linux repositories detected"
@@ -87,36 +88,6 @@ if [ ! -f "$TOOLS_PATH/.stamp/MAKE_IMAGE" ]; then
   cd ..
 fi
 
-#Back to work directory
-cd ..
-if [ ! -d "work" ]; then
-  mkdir work
-fi
-cd work
-
-if [ ! -d $HASH ]; then
- mkdir $HASH
-fi
-cd $HASH || exit 1
-
-#Building kernel
-echo "[+] Building kernel"
-if [ ! -f "$TOOLS_PATH/.stamp/BUILD_KERNEL" ]; then
-  if [ ! -d "./linux" ]; then
-    ln -s ../../tools/$1 ./linux
-  fi
-  cd linux
-  make clean
-  git stash --all || set_git_config
-  git checkout $COMMIT
-  cp $PATCHES_PATH/kasan.patch ./
-  patch -p1 -i kasan.patch
-  #Add a rejection detector in future
-  curl $CONFIG > .config
-  make -j16
-  touch $TOOLS_PATH/.stamp/BUILD_KERNEL
-fi
-
 #Building for syzkaller
 echo "[+] Building syzkaller"
 if [ ! -f "$TOOLS_PATH/.stamp/BUILD_SYZKALLER" ]; then
@@ -141,6 +112,36 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_SYZKALLER" ]; then
   fi
   curl $TESTCASE > workdir/testcase-$HASH
   touch $TOOLS_PATH/.stamp/BUILD_SYZKALLER
+fi
+
+#Back to work directory
+cd $PROJECT_PATH
+if [ ! -d "work" ]; then
+  mkdir work
+fi
+cd work
+
+if [ ! -d $HASH ]; then
+ mkdir $HASH
+fi
+cd $HASH || exit 1
+
+#Building kernel
+echo "[+] Building kernel"
+if [ ! -f "$TOOLS_PATH/.stamp/BUILD_KERNEL" ]; then
+  if [ ! -d "./linux" ]; then
+    ln -s $PROJECT_PATH/tools/$1 ./linux
+  fi
+  cd linux
+  make clean
+  git stash --all || set_git_config
+  git checkout $COMMIT
+  cp $PATCHES_PATH/kasan.patch ./
+  patch -p1 -i kasan.patch
+  #Add a rejection detector in future
+  curl $CONFIG > .config
+  make -j16
+  touch $TOOLS_PATH/.stamp/BUILD_KERNEL
 fi
 
 set +x
