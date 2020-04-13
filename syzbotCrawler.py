@@ -73,6 +73,9 @@ class Crawler:
             if table.caption.text.find('Crash') != -1:
                 for case in table.tbody.contents:
                     if type(case) == element.Tag:
+                        kernel = case.find('td', {"class": "kernel"})
+                        if kernel.text != "upstream":
+                            continue
                         tags = case.find_all('td', {"class": "tag"})
                         commit = tags[0].text
                         syzkaller = tags[1].text
