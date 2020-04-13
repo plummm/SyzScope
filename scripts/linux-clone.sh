@@ -4,7 +4,7 @@
 # Usage ./linux-clone linux_clone_path
 
 if [ $# -ne 1 ]; then
-  echo "Usage ./linux-clone linux_clone_path"
+  echo "Usage ./linux-clone linux_clone_path index"
   exit 1
 fi
 
@@ -13,5 +13,5 @@ sudo apt-get -y install git
 
 mkdir tools || echo "Directory exists\n"
 cd tools || exit 1
-git clone https://github.com/torvalds/linux.git $1
-echo "Linux cloned to $1"
+git clone https://github.com/torvalds/linux.git $1-$2
+echo "Linux cloned to $1-$2"

@@ -1,4 +1,5 @@
 import requests
+import logging
 
 from bs4 import BeautifulSoup
 from bs4 import element
@@ -10,12 +11,21 @@ class Crawler:
     def __init__(self,
                  url="https://syzkaller.appspot.com/upstream/fixed",
                  keyword=['slab-out-of-bounds Read'],
-                 max_retrieve=10):
+                 max_retrieve=10, debug=False):
         self.url = url
         self.keyword = keyword
         self.max_retrieve = max_retrieve
         self.cases = {}
         self.patches = {}
+        self.init_logger(debug)
+
+    def init_logger(self, debug):
+        logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s')
+        self.logger = logging.getLogger(__name__)
+        if debug:
+            self.logger.setLevel(logging.DEBUG)
+        else:
+            self.logger.setLevel(logging.INFO)
 
     def run(self):
         cases_hash = self.gather_cases()
@@ -29,7 +39,7 @@ class Crawler:
     def retreive_case(self, hash):
         detail = self.request_detail(hash)
         if len(detail) < 4:
-            print("Failed to get detail of a case {}".format(hash))
+            self.logger.error("Failed to get detail of a case {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
             return -1
         self.cases[hash]["commit"] = detail[0]
         self.cases[hash]["syzkaller"] = detail[1]
@@ -39,7 +49,7 @@ class Crawler:
     def gather_cases(self):
         tables = self.__get_table(self.url)
         if tables == []:
-            print("error occur in gather_cases")
+            self.logger.error("error occur in gather_cases")
             return
         count = 0
         table = tables[0]
@@ -52,18 +62,20 @@ class Crawler:
                         patch_url = commit_list.contents[1].contents[1].attrs['href']
                         if patch_url in self.patches:
                             break
+                        self.logger.debug("[{}] Find a suitable case: {}".format(count, title.text))
                         self.patches[patch_url] = True
-                        count += 1
                         href = title.next.attrs['href']
                         hash = href[8:]
-                        print("Fetch {}".format(hash))
+                        self.logger.debug("[{}] Fetch {}".format(count, hash))
                         self.cases[hash] = {}
+                        count += 1
                 if count == self.max_retrieve:
                     break
         res = [x for x in self.cases]
         return res
 
     def request_detail(self, hash):
+        self.logger.debug("\nDetail: {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
         url = syzbot_host_url + syzbot_bug_base_url + hash
         tables = self.__get_table(url)
         if tables == []:
@@ -75,13 +87,27 @@ class Crawler:
                     if type(case) == element.Tag:
                         kernel = case.find('td', {"class": "kernel"})
                         if kernel.text != "upstream":
+                            self.logger.debug("skip kernel: '{}'".format(kernel.text))
                             continue
-                        tags = case.find_all('td', {"class": "tag"})
-                        commit = tags[0].text
-                        syzkaller = tags[1].text
-                        config = syzbot_host_url + case.find('td', {"class": "config"}).next.attrs['href']
-                        repros = case.find_all('td', {"class": "repro"})
-                        syz_repro = syzbot_host_url + repros[2].next.attrs['href']
+                        try:
+                            tags = case.find_all('td', {"class": "tag"})
+                            commit = tags[0].text
+                            self.logger.debug("Kernel commit: {}".format(commit))
+                            syzkaller = tags[1].text
+                            self.logger.debug("Syzkaller commit: {}".format(syzkaller))
+                            config = syzbot_host_url + case.find('td', {"class": "config"}).next.attrs['href']
+                            self.logger.debug("Config URL: {}".format(config))
+                            repros = case.find_all('td', {"class": "repro"})
+                            try:
+                                syz_repro = syzbot_host_url + repros[2].next.attrs['href']
+                                self.logger.debug("Testcase URL: {}".format(syz_repro))
+                            except:
+                                self.logger.info(
+                                    "Syz repro is missing. Failed to retrieve case {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
+                                break
+                        except:
+                            self.logger.info("Failed to retrieve case {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
+                            continue
                         return [commit, syzkaller, config, syz_repro]
                 break
         return []

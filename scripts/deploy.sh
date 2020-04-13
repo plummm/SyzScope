@@ -1,7 +1,7 @@
 #!/bin/bash
 # Xiaochen Zou 2020, University of California-Riverside
 #
-# Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase
+# Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index
 
 set -ex
 
@@ -55,13 +55,14 @@ if [ $# -ne 6 ]; then
 fi
 
 sudo apt-get update
-sudo apt-get -y install qemu-system-x86 debootstrap flex bison libssl-dev
+sudo apt-get -y install qemu-system-x86 debootstrap flex bison libssl-dev libelf-dev
 
 HASH=$2
 COMMIT=$3
 SYZKALLER=$4
 CONFIG=$5
 TESTCASE=$6
+INDEX=$7
 PROJECT_PATH="$(pwd)"
 PATCHES_PATH="$PROJECT_PATH/patches"
 
@@ -110,7 +111,6 @@ fi
 #Building for syzkaller
 echo "[+] Building syzkaller"
 if [ ! -f "$TOOLS_PATH/.stamp/BUILD_SYZKALLER" ]; then
-  NEW_VERSION=0
   if [ ! -d "$GOPATH/src/github.com/google/syzkaller" ]; then
     go get -u -d github.com/google/syzkaller/...
   fi
@@ -128,23 +128,14 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_SYZKALLER" ]; then
   touch $TOOLS_PATH/.stamp/BUILD_SYZKALLER
 fi
 
-#Back to work directory
-cd $PROJECT_PATH
-if [ ! -d "work" ]; then
-  mkdir work
-fi
 cd work
-
-if [ ! -d $HASH ]; then
- mkdir $HASH
-fi
 cd $HASH || exit 1
 
 #Building kernel
 echo "[+] Building kernel"
 if [ ! -f "$TOOLS_PATH/.stamp/BUILD_KERNEL" ]; then
   if [ ! -d "./linux" ]; then
-    ln -s $PROJECT_PATH/tools/$1 ./linux
+    ln -s $PROJECT_PATH/tools/$1-$INDEX ./linux
   fi
   cd linux
   make clean

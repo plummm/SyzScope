@@ -3,6 +3,7 @@ from deploy import Deployer
 from subprocess import call
 
 import argparse, os, stat
+import threading
 
 def args_parse():
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
@@ -16,15 +17,18 @@ def args_parse():
                         help='Indicate an URL for automatically crawling and running.\n'
                              '(default value is \'https://syzkaller.appspot.com/upstream/fixed\')')
     parser.add_argument('-m', '--max', nargs='?', action='store',
-                        default=10,
-                        help='The maximum of cases for running\n'
+                        default=30,
+                        help='The maximum of cases for retrieving\n'
                              '(default value is 10)')
     parser.add_argument('-k', '--key', nargs='*', action='store',
                         default=['slab-out-of-bounds Read'],
                         help='The keywords for detecting cases.\n'
                              '(default value is \'slab-out-of-bounds Read\')\n'
                              'This argument could be multiple values')
-    #parser.add_argument('--help', action='help')
+    parser.add_argument('-pm', '--parallel-max', nargs='?', action='store',
+                        default=5, help='The maximum of parallel processes')
+    parser.add_argument('--debug', action='store_true',
+                        help='Enable debug mode')
 
     args = parser.parse_args()
     return args
@@ -42,14 +46,32 @@ def check_kvm():
     if r == 1:
         exit(0)
 
+def deploy_one_case(index):
+    while(1):
+        lock.acquire(blocking=True)
+        l = list(crawler.cases.keys())
+        if len(l) == 0:
+            lock.release()
+            break
+        hash = l[0]
+        case = crawler.cases.pop(hash)
+        lock.release()
+        deployer[index].deploy(hash, case)
+
 if __name__ == '__main__':
     args = args_parse()
     print_args_info(args)
-    check_kvm()
-    crawler = Crawler(url=args.url, keyword=args.key, max_retrieve=int(args.max))
+    #check_kvm()
+    crawler = Crawler(url=args.url, keyword=args.key, max_retrieve=int(args.max), debug=args.debug)
     if args.input != None:
         crawler.run_one_case(args.input)
     else:
         crawler.run()
-    deployer = Deployer()
-    deployer.deploy(crawler.cases)
+    deployer = []
+    parallel_max = args.parallel_max
+    parallel_count = 0
+    lock = threading.Lock()
+    for i in range(0,parallel_max):
+        deployer[i] = Deployer(i, args.debug)
+        x = threading.Thread(target=deploy_one_case, args=(i,))
+        x.start()

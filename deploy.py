@@ -3,8 +3,9 @@ import os, stat
 import requests
 import shutil
 import syzbotCrawler
+import logging
 
-from subprocess import call
+from subprocess import Popen, PIPE, STDOUT
 
 syz_config_template="""
 {{ 
@@ -30,39 +31,68 @@ syz_config_template="""
 }}"""
 
 class Deployer:
-    def __init__(self):
+    def __init__(self, index, debug=False):
         self.linux_path = "linux"
         self.project_path = ""
         self.syzkaller_path = ""
         self.image_path = ""
         self.current_case_path = ""
         self.kernel_path = ""
-        self.clone_linux()
+        self.index = index
+        #self.clone_linux()
+        self.case_logger = None
+        self.logger = None
+        self.success_logger = None
+        self.case_info_logger = None
+        self.init_logger(debug)
 
-    def deploy(self, cases):
-        for hash in cases:
-            case = cases[hash]
-            r = self.__run_delopy_script(hash[:7], case)
-            if r == 1:
-                print("Error occur in deploy.sh")
-                return
-            self.project_path = os.getcwd()
-            self.syzkaller_path = "{}/tools/gopath/src/github.com/google/syzkaller".format(self.project_path)
-            self.image_path = "{}/tools/img".format(self.project_path)
-            self.current_case_path = "{}/work/{}".format(self.project_path, hash[:7])
-            self.kernel_path = "{}/linux".format(self.current_case_path)
-            self.__write_config(case["syz_repro"], hash[:7])
-            self.run_syzkaller(hash)
+    def init_logger(self, debug):
+        self.logger = logging.getLogger(__name__)
+        if debug:
+            self.logger.setLevel(logging.DEBUG)
+        else:
+            self.logger.setLevel(logging.INFO)
+
+        self.case_info_logger = self.__init_case_logger("{}-info".format(hash), "info")
+        self.success_logger = self.__init_success_logger()
+
+    def deploy(self, hash, case):
+        self.project_path = os.getcwd()
+        self.syzkaller_path = "{}/tools/gopath/src/github.com/google/syzkaller".format(self.project_path)
+        self.image_path = "{}/tools/img".format(self.project_path)
+        self.current_case_path = "{}/work/{}".format(self.project_path, hash[:7])
+        self.kernel_path = "{}/linux-{}".format(self.current_case_path, self.index)
+        self.__create_dir_for_case()
+        self.case_logger = self.__init_case_logger("{}-log".format(hash), "log")
+        r = self.__run_delopy_script(hash[:7], case)
+        if r == 1:
+            self.logger.error("Error occur in deploy.sh")
+            return
+        self.__write_config(case["syz_repro"], hash[:7])
+        self.run_syzkaller(hash)
+        return self.index
 
     def clone_linux(self):
         self.__run_linux_clone_script()
 
-    def run_syzkaller(self, hash, debug=False):
+    def run_syzkaller(self, hash):
         syzkaller = os.path.join(self.syzkaller_path, "bin/syz-manager")
-        if debug:
-            call([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash[:7]), "--debug"])
+        if self.logger.level == logging.DEBUG:
+            p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash[:7]), "--debug"],
+                  stdout=PIPE,
+                  stderr=STDOUT
+                  )
+            with p.stdout:
+                self.__log_subprocess_output(p.stdout)
+            p.wait()
         else:
-            call([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash[:7])])
+            p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash[:7])],
+                stdout = PIPE,
+                stderr = STDOUT
+                )
+            with p.stdout:
+                self.__log_subprocess_output(p.stdout)
+            p.wait()
         self.__save_case(hash)
         self.__clean_stamps()
 
@@ -70,18 +100,26 @@ class Deployer:
         st = os.stat("scripts/linux-clone.sh")
         os.chmod("scripts/linux-clone.sh", st.st_mode | stat.S_IEXEC)
         print("run: scripts/linux-clone.sh {}".format(self.linux_path))
-        call(["scripts/linux-clone.sh", self.linux_path], shell=False)
+        Popen(["scripts/linux-clone.sh", self.linux_path, self.index])
 
     def __run_delopy_script(self, hash, case):
         commit = case["commit"]
         syzkaller = case["syzkaller"]
         config = case["config"]
         testcase = case["syz_repro"]
+        self.case_info_logger.debug("commit: {}\nsyzkaller: {}\nconfig: {}\ntestcase: {}".format(commit,syzkaller,config,testcase))
 
         st = os.stat("scripts/deploy.sh")
         os.chmod("scripts/deploy.sh", st.st_mode | stat.S_IEXEC)
-        print("run: scripts/deploy.sh {0} {1} {2} {3} {4} {5}".format(self.linux_path, hash, commit, syzkaller, config, testcase))
-        return call(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase], shell=False)
+        self.logger.info("run: scripts/deploy.sh {0} {1} {2} {3} {4} {5}".format(self.linux_path, hash, commit, syzkaller, config, testcase))
+        p = Popen(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase, self.index],
+                stdout=PIPE,
+                stderr=STDOUT
+                )
+        with p.stdout:
+            self.__log_subprocess_output(p.stdout)
+        exitcode = p.wait()
+        return exitcode
 
     def __write_config(self, testcase_url, hash):
         req = requests.request(method='GET', url=testcase_url)
@@ -144,21 +182,43 @@ class Deployer:
 
     def __save_case(self, hash):
         self.__copy_crashes()
-        f = open(os.path.join(self.current_case_path, "info"), "w")
         url = syzbotCrawler.syzbot_host_url + syzbotCrawler.syzbot_bug_base_url + hash
-        f.write(url)
-        f.close()
-
-        f = open(os.path.join(self.project_path, "work/success"), "a+")
-        f.write(hash+"\n")
-        f.close()
+        self.case_info_logger.info(url)
+        self.success_logger.info(hash+"\n")
 
     def __copy_crashes(self):
         crash_path = "{}/workdir/crashes".format(self.syzkaller_path)
         dest_path = "{}/crashes".format(self.current_case_path)
         if os.path.isdir(crash_path):
+            self.case_logger.info("Found crashes, copy them to {}".format(dest_path))
             shutil.copytree(crash_path, dest_path)
 
     def __clean_stamps(self):
         os.remove("{}/tools/.stamp/BUILD_KERNEL".format(self.project_path))
         os.remove("{}/tools/.stamp/BUILD_SYZKALLER".format(self.project_path))
+
+    def __create_dir_for_case(self):
+        if not os.path.isdir(self.current_case_path):
+            os.makedirs(self.current_case_path, exist_ok=True)
+
+    def __init_case_logger(self, logger_name, file_name):
+        handler = logging.FileHandler("{}/{}".format(self.current_case_path, file_name))
+        format = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+        handler.setFormatter(format)
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(logging.DEBUG)
+        logger.addHandler(handler)
+        return logger
+
+    def __init_success_logger(self):
+        handler = logging.FileHandler("{}/work/success".format(self.project_path))
+        format = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+        handler.setFormatter(format)
+        logger = logging.getLogger("success")
+        logger.setLevel(logging.DEBUG)
+        logger.addHandler(handler)
+        return logger
+
+    def __log_subprocess_output(self, pipe):
+        for line in iter(pipe.readline, b''):
+            self.case_logger.info(line)
