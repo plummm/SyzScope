@@ -3,14 +3,14 @@
 #
 # Usage ./linux-clone linux_clone_path
 
-if [ $# -ne 1 ]; then
+if [ $# -ne 2 ]; then
   echo "Usage ./linux-clone linux_clone_path index"
   exit 1
 fi
 
-sudo apt-get update
-sudo apt-get -y install git
-
+if [ -d "tools/$1-$2" ]; then
+  exit 0
+fi
 mkdir tools || echo "Directory exists\n"
 cd tools || exit 1
 git clone https://github.com/torvalds/linux.git $1-$2

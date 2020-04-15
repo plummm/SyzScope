@@ -49,13 +49,10 @@ function retrieve_proper_patch() {
   git rev-list 9b1f3e6 | grep $(git rev-parse HEAD) || cp $PATCHES_PATH/syzkaller-9b1f3e6.patch ./syzkaller.patch
 }
 
-if [ $# -ne 6 ]; then
+if [ $# -ne 7 ]; then
   echo "Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase"
   exit 1
 fi
-
-sudo apt-get update
-sudo apt-get -y install qemu-system-x86 debootstrap flex bison libssl-dev libelf-dev
 
 HASH=$2
 COMMIT=$3
@@ -64,16 +61,17 @@ CONFIG=$5
 TESTCASE=$6
 INDEX=$7
 PROJECT_PATH="$(pwd)"
+CASE_PATH="$PROJECT_PATH/work/$HASH"
 PATCHES_PATH="$PROJECT_PATH/patches"
 
-if [ ! -d "tools/$1" ]; then
+if [ ! -d "tools/$1-$INDEX" ]; then
   echo "No linux repositories detected"
   exit 1
 fi
 
 TOOLS_PATH="$(pwd)/tools"
 # Check if linux is cloned by git
-cd tools/$1
+cd tools/$1-$INDEX
 if [ ! -d ".git" ]; then
   echo "This linux repo is not clone by git."
   exit 1
@@ -82,7 +80,7 @@ fi
 cd ..
 
 # Check for golang environment
-export GOPATH=`pwd`/gopath
+export GOPATH=$CASE_PATH/gopath
 export GOROOT=`pwd`/goroot
 export PATH=$GOROOT/bin:$PATH
 echo "[+] Downloading golang"
@@ -110,30 +108,38 @@ fi
 
 #Building for syzkaller
 echo "[+] Building syzkaller"
-if [ ! -f "$TOOLS_PATH/.stamp/BUILD_SYZKALLER" ]; then
-  if [ ! -d "$GOPATH/src/github.com/google/syzkaller" ]; then
-    go get -u -d github.com/google/syzkaller/...
-  fi
+if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then
+  #if [ ! -d "syzkaller" ]; then
+  #  git clone https://github.com/google/syzkaller.git syzkaller
+  #fi
+  #cd syzkaller
+  #git checkout $SYZKALLER
+
+  #if [ ! -d "$GOPATH/src/github.com/google/syzkaller" ]; then
+  go get -u -d github.com/google/syzkaller/...
+  #fi
   cd $GOPATH/src/github.com/google/syzkaller || exit 1
   make clean
   git stash --all || set_git_config
-  git checkout $SYZKALLER
-  retrieve_proper_patch
+  #git checkout -
+  #retrieve_proper_patch
+  cp $PATCHES_PATH/syzkaller-9b1f3e6.patch ./syzkaller.patch
   patch -p1 -i syzkaller.patch
+  #rm -r executor
+  #cp -r $PROJECT_PATH/tools/syzkaller/executor ./executor
   make
   if [ ! -d "workdir" ]; then
     mkdir workdir
   fi
-  curl $TESTCASE > workdir/testcase-$HASH
-  touch $TOOLS_PATH/.stamp/BUILD_SYZKALLER
+  touch $CASE_PATH/.stamp/BUILD_SYZKALLER
 fi
+curl $TESTCASE > $GOPATH/src/github.com/google/syzkaller/workdir/testcase-$HASH
 
-cd work
-cd $HASH || exit 1
+cd $CASE_PATH || exit 1
 
 #Building kernel
 echo "[+] Building kernel"
-if [ ! -f "$TOOLS_PATH/.stamp/BUILD_KERNEL" ]; then
+if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   if [ ! -d "./linux" ]; then
     ln -s $PROJECT_PATH/tools/$1-$INDEX ./linux
   fi
@@ -146,7 +152,7 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_KERNEL" ]; then
   #Add a rejection detector in future
   curl $CONFIG > .config
   make -j16
-  touch $TOOLS_PATH/.stamp/BUILD_KERNEL
+  touch $CASE_PATH/.stamp/BUILD_KERNEL
 fi
 
 set +x

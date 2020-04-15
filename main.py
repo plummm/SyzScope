@@ -52,26 +52,32 @@ def deploy_one_case(index):
         l = list(crawler.cases.keys())
         if len(l) == 0:
             lock.release()
-            break
+            return
         hash = l[0]
         case = crawler.cases.pop(hash)
         lock.release()
         deployer[index].deploy(hash, case)
 
+def install_packages():
+    st = os.stat("scripts/install.sh")
+    os.chmod("scripts/install.sh", st.st_mode | stat.S_IEXEC)
+    call(['scripts/install.sh'], shell=False)
+
 if __name__ == '__main__':
     args = args_parse()
     print_args_info(args)
-    #check_kvm()
+    check_kvm()
     crawler = Crawler(url=args.url, keyword=args.key, max_retrieve=int(args.max), debug=args.debug)
     if args.input != None:
         crawler.run_one_case(args.input)
     else:
         crawler.run()
+    install_packages()
     deployer = []
     parallel_max = args.parallel_max
     parallel_count = 0
     lock = threading.Lock()
-    for i in range(0,parallel_max):
-        deployer[i] = Deployer(i, args.debug)
+    for i in range(0,min(parallel_max,int(args.max))):
+        deployer.append(Deployer(i, args.debug))
         x = threading.Thread(target=deploy_one_case, args=(i,))
         x.start()

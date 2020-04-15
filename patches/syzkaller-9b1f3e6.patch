@@ -66,15 +66,46 @@ index 00000000..9808fcc0
 +	}
 +	return nil
 +}
+diff --git a/pkg/instance/instance.go b/pkg/instance/instance.go
+index 5adc9dc6..862cab07 100644
+--- a/pkg/instance/instance.go
++++ b/pkg/instance/instance.go
+@@ -421,7 +421,7 @@ func (inst *inst) testProgram(command string, testTime time.Duration) error {
+ }
+ 
+ func FuzzerCmd(fuzzer, executor, name, OS, arch, fwdAddr, sandbox string, procs, verbosity int,
+-	cover, debug, test, runtest bool) string {
++	cover, debug, test, runtest, poc bool) string {
+ 	osArg := ""
+ 	if targets.Get(OS, arch).HostFuzzer {
+ 		// Only these OSes need the flag, because the rest assume host OS.
+@@ -438,13 +438,13 @@ func FuzzerCmd(fuzzer, executor, name, OS, arch, fwdAddr, sandbox string, procs,
+ 		verbosityArg = fmt.Sprintf(" -vv=%v", verbosity)
+ 	}
+ 	return fmt.Sprintf("%v -executor=%v -name=%v -arch=%v%v -manager=%v -sandbox=%v"+
+-		" -procs=%v -cover=%v -debug=%v -test=%v%v%v",
++		" -procs=%v -cover=%v -debug=%v -test=%v%v%v -poc=%v",
+ 		fuzzer, executor, name, arch, osArg, fwdAddr, sandbox,
+-		procs, cover, debug, test, runtestArg, verbosityArg)
++		procs, cover, debug, test, runtestArg, verbosityArg, poc)
+ }
+ 
+ func OldFuzzerCmd(fuzzer, executor, name, OS, arch, fwdAddr, sandbox string, procs int, cover, test bool) string {
+-	return FuzzerCmd(fuzzer, executor, name, OS, arch, fwdAddr, sandbox, procs, 0, cover, false, test, false)
++	return FuzzerCmd(fuzzer, executor, name, OS, arch, fwdAddr, sandbox, procs, 0, cover, false, test, false, false)
+ }
+ 
+ func ExecprogCmd(execprog, executor, OS, arch, sandbox string, repeat, threaded, collide bool,
 diff --git a/pkg/mgrconfig/config.go b/pkg/mgrconfig/config.go
-index 69df2a80..5f5471f0 100644
+index 69df2a80..2bba6cd3 100644
 --- a/pkg/mgrconfig/config.go
 +++ b/pkg/mgrconfig/config.go
-@@ -114,4 +114,5 @@ type Config struct {
+@@ -114,4 +114,6 @@ type Config struct {
  	SyzFuzzerBin   string `json:"-"`
  	SyzExecprogBin string `json:"-"`
  	SyzExecutorBin string `json:"-"`
 +	Testcase       string `json:"testcase"`
++	AnalyzerDir    string `json:"analyzer_dir"`
  }
 diff --git a/pkg/rpctype/rpctype.go b/pkg/rpctype/rpctype.go
 index fcc01a99..c4193696 100644
@@ -98,10 +129,10 @@ index fcc01a99..c4193696 100644
 +	Length int
 +}
 diff --git a/prog/minimization.go b/prog/minimization.go
-index 9a71dd06..e3f64e0c 100644
+index 93a98655..6641b34c 100644
 --- a/prog/minimization.go
 +++ b/prog/minimization.go
-@@ -31,7 +31,7 @@ func Minimize(p0 *Prog, callIndex0 int, crash bool, pred0 func(*Prog, int) bool)
+@@ -29,7 +29,7 @@ func Minimize(p0 *Prog, callIndex0 int, crash bool, pred0 func(*Prog, int) bool)
  	p0, callIndex0 = removeCalls(p0, callIndex0, crash, pred)
  
  	// Try to minimize individual args.
@@ -110,7 +141,7 @@ index 9a71dd06..e3f64e0c 100644
  		ctx := &minimizeArgsCtx{
  			target:     p0.Target,
  			p0:         &p0,
-@@ -60,7 +60,7 @@ func Minimize(p0 *Prog, callIndex0 int, crash bool, pred0 func(*Prog, int) bool)
+@@ -58,7 +58,7 @@ func Minimize(p0 *Prog, callIndex0 int, crash bool, pred0 func(*Prog, int) bool)
  }
  
  func removeCalls(p0 *Prog, callIndex0 int, crash bool, pred func(*Prog, int) bool) (*Prog, int) {
@@ -120,7 +151,7 @@ index 9a71dd06..e3f64e0c 100644
  			continue
  		}
 diff --git a/prog/mutation.go b/prog/mutation.go
-index 62acba58..db20d551 100644
+index 5a181956..93682823 100644
 --- a/prog/mutation.go
 +++ b/prog/mutation.go
 @@ -34,19 +34,24 @@ func (p *Prog) Mutate(rs rand.Source, ncalls int, ct *ChoiceTable, corpus []*Pro
@@ -152,7 +183,7 @@ index 62acba58..db20d551 100644
 +			}
  		}
  	}
- 	for _, c := range p.Calls {
+ 	p.sanitizeFix()
 diff --git a/prog/mutation_custom.go b/prog/mutation_custom.go
 new file mode 100644
 index 00000000..c057f822
@@ -393,8 +424,24 @@ index 00000000..c057f822
 +	}
 +	return false
 +}
+diff --git a/prog/rand.go b/prog/rand.go
+index 8583fbdc..bd872fc7 100644
+--- a/prog/rand.go
++++ b/prog/rand.go
+@@ -696,6 +696,11 @@ func (a *ResourceType) generate(r *randGen, s *state) (arg Arg, calls []*Call) {
+ 			return
+ 		}
+ 	}
++	// Using previouse generated fd makes more sense for triggering PoC
++	arg = r.existingResource(s, a)
++	if arg != nil {
++		return
++	}
+ 	special := a.SpecialValues()
+ 	arg = MakeResultArg(a, nil, special[r.Intn(len(special))])
+ 	return
 diff --git a/syz-fuzzer/fuzzer.go b/syz-fuzzer/fuzzer.go
-index b6e8be4b..f15df0e1 100644
+index b6e8be4b..2d1f94af 100644
 --- a/syz-fuzzer/fuzzer.go
 +++ b/syz-fuzzer/fuzzer.go
 @@ -102,6 +102,9 @@ const (
@@ -407,10 +454,19 @@ index b6e8be4b..f15df0e1 100644
  func main() {
  	debug.SetGCPercent(50)
  
-@@ -259,6 +262,13 @@ func main() {
+@@ -115,6 +118,7 @@ func main() {
+ 		flagPprof   = flag.String("pprof", "", "address to serve pprof profiles")
+ 		flagTest    = flag.Bool("test", false, "enable image testing mode")      // used by syz-ci
+ 		flagRunTest = flag.Bool("runtest", false, "enable program testing mode") // used by pkg/runtest
++		flagPoC     = flag.Bool("poc", false, "mutate base on current PoC")
+ 	)
+ 	flag.Parse()
+ 	outputType := parseOutputType(*flagOutput)
+@@ -259,7 +263,14 @@ func main() {
  		go proc.loop()
  	}
  
+-	fuzzer.pollLoop()
 +	MutatingLoop, err1 := newProc(fuzzer, *flagProcs)
 +	if err1 != nil {
 +		log.Fatalf("failed to create proc: %v", err)
@@ -418,32 +474,43 @@ index b6e8be4b..f15df0e1 100644
 +	fuzzer.procs = append(fuzzer.procs, MutatingLoop)
 +	go MutatingLoop.checkMutatingQueueLoop()
 +
- 	fuzzer.pollLoop()
++	fuzzer.pollLoop(*flagPoC)
  }
  
-@@ -327,6 +337,10 @@ func (fuzzer *Fuzzer) pollLoop() {
+ // Returns gateCallback for leak checking if enabled.
+@@ -310,7 +321,7 @@ func (fuzzer *Fuzzer) blacklistDataRaceFrames(frames []string) {
+ 	log.Logf(0, "%s", output)
+ }
+ 
+-func (fuzzer *Fuzzer) pollLoop() {
++func (fuzzer *Fuzzer) pollLoop(flagPoC bool) {
+ 	var execTotal uint64
+ 	var lastPoll time.Time
+ 	var lastPrint time.Time
+@@ -327,6 +338,10 @@ func (fuzzer *Fuzzer) pollLoop() {
  			log.Logf(0, "alive, executed %v", execTotal)
  			lastPrint = time.Now()
  		}
-+		if time.Since(lastEnqueue) > 3*time.Minute && time.Since(lastEnqueue) < 5*time.Minute && executePoCOnly {
++		if !flagPoC && time.Since(lastEnqueue) > 4*time.Minute && time.Since(lastEnqueue) < 5*time.Minute && executePoCOnly {
 +			log.Logf(0, "set fuzzer free")
 +			executePoCOnly = false
 +		}
  		if poll || time.Since(lastPoll) > 10*time.Second {
  			needCandidates := fuzzer.workQueue.wantCandidates()
  			if poll && !needCandidates {
-@@ -367,9 +381,11 @@ func (fuzzer *Fuzzer) poll(needCandidates bool, stats map[string]uint64) bool {
+@@ -367,8 +382,10 @@ func (fuzzer *Fuzzer) poll(needCandidates bool, stats map[string]uint64) bool {
  	for _, inp := range r.NewInputs {
  		fuzzer.addInputFromAnotherFuzzer(inp)
  	}
+-	for _, candidate := range r.Candidates {
+-		fuzzer.addCandidateInput(candidate)
 +	if !executePoCOnly {
- 	for _, candidate := range r.Candidates {
- 		fuzzer.addCandidateInput(candidate)
++		for _, candidate := range r.Candidates {
++			fuzzer.addCandidateInput(candidate)
++		}
  	}
-+	}
  	if needCandidates && len(r.Candidates) == 0 && atomic.LoadUint32(&fuzzer.triagedCandidates) == 0 {
  		atomic.StoreUint32(&fuzzer.triagedCandidates, 1)
- 	}
 diff --git a/syz-fuzzer/proc.go b/syz-fuzzer/proc.go
 index d815a58b..a24b430c 100644
 --- a/syz-fuzzer/proc.go
@@ -628,18 +695,26 @@ index 62648336..e31b664a 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index 2a0b7dd4..73b8d5da 100644
+index 2a0b7dd4..0ea21a1c 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
-@@ -16,6 +16,7 @@ import (
+@@ -13,6 +13,7 @@ import (
+ 	"os"
+ 	"os/exec"
+ 	"path/filepath"
++	"strings"
  	"sync"
  	"sync/atomic"
  	"time"
-+	"strings"
+@@ -41,6 +42,7 @@ var (
+ 	flagConfig = flag.String("config", "", "configuration file")
+ 	flagDebug  = flag.Bool("debug", false, "dump all VM output to console")
+ 	flagBench  = flag.String("bench", "", "write execution statistics into this file periodically")
++	flagPoC    = flag.Bool("poc", false, "mutate base on current PoC")
+ )
  
- 	"github.com/google/syzkaller/dashboard/dashapi"
- 	"github.com/google/syzkaller/pkg/cover"
-@@ -267,6 +268,11 @@ func RunManager(cfg *mgrconfig.Config, target *prog.Target, sysTarget *targets.T
+ type Manager struct {
+@@ -267,6 +269,11 @@ func RunManager(cfg *mgrconfig.Config, target *prog.Target, sysTarget *targets.T
  		<-vm.Shutdown
  		return
  	}
@@ -651,17 +726,50 @@ index 2a0b7dd4..73b8d5da 100644
  	mgr.vmLoop()
  }
  
-@@ -423,6 +429,10 @@ func (mgr *Manager) vmLoop() {
+@@ -311,6 +318,7 @@ func (mgr *Manager) vmLoop() {
+ 	reproDone := make(chan *ReproResult, 1)
+ 	stopPending := false
+ 	shutdown := vm.Shutdown
++	start := time.Now()
+ 	for shutdown != nil || len(instances) != vmCount {
+ 		mgr.mu.Lock()
+ 		phase := mgr.phase
+@@ -387,6 +395,14 @@ func (mgr *Manager) vmLoop() {
+ 			stopPending = true
+ 		case res := <-runDone:
+ 			log.Logf(1, "loop: instance %v finished, crash=%v", res.idx, res.crash != nil)
++			if time.Since(start) >= 8*time.Hour {
++				log.Logf(0, "running for 8 hours, exit now.")
++				shutdown = nil
++			}
++			if *flagPoC && res.crash != nil && res.crash.Report.Title == vm.NoOutputCrash {
++				log.Logf(0, "exit due to no output for a long time")
++				shutdown = nil
++			}
+ 			if res.err != nil && shutdown != nil {
+ 				log.Logf(0, "%v", res.err)
+ 			}
+@@ -423,6 +439,11 @@ func (mgr *Manager) vmLoop() {
  				}
  			} else {
  				mgr.saveRepro(res.res, res.stats, res.hub)
 +				log.Logf(0, "SaveRepro %s", res.report0.Title)
 +				if strings.Contains(res.report0.Title, "slab-out-of-bounds Write") {
++					saveToSuccess(mgr.cfg.AnalyzerDir)
 +					shutdown = nil
 +				}
  			}
  		case <-shutdown:
  			log.Logf(1, "loop: shutting down...")
+@@ -569,7 +590,7 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
+ 	defer atomic.AddUint32(&mgr.numFuzzing, ^uint32(0))
+ 	cmd := instance.FuzzerCmd(fuzzerBin, executorCmd, fmt.Sprintf("vm-%v", index),
+ 		mgr.cfg.TargetOS, mgr.cfg.TargetArch, fwdAddr, mgr.cfg.Sandbox, procs, fuzzerV,
+-		mgr.cfg.Cover, *flagDebug, false, false)
++		mgr.cfg.Cover, *flagDebug, false, false, *flagPoC)
+ 	outc, errc, err := inst.Run(time.Hour, mgr.vmStop, cmd)
+ 	if err != nil {
+ 		return nil, fmt.Errorf("failed to run fuzzer: %v", err)
 diff --git a/syz-manager/rpc.go b/syz-manager/rpc.go
 index 91e31dbd..fe165d36 100644
 --- a/syz-manager/rpc.go
@@ -705,10 +813,10 @@ index 91e31dbd..fe165d36 100644
 +}
 diff --git a/syz-manager/utilities.go b/syz-manager/utilities.go
 new file mode 100644
-index 00000000..e48902ad
+index 00000000..be0f4d83
 --- /dev/null
 +++ b/syz-manager/utilities.go
-@@ -0,0 +1,54 @@
+@@ -0,0 +1,68 @@
 +package main
 +
 +import (
@@ -716,6 +824,7 @@ index 00000000..e48902ad
 +	"io/ioutil"
 +	_ "net/http/pprof"
 +	"os"
++	"path"
 +
 +	"github.com/google/syzkaller/courier"
 +	"github.com/google/syzkaller/pkg/log"
@@ -763,3 +872,73 @@ index 00000000..e48902ad
 +	}
 +	return res
 +}
++
++func saveToSuccess(analyzerPath string) {
++	hash := path.Base(analyzerPath)
++	work := path.Dir(analyzerPath)
++	success := path.Join(work, "success")
++	f, err := os.OpenFile(success, os.O_APPEND|os.O_WRONLY, 0600)
++	if err != nil {
++		log.Logf(1, "Fail to open %s: %v", success, err)
++		return
++	}
++	defer f.Close()
++	f.WriteString(hash + "\n")
++}
+diff --git a/tools/syz-runtest/runtest.go b/tools/syz-runtest/runtest.go
+index e7b41be6..4032849b 100644
+--- a/tools/syz-runtest/runtest.go
++++ b/tools/syz-runtest/runtest.go
+@@ -187,7 +187,7 @@ func (mgr *Manager) boot(name string, index int) (*report.Report, error) {
+ 	}
+ 	cmd := instance.FuzzerCmd(fuzzerBin, executorCmd, name,
+ 		mgr.cfg.TargetOS, mgr.cfg.TargetArch, fwdAddr, mgr.cfg.Sandbox, mgr.cfg.Procs, 0,
+-		mgr.cfg.Cover, mgr.debug, false, true)
++		mgr.cfg.Cover, mgr.debug, false, true, false)
+ 	outc, errc, err := inst.Run(time.Hour, mgr.vmStop, cmd)
+ 	if err != nil {
+ 		return nil, fmt.Errorf("failed to run fuzzer: %v", err)
+diff --git a/vm/vm.go b/vm/vm.go
+index 0bd13a95..465945da 100644
+--- a/vm/vm.go
++++ b/vm/vm.go
+@@ -257,7 +257,7 @@ func (inst *Instance) MonitorExecution(outc <-chan []byte, errc <-chan error,
+ 				mon.waitForOutput()
+ 			}
+ 			rep := &report.Report{
+-				Title:      noOutputCrash,
++				Title:      NoOutputCrash,
+ 				Output:     mon.output,
+ 				Suppressed: report.IsSuppressed(mon.reporter, mon.output),
+ 			}
+@@ -355,7 +355,7 @@ const (
+ 	maxErrorLength = 256
+ 
+ 	lostConnectionCrash  = "lost connection to test machine"
+-	noOutputCrash        = "no output from test machine"
++	NoOutputCrash        = "no output from test machine"
+ 	timeoutCrash         = "timed out"
+ 	executingProgramStr1 = "executing program"  // syz-fuzzer output
+ 	executingProgramStr2 = "executed programs:" // syz-execprog output
+diff --git a/vm/vm_test.go b/vm/vm_test.go
+index 6f7f1848..edf64578 100644
+--- a/vm/vm_test.go
++++ b/vm/vm_test.go
+@@ -243,7 +243,7 @@ var tests = []*Test{
+ 		Body: func(outc chan []byte, errc chan error) {
+ 		},
+ 		Report: &report.Report{
+-			Title: noOutputCrash,
++			Title: NoOutputCrash,
+ 		},
+ 	},
+ 	{
+@@ -255,7 +255,7 @@ var tests = []*Test{
+ 			}
+ 		},
+ 		Report: &report.Report{
+-			Title: noOutputCrash,
++			Title: NoOutputCrash,
+ 		},
+ 	},
+ 	{

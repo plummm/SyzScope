@@ -40,6 +40,7 @@ class Crawler:
         detail = self.request_detail(hash)
         if len(detail) < 4:
             self.logger.error("Failed to get detail of a case {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
+            self.cases.pop(hash)
             return -1
         self.cases[hash]["commit"] = detail[0]
         self.cases[hash]["syzkaller"] = detail[1]
