@@ -5,9 +5,10 @@ import shutil
 import syzbotCrawler
 import logging
 
-from subprocess import Popen, PIPE, STDOUT
+from subprocess import call, Popen, PIPE, STDOUT
 
 default_port = 56745
+stamp_finish_fuzzing = "FINISH_FUZZING"
 
 syz_config_template="""
 {{ 
@@ -65,12 +66,13 @@ class Deployer:
         self.case_logger = self.__init_case_logger("{}-log".format(hash))
         self.case_info_logger = self.__init_case_logger("{}-info".format(hash))
 
-        r = self.__run_delopy_script(hash[:7], case)
-        if r == 1:
-            self.logger.error("Error occur in deploy.sh")
-            return
-        self.__write_config(case["syz_repro"], hash[:7])
-        self.run_syzkaller(hash)
+        if not self.__check_stamp(stamp_finish_fuzzing):
+            r = self.__run_delopy_script(hash[:7], case)
+            if r == 1:
+                self.logger.error("Error occur in deploy.sh")
+                return
+            self.__write_config(case["syz_repro"], hash[:7])
+            self.run_syzkaller(hash)
         return self.index
 
     def clone_linux(self):
@@ -106,7 +108,7 @@ class Deployer:
                 self.__log_subprocess_output(p.stdout, logging.INFO)
             p.wait()
 
-            if not self.__success_check(hash):
+            if not self.__success_check(hash[:7]):
                 p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash[:7])],
                     stdout = PIPE,
                     stderr = STDOUT
@@ -115,7 +117,6 @@ class Deployer:
                     self.__log_subprocess_output(p.stdout, logging.INFO)
                 p.wait()
         self.__save_case(hash)
-        #self.__clean_stamps()
 
     def __run_linux_clone_script(self):
         st = os.stat("scripts/linux-clone.sh")
@@ -226,6 +227,7 @@ class Deployer:
         self.__copy_crashes()
         url = syzbotCrawler.syzbot_host_url + syzbotCrawler.syzbot_bug_base_url + hash
         self.case_info_logger.info(url)
+        self.__create_stamp(stamp_finish_fuzzing)
 
     def __copy_crashes(self):
         crash_path = "{}/workdir/crashes".format(self.syzkaller_path)
@@ -234,9 +236,13 @@ class Deployer:
             self.case_logger.info("Found crashes, copy them to {}".format(dest_path))
             shutil.copytree(crash_path, dest_path)
 
-    def __clean_stamps(self):
-        os.remove("{}/tools/.stamp/BUILD_KERNEL".format(self.project_path))
-        os.remove("{}/tools/.stamp/BUILD_SYZKALLER".format(self.project_path))
+    def __create_stamp(self, name):
+        stamp_path = "{}/.stamp/{}".format(self.current_case_path, name)
+        call(['touch',stamp_path])
+    
+    def __check_stamp(self, name):
+        stamp_path = "{}/.stamp/{}".format(self.current_case_path, name)
+        return os.path.isfile(stamp_path)
 
     def __create_dir_for_case(self):
         if not os.path.isdir(self.current_case_path):
@@ -271,12 +277,13 @@ class Deployer:
                 self.case_logger.debug(line)
 
     def __success_check(self, hash):
-        success_path = "{}/work/success".format(project_path)
-        f = open(success_path, "r")
-        text = f.readlines()
-        f.close()
-        for line in text:
-            line = line.strip('\n')
-            if line == hash:
-                return True
+        success_path = "{}/work/success".format(self.project_path)
+        if os.path.isfile(success_path):
+            f = open(success_path, "r")
+            text = f.readlines()
+            f.close()
+            for line in text:
+                line = line.strip('\n')
+                if line == hash:
+                    return True
         return False

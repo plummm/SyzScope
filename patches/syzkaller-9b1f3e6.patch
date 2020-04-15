@@ -695,7 +695,7 @@ index 62648336..e31b664a 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index 2a0b7dd4..0ea21a1c 100644
+index 2a0b7dd4..3494ebaa 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
 @@ -13,6 +13,7 @@ import (
@@ -749,19 +749,20 @@ index 2a0b7dd4..0ea21a1c 100644
  			if res.err != nil && shutdown != nil {
  				log.Logf(0, "%v", res.err)
  			}
-@@ -423,6 +439,11 @@ func (mgr *Manager) vmLoop() {
+@@ -423,6 +439,12 @@ func (mgr *Manager) vmLoop() {
  				}
  			} else {
  				mgr.saveRepro(res.res, res.stats, res.hub)
 +				log.Logf(0, "SaveRepro %s", res.report0.Title)
 +				if strings.Contains(res.report0.Title, "slab-out-of-bounds Write") {
++					log.Logf(0, "exit due to satisfied results")
 +					saveToSuccess(mgr.cfg.AnalyzerDir)
 +					shutdown = nil
 +				}
  			}
  		case <-shutdown:
  			log.Logf(1, "loop: shutting down...")
-@@ -569,7 +590,7 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
+@@ -569,7 +591,7 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
  	defer atomic.AddUint32(&mgr.numFuzzing, ^uint32(0))
  	cmd := instance.FuzzerCmd(fuzzerBin, executorCmd, fmt.Sprintf("vm-%v", index),
  		mgr.cfg.TargetOS, mgr.cfg.TargetArch, fwdAddr, mgr.cfg.Sandbox, procs, fuzzerV,
@@ -813,7 +814,7 @@ index 91e31dbd..fe165d36 100644
 +}
 diff --git a/syz-manager/utilities.go b/syz-manager/utilities.go
 new file mode 100644
-index 00000000..be0f4d83
+index 00000000..2c28ed60
 --- /dev/null
 +++ b/syz-manager/utilities.go
 @@ -0,0 +1,68 @@
@@ -877,9 +878,9 @@ index 00000000..be0f4d83
 +	hash := path.Base(analyzerPath)
 +	work := path.Dir(analyzerPath)
 +	success := path.Join(work, "success")
-+	f, err := os.OpenFile(success, os.O_APPEND|os.O_WRONLY, 0600)
++	f, err := os.OpenFile(success, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 +	if err != nil {
-+		log.Logf(1, "Fail to open %s: %v", success, err)
++		log.Logf(0, "Fail to open %s: %v", success, err)
 +		return
 +	}
 +	defer f.Close()
