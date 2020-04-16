@@ -1,5 +1,6 @@
 import requests
 import logging
+import os
 
 from bs4 import BeautifulSoup
 from bs4 import element
@@ -17,15 +18,23 @@ class Crawler:
         self.max_retrieve = max_retrieve
         self.cases = {}
         self.patches = {}
+        self.logger = None
+        self.logger2file = None
         self.init_logger(debug)
 
     def init_logger(self, debug):
-        logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s')
+        handler = logging.FileHandler("{}/info".format(os.getcwd()))
+        format =  logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+        handler.setFormatter(format)
         self.logger = logging.getLogger(__name__)
+        self.logger2file = logging.getLogger("log2file")
         if debug:
             self.logger.setLevel(logging.DEBUG)
+            self.logger2file.setLevel(logging.DEBUG)
         else:
             self.logger.setLevel(logging.INFO)
+            self.logger2file.setLevel(logging.INFO)
+        self.logger2file.addHandler(handler)
 
     def run(self):
         cases_hash = self.gather_cases()
@@ -81,6 +90,7 @@ class Crawler:
         tables = self.__get_table(url)
         if tables == []:
             print("error occur in request_detail")
+            self.logger2file.info("[Failed] {} error occur in request_detail".format(url))
             return
         for table in tables:
             if table.caption.text.find('Crash') != -1:
@@ -105,15 +115,18 @@ class Crawler:
                             except:
                                 self.logger.info(
                                     "Syz repro is missing. Failed to retrieve case {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
+                                self.logger2file.info("[Failed] {} Syz repro is missing".format(url))
                                 break
                         except:
                             self.logger.info("Failed to retrieve case {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
                             continue
                         return [commit, syzkaller, config, syz_repro]
                 break
+        self.logger2file.info("[Failed] {} fail to find a proper crash".format(url))
         return []
 
     def __get_table(self, url):
+        self.logger.info("Get table from {}".format(url))
         req = requests.request(method='GET', url=url)
         soup = BeautifulSoup(req.text, "html.parser")
         tables = soup.find_all('table', {"class": "list_table"})

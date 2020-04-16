@@ -108,10 +108,10 @@ index 69df2a80..2bba6cd3 100644
 +	AnalyzerDir    string `json:"analyzer_dir"`
  }
 diff --git a/pkg/rpctype/rpctype.go b/pkg/rpctype/rpctype.go
-index fcc01a99..c4193696 100644
+index fcc01a99..0d159435 100644
 --- a/pkg/rpctype/rpctype.go
 +++ b/pkg/rpctype/rpctype.go
-@@ -128,3 +128,16 @@ type RunTestDoneArgs struct {
+@@ -128,3 +128,20 @@ type RunTestDoneArgs struct {
  	Info   []*ipc.ProgInfo
  	Error  string
  }
@@ -127,6 +127,10 @@ index fcc01a99..c4193696 100644
 +
 +type GetQueueLenRes struct {
 +	Length int
++}
++
++type FuzzerSignal struct {
++	Signal string
 +}
 diff --git a/prog/minimization.go b/prog/minimization.go
 index 93a98655..6641b34c 100644
@@ -186,10 +190,10 @@ index 5a181956..93682823 100644
  	p.sanitizeFix()
 diff --git a/prog/mutation_custom.go b/prog/mutation_custom.go
 new file mode 100644
-index 00000000..c057f822
+index 00000000..66cba158
 --- /dev/null
 +++ b/prog/mutation_custom.go
-@@ -0,0 +1,234 @@
+@@ -0,0 +1,238 @@
 +package prog
 +
 +import (
@@ -199,6 +203,7 @@ index 00000000..c057f822
 +
 +var NOfCalls = 0
 +var PocProg string
++var ExecutePoCOnly = true
 +
 +func (ctx *mutator) spliceCus() bool {
 +	p, r := ctx.p, ctx.r
@@ -415,6 +420,9 @@ index 00000000..c057f822
 +}
 +
 +func containPoC(prog []byte) bool {
++	if !ExecutePoCOnly {
++		return false
++	}
 +	sProg := string(prog)
 +	if len(sProg) < len(PocProg) {
 +		return false
@@ -425,10 +433,18 @@ index 00000000..c057f822
 +	return false
 +}
 diff --git a/prog/rand.go b/prog/rand.go
-index 8583fbdc..bd872fc7 100644
+index 8583fbdc..97ac0d97 100644
 --- a/prog/rand.go
 +++ b/prog/rand.go
-@@ -696,6 +696,11 @@ func (a *ResourceType) generate(r *randGen, s *state) (arg Arg, calls []*Call) {
+@@ -14,6 +14,7 @@ import (
+ 
+ 	"github.com/google/syzkaller/pkg/ifuzz"
+ 	_ "github.com/google/syzkaller/pkg/ifuzz/generated" // pull in generated instruction descriptions
++	"github.com/google/syzkaller/pkg/log"
+ )
+ 
+ const (
+@@ -696,7 +697,13 @@ func (a *ResourceType) generate(r *randGen, s *state) (arg Arg, calls []*Call) {
  			return
  		}
  	}
@@ -438,23 +454,24 @@ index 8583fbdc..bd872fc7 100644
 +		return
 +	}
  	special := a.SpecialValues()
++	log.Logf(1, "No existingResource found, using SpecialValues: %x", special)
  	arg = MakeResultArg(a, nil, special[r.Intn(len(special))])
  	return
+ }
 diff --git a/syz-fuzzer/fuzzer.go b/syz-fuzzer/fuzzer.go
-index b6e8be4b..2d1f94af 100644
+index b6e8be4b..5368af83 100644
 --- a/syz-fuzzer/fuzzer.go
 +++ b/syz-fuzzer/fuzzer.go
-@@ -102,6 +102,9 @@ const (
+@@ -102,6 +102,8 @@ const (
  	OutputFile
  )
  
-+var executePoCOnly = true
 +var lastEnqueue time.Time
 +
  func main() {
  	debug.SetGCPercent(50)
  
-@@ -115,6 +118,7 @@ func main() {
+@@ -115,6 +117,7 @@ func main() {
  		flagPprof   = flag.String("pprof", "", "address to serve pprof profiles")
  		flagTest    = flag.Bool("test", false, "enable image testing mode")      // used by syz-ci
  		flagRunTest = flag.Bool("runtest", false, "enable program testing mode") // used by pkg/runtest
@@ -462,7 +479,7 @@ index b6e8be4b..2d1f94af 100644
  	)
  	flag.Parse()
  	outputType := parseOutputType(*flagOutput)
-@@ -259,7 +263,14 @@ func main() {
+@@ -259,7 +262,14 @@ func main() {
  		go proc.loop()
  	}
  
@@ -478,7 +495,7 @@ index b6e8be4b..2d1f94af 100644
  }
  
  // Returns gateCallback for leak checking if enabled.
-@@ -310,7 +321,7 @@ func (fuzzer *Fuzzer) blacklistDataRaceFrames(frames []string) {
+@@ -310,7 +320,7 @@ func (fuzzer *Fuzzer) blacklistDataRaceFrames(frames []string) {
  	log.Logf(0, "%s", output)
  }
  
@@ -487,13 +504,14 @@ index b6e8be4b..2d1f94af 100644
  	var execTotal uint64
  	var lastPoll time.Time
  	var lastPrint time.Time
-@@ -327,6 +338,10 @@ func (fuzzer *Fuzzer) pollLoop() {
+@@ -327,6 +337,11 @@ func (fuzzer *Fuzzer) pollLoop() {
  			log.Logf(0, "alive, executed %v", execTotal)
  			lastPrint = time.Now()
  		}
-+		if !flagPoC && time.Since(lastEnqueue) > 4*time.Minute && time.Since(lastEnqueue) < 5*time.Minute && executePoCOnly {
++		if !flagPoC && time.Since(lastEnqueue) > 4*time.Minute && time.Since(lastEnqueue) < 5*time.Minute && prog.ExecutePoCOnly {
 +			log.Logf(0, "set fuzzer free")
-+			executePoCOnly = false
++			fuzzer.sendSignal("set fuzzer free")
++			prog.ExecutePoCOnly = false
 +		}
  		if poll || time.Since(lastPoll) > 10*time.Second {
  			needCandidates := fuzzer.workQueue.wantCandidates()
@@ -504,15 +522,29 @@ index b6e8be4b..2d1f94af 100644
  	}
 -	for _, candidate := range r.Candidates {
 -		fuzzer.addCandidateInput(candidate)
-+	if !executePoCOnly {
++	if !prog.ExecutePoCOnly {
 +		for _, candidate := range r.Candidates {
 +			fuzzer.addCandidateInput(candidate)
 +		}
  	}
  	if needCandidates && len(r.Candidates) == 0 && atomic.LoadUint32(&fuzzer.triagedCandidates) == 0 {
  		atomic.StoreUint32(&fuzzer.triagedCandidates, 1)
+@@ -541,3 +558,13 @@ func parseOutputType(str string) OutputType {
+ 		return OutputNone
+ 	}
+ }
++
++func (fuzzer *Fuzzer) sendSignal(sg string) {
++	a := &rpctype.FuzzerSignal{
++		Signal: sg,
++	}
++	r := &rpctype.FuzzerSignal{}
++	if err := fuzzer.manager.Call("Manager.EmitSignal", a, r); err != nil {
++		log.Fatalf("emitSignal: failed to connect to manager: %v ", err)
++	}
++}
 diff --git a/syz-fuzzer/proc.go b/syz-fuzzer/proc.go
-index d815a58b..a24b430c 100644
+index d815a58b..3d8461cd 100644
 --- a/syz-fuzzer/proc.go
 +++ b/syz-fuzzer/proc.go
 @@ -9,10 +9,12 @@ import (
@@ -528,7 +560,7 @@ index d815a58b..a24b430c 100644
  	"github.com/google/syzkaller/pkg/cover"
  	"github.com/google/syzkaller/pkg/hash"
  	"github.com/google/syzkaller/pkg/ipc"
-@@ -76,12 +78,15 @@ func (proc *Proc) loop() {
+@@ -76,25 +78,29 @@ func (proc *Proc) loop() {
  				proc.execute(proc.execOpts, item.p, item.flags, StatCandidate)
  			case *WorkSmash:
  				proc.smashInput(item)
@@ -540,18 +572,37 @@ index d815a58b..a24b430c 100644
  			continue
  		}
  
-+		if !executePoCOnly {
- 		ct := proc.fuzzer.choiceTable
- 		fuzzerSnapshot := proc.fuzzer.snapshot()
- 		if len(fuzzerSnapshot.corpus) == 0 || i%generatePeriod == 0 {
-@@ -96,6 +101,7 @@ func (proc *Proc) loop() {
- 			log.Logf(1, "#%v: mutated", proc.pid)
- 			proc.execute(proc.execOpts, p, ProgNormal, StatFuzz)
+-		ct := proc.fuzzer.choiceTable
+-		fuzzerSnapshot := proc.fuzzer.snapshot()
+-		if len(fuzzerSnapshot.corpus) == 0 || i%generatePeriod == 0 {
+-			// Generate a new prog.
+-			p := proc.fuzzer.target.Generate(proc.rnd, prog.RecommendedCalls, ct)
+-			log.Logf(1, "#%v: generated", proc.pid)
+-			proc.execute(proc.execOpts, p, ProgNormal, StatGenerate)
+-		} else {
+-			// Mutate an existing prog.
+-			p := fuzzerSnapshot.chooseProgram(proc.rnd).Clone()
+-			p.Mutate(proc.rnd, prog.RecommendedCalls, ct, fuzzerSnapshot.corpus)
+-			log.Logf(1, "#%v: mutated", proc.pid)
+-			proc.execute(proc.execOpts, p, ProgNormal, StatFuzz)
++		if !prog.ExecutePoCOnly {
++			ct := proc.fuzzer.choiceTable
++			fuzzerSnapshot := proc.fuzzer.snapshot()
++			if len(fuzzerSnapshot.corpus) == 0 || i%generatePeriod == 0 {
++				// Generate a new prog.
++				p := proc.fuzzer.target.Generate(proc.rnd, prog.RecommendedCalls, ct)
++				log.Logf(1, "#%v: generated", proc.pid)
++				proc.execute(proc.execOpts, p, ProgNormal, StatGenerate)
++			} else {
++				// Mutate an existing prog.
++				p := fuzzerSnapshot.chooseProgram(proc.rnd).Clone()
++				p.Mutate(proc.rnd, prog.RecommendedCalls, ct, fuzzerSnapshot.corpus)
++				log.Logf(1, "#%v: mutated", proc.pid)
++				proc.execute(proc.execOpts, p, ProgNormal, StatFuzz)
++			}
  		}
-+		}
  	}
  }
- 
 @@ -177,6 +183,18 @@ func (proc *Proc) triageInput(item *WorkTriage) {
  	}
  }
@@ -772,7 +823,7 @@ index 2a0b7dd4..3494ebaa 100644
  	if err != nil {
  		return nil, fmt.Errorf("failed to run fuzzer: %v", err)
 diff --git a/syz-manager/rpc.go b/syz-manager/rpc.go
-index 91e31dbd..fe165d36 100644
+index 91e31dbd..945799c9 100644
 --- a/syz-manager/rpc.go
 +++ b/syz-manager/rpc.go
 @@ -10,6 +10,7 @@ import (
@@ -783,7 +834,7 @@ index 91e31dbd..fe165d36 100644
  	"github.com/google/syzkaller/pkg/cover"
  	"github.com/google/syzkaller/pkg/log"
  	"github.com/google/syzkaller/pkg/rpctype"
-@@ -309,3 +310,28 @@ func (serv *RPCServer) Poll(a *rpctype.PollArgs, r *rpctype.PollRes) error {
+@@ -309,3 +310,36 @@ func (serv *RPCServer) Poll(a *rpctype.PollArgs, r *rpctype.PollRes) error {
  		a.Name, len(r.Candidates), len(r.NewInputs), len(r.MaxSignal.Elems))
  	return nil
  }
@@ -810,6 +861,14 @@ index 91e31dbd..fe165d36 100644
 +	}
 +	courier.Mutex.Unlock()
 +	log.Logf(0, "Retrive %s\n", pq.Prog)
++	return nil
++}
++
++func (serv *RPCServer) EmitSignal(a *rpctype.FuzzerSignal, pq *rpctype.FuzzerSignal) error {
++	courier.Mutex.Lock()
++	sg := a.Signal
++	log.Logf(0, "A signal from fuzzer: %s\n", sg)
++	courier.Mutex.Unlock()
 +	return nil
 +}
 diff --git a/syz-manager/utilities.go b/syz-manager/utilities.go
