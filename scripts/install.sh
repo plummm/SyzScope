@@ -9,6 +9,7 @@ sudo apt-get -y install git qemu-system-x86 debootstrap flex bison libssl-dev li
 TOOLS_PATH="$(pwd)/tools"
 # Check for image
 echo "[+] Building image"
+cd $TOOLS_PATH
 if [ ! -f "$TOOLS_PATH/.stamp/MAKE_IMAGE" ]; then
   if [ ! -d "img" ]; then
     mkdir img

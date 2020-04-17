@@ -48,13 +48,14 @@ def check_kvm():
 
 def deploy_one_case(index):
     while(1):
-        lock.acquire()
+        lock.acquire(blocking=True)
         l = list(crawler.cases.keys())
         if len(l) == 0:
             lock.release()
             return
         hash = l[0]
         case = crawler.cases.pop(hash)
+        print("Thread {}: run case {}".format(index, hash))
         lock.release()
         deployer[index].deploy(hash, case)
 

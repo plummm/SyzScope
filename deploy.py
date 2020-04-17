@@ -1,5 +1,5 @@
 import re
-import os, stat
+import os, stat, sys
 import requests
 import shutil
 import syzbotCrawler
@@ -43,14 +43,18 @@ class Deployer:
         self.current_case_path = ""
         self.kernel_path = ""
         self.index = index
-        self.clone_linux()
         self.case_logger = None
         self.logger = None
         self.case_info_logger = None
         self.init_logger(debug)
+        self.clone_linux()
 
     def init_logger(self, debug):
         self.logger = logging.getLogger(__name__)
+        handler = logging.StreamHandler(sys.stdout)
+        format = logging.Formatter('Thread {}: %(message)s'.format(self.index, ))
+        handler.setFormatter(format)
+        self.logger.addHandler(handler)
         if debug:
             self.logger.setLevel(logging.DEBUG)
         else:
@@ -65,6 +69,7 @@ class Deployer:
         self.__create_dir_for_case()
         self.case_logger = self.__init_case_logger("{}-log".format(hash))
         self.case_info_logger = self.__init_case_logger("{}-info".format(hash))
+        self.logger.info(hash)
 
         if not self.__check_stamp(stamp_finish_fuzzing):
             r = self.__run_delopy_script(hash[:7], case)
@@ -73,13 +78,17 @@ class Deployer:
                 return
             self.__write_config(case["syz_repro"], hash[:7])
             self.run_syzkaller(hash)
+        else:
+            self.logger.info("Current case has finished".format(self.index))
         return self.index
 
     def clone_linux(self):
         self.__run_linux_clone_script()
 
     def run_syzkaller(self, hash):
+        self.logger.info("run syzkaller".format(self.index))
         syzkaller = os.path.join(self.syzkaller_path, "bin/syz-manager")
+        exitcode = 0
         # First round, we only enable limited syscalls.
         # If failed to trigger a write crash, we enable more syscalls to run it again
         if self.logger.level == logging.DEBUG:
@@ -89,7 +98,7 @@ class Deployer:
                   )
             with p.stdout:
                 self.__log_subprocess_output(p.stdout, logging.INFO)
-            p.wait()
+            exitcode = p.wait()
 
             if not self.__success_check(hash[:7]):
                 p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash[:7]), "--debug"],
@@ -98,7 +107,7 @@ class Deployer:
                   )
                 with p.stdout:
                     self.__log_subprocess_output(p.stdout, logging.INFO)
-                self.logger.info(p.wait())
+                exitcode = p.wait()
         else:
             p = Popen([syzkaller, "--config={}/workdir/{}-poc.cfg".format(self.syzkaller_path, hash[:7]), "--poc"],
                 stdout = PIPE,
@@ -106,7 +115,7 @@ class Deployer:
                 )
             with p.stdout:
                 self.__log_subprocess_output(p.stdout, logging.INFO)
-            p.wait()
+            exitcode = p.wait()
 
             if not self.__success_check(hash[:7]):
                 p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash[:7])],
@@ -115,15 +124,16 @@ class Deployer:
                     )
                 with p.stdout:
                     self.__log_subprocess_output(p.stdout, logging.INFO)
-                self.logger.info(p.wait())
+                exitcode = p.wait()
+        self.logger.info("syzkaller is done with exitcode {}".format(self.index, exitcode))
         self.__save_case(hash)
 
     def __run_linux_clone_script(self):
         st = os.stat("scripts/linux-clone.sh")
         os.chmod("scripts/linux-clone.sh", st.st_mode | stat.S_IEXEC)
         index = str(self.index)
-        print("run: scripts/linux-clone.sh {} {}".format(self.linux_path, index))
-        Popen(["scripts/linux-clone.sh", self.linux_path, index])
+        self.logger.info("run: scripts/linux-clone.sh {} {}".format(self.index, self.linux_path, index))
+        call(["scripts/linux-clone.sh", self.linux_path, index])
 
     def __run_delopy_script(self, hash, case):
         commit = case["commit"]
@@ -135,7 +145,7 @@ class Deployer:
         st = os.stat("scripts/deploy.sh")
         os.chmod("scripts/deploy.sh", st.st_mode | stat.S_IEXEC)
         index = str(self.index)
-        self.logger.info("run: scripts/deploy.sh {0} {1} {2} {3} {4} {5} {6}".format(self.linux_path, hash, commit, syzkaller, config, testcase, index))
+        self.logger.info("run: scripts/deploy.sh".format(self.index))
         p = Popen(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase, index],
                 stdout=PIPE,
                 stderr=STDOUT
@@ -143,6 +153,7 @@ class Deployer:
         with p.stdout:
             self.__log_subprocess_output(p.stdout, logging.INFO)
         exitcode = p.wait()
+        self.logger.info("script/deploy.sh from thread {0} is done with exitcode {1}".format(index, exitcode))
         return exitcode
 
     def __write_config(self, testcase_url, hash):
@@ -150,12 +161,12 @@ class Deployer:
         testcase = req.content
         syscalls = self.__extract_syscalls(testcase.decode("utf-8"))
         if syscalls == []:
-            print("No syscalls found in testcase: {}".format(testcase))
+            self.logger.info("No syscalls found in testcase: {}".format(self.index, testcase))
             return -1
         last_syscall = syscalls[len(syscalls)-1]
         dependent_syscalls = self.__extract_dependent_syscalls(last_syscall, self.syzkaller_path)
         if len(dependent_syscalls) < 1:
-            print("Cannot find dependent syscalls for {}.\nTry to continue without them".format(last_syscall))
+            self.logger.info("Cannot find dependent syscalls for {}.\nTry to continue without them".format(self.index, last_syscall))
         new_syscalls = syscalls
         new_syscalls.extend(dependent_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(new_syscalls) + "\""
@@ -165,6 +176,7 @@ class Deployer:
         f.close()
 
         #Add more syscalls
+        new_dependent_syscalls = []
         for i in range(0, len(syscalls)-2):
             if syscalls[len(syscalls)-2-i] not in dependent_syscalls:
                 new_dependent_syscalls = self.__extract_dependent_syscalls(syscalls[len(syscalls)-2-i], self.syzkaller_path)
@@ -187,7 +199,7 @@ class Deployer:
                 continue
             m = re.search(r'(\w+(\$\w+)?)\(', line)
             if m == None or len(m.groups()) == 0:
-                print("Failed to extract syscall from {}".format(line))
+                self.logger.info("Failed to extract syscall from {}".format(self.index, line))
                 return res
             syscall = m.groups()[0]
             res.append(syscall)
@@ -197,7 +209,7 @@ class Deployer:
         res = []
         dir = os.path.join(syzkaller_path, search_path)
         if not os.path.isdir(dir):
-            print("{} do not exist".format(dir))
+            self.logger.info("{} do not exist".format(self.index, dir))
             return res
         for file in os.listdir(dir):
             if file.endswith(extension):
@@ -248,10 +260,13 @@ class Deployer:
                     break
                 except FileExistsError:
                     dest_path = "{}/crashes-{}".format(self.current_case_path, i)
+        else:
+            self.case_logger.info("No crashes found")
 
 
 
     def __create_stamp(self, name):
+        self.logger.info("Create stamp {}".format(self.index, name))
         stamp_path = "{}/.stamp/{}".format(self.current_case_path, name)
         call(['touch',stamp_path])
     
