@@ -70,12 +70,15 @@ if __name__ == '__main__':
     crawler = Crawler(url=args.url, keyword=args.key, max_retrieve=int(args.max), debug=args.debug)
     if args.input != None:
         crawler.run_one_case(args.input)
+        args.parallel_max = 1
     else:
         crawler.run()
     install_packages()
     deployer = []
     parallel_max = args.parallel_max
     parallel_count = 0
+    if args.debug:
+        parallel_max = 1
     lock = threading.Lock()
     for i in range(0,min(parallel_max,int(args.max))):
         deployer.append(Deployer(i, args.debug))

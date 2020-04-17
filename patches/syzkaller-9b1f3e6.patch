@@ -544,7 +544,7 @@ index b6e8be4b..5368af83 100644
 +	}
 +}
 diff --git a/syz-fuzzer/proc.go b/syz-fuzzer/proc.go
-index d815a58b..3d8461cd 100644
+index d815a58b..c82bed03 100644
 --- a/syz-fuzzer/proc.go
 +++ b/syz-fuzzer/proc.go
 @@ -9,10 +9,12 @@ import (
@@ -560,7 +560,7 @@ index d815a58b..3d8461cd 100644
  	"github.com/google/syzkaller/pkg/cover"
  	"github.com/google/syzkaller/pkg/hash"
  	"github.com/google/syzkaller/pkg/ipc"
-@@ -76,25 +78,29 @@ func (proc *Proc) loop() {
+@@ -76,12 +78,17 @@ func (proc *Proc) loop() {
  				proc.execute(proc.execOpts, item.p, item.flags, StatCandidate)
  			case *WorkSmash:
  				proc.smashInput(item)
@@ -572,38 +572,13 @@ index d815a58b..3d8461cd 100644
  			continue
  		}
  
--		ct := proc.fuzzer.choiceTable
--		fuzzerSnapshot := proc.fuzzer.snapshot()
--		if len(fuzzerSnapshot.corpus) == 0 || i%generatePeriod == 0 {
--			// Generate a new prog.
--			p := proc.fuzzer.target.Generate(proc.rnd, prog.RecommendedCalls, ct)
--			log.Logf(1, "#%v: generated", proc.pid)
--			proc.execute(proc.execOpts, p, ProgNormal, StatGenerate)
--		} else {
--			// Mutate an existing prog.
--			p := fuzzerSnapshot.chooseProgram(proc.rnd).Clone()
--			p.Mutate(proc.rnd, prog.RecommendedCalls, ct, fuzzerSnapshot.corpus)
--			log.Logf(1, "#%v: mutated", proc.pid)
--			proc.execute(proc.execOpts, p, ProgNormal, StatFuzz)
-+		if !prog.ExecutePoCOnly {
-+			ct := proc.fuzzer.choiceTable
-+			fuzzerSnapshot := proc.fuzzer.snapshot()
-+			if len(fuzzerSnapshot.corpus) == 0 || i%generatePeriod == 0 {
-+				// Generate a new prog.
-+				p := proc.fuzzer.target.Generate(proc.rnd, prog.RecommendedCalls, ct)
-+				log.Logf(1, "#%v: generated", proc.pid)
-+				proc.execute(proc.execOpts, p, ProgNormal, StatGenerate)
-+			} else {
-+				// Mutate an existing prog.
-+				p := fuzzerSnapshot.chooseProgram(proc.rnd).Clone()
-+				p.Mutate(proc.rnd, prog.RecommendedCalls, ct, fuzzerSnapshot.corpus)
-+				log.Logf(1, "#%v: mutated", proc.pid)
-+				proc.execute(proc.execOpts, p, ProgNormal, StatFuzz)
-+			}
- 		}
- 	}
- }
-@@ -177,6 +183,18 @@ func (proc *Proc) triageInput(item *WorkTriage) {
++		if prog.ExecutePoCOnly {
++			continue
++		}
+ 		ct := proc.fuzzer.choiceTable
+ 		fuzzerSnapshot := proc.fuzzer.snapshot()
+ 		if len(fuzzerSnapshot.corpus) == 0 || i%generatePeriod == 0 {
+@@ -177,6 +184,18 @@ func (proc *Proc) triageInput(item *WorkTriage) {
  	}
  }
  
@@ -622,7 +597,7 @@ index d815a58b..3d8461cd 100644
  func reexecutionSuccess(info *ipc.ProgInfo, oldInfo *ipc.CallInfo, call int) bool {
  	if info == nil || len(info.Calls) == 0 {
  		return false
-@@ -250,7 +268,10 @@ func (proc *Proc) executeHintSeed(p *prog.Prog, call int) {
+@@ -250,7 +269,10 @@ func (proc *Proc) executeHintSeed(p *prog.Prog, call int) {
  func (proc *Proc) execute(execOpts *ipc.ExecOpts, p *prog.Prog, flags ProgTypes, stat Stat) *ipc.ProgInfo {
  	info := proc.executeRaw(execOpts, p, stat)
  	calls, extra := proc.fuzzer.checkNewSignal(p, info)
@@ -634,7 +609,7 @@ index d815a58b..3d8461cd 100644
  		proc.enqueueCallTriage(p, flags, callIndex, info.Calls[callIndex])
  	}
  	if extra {
-@@ -343,3 +364,41 @@ func (proc *Proc) logProgram(opts *ipc.ExecOpts, p *prog.Prog) {
+@@ -343,3 +365,41 @@ func (proc *Proc) logProgram(opts *ipc.ExecOpts, p *prog.Prog) {
  		log.Fatalf("unknown output type: %v", proc.fuzzer.outputType)
  	}
  }
