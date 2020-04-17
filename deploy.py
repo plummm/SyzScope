@@ -50,7 +50,8 @@ class Deployer:
         self.clone_linux()
 
     def init_logger(self, debug):
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(__name__+str(self.index))
+        print("register logger "+__name__+str(self.index))
         handler = logging.StreamHandler(sys.stdout)
         format = logging.Formatter('Thread {}: %(message)s'.format(self.index, ))
         handler.setFormatter(format)

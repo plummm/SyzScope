@@ -107,6 +107,36 @@ index 69df2a80..2bba6cd3 100644
 +	Testcase       string `json:"testcase"`
 +	AnalyzerDir    string `json:"analyzer_dir"`
  }
+diff --git a/pkg/mgrconfig/load.go b/pkg/mgrconfig/load.go
+index 4e413636..9ad59ac9 100644
+--- a/pkg/mgrconfig/load.go
++++ b/pkg/mgrconfig/load.go
+@@ -11,6 +11,7 @@ import (
+ 	"strings"
+ 
+ 	"github.com/google/syzkaller/pkg/config"
++	"github.com/google/syzkaller/pkg/log"
+ 	"github.com/google/syzkaller/pkg/osutil"
+ 	"github.com/google/syzkaller/prog"
+ 	_ "github.com/google/syzkaller/sys" // most mgrconfig users want targets too
+@@ -208,7 +209,7 @@ func ParseEnabledSyscalls(target *prog.Target, enabled, disabled []string) ([]in
+ 				}
+ 			}
+ 			if n == 0 {
+-				return nil, fmt.Errorf("unknown enabled syscall: %v", c)
++				log.Logf(0, "unknown enabled syscall: %v", c)
+ 			}
+ 		}
+ 	} else {
+@@ -225,7 +226,7 @@ func ParseEnabledSyscalls(target *prog.Target, enabled, disabled []string) ([]in
+ 			}
+ 		}
+ 		if n == 0 {
+-			return nil, fmt.Errorf("unknown disabled syscall: %v", c)
++			log.Logf(0, "unknown disabled syscall: %v", c)
+ 		}
+ 	}
+ 	if len(syscalls) == 0 {
 diff --git a/pkg/rpctype/rpctype.go b/pkg/rpctype/rpctype.go
 index fcc01a99..0d159435 100644
 --- a/pkg/rpctype/rpctype.go
@@ -933,6 +963,18 @@ index e7b41be6..4032849b 100644
  	outc, errc, err := inst.Run(time.Hour, mgr.vmStop, cmd)
  	if err != nil {
  		return nil, fmt.Errorf("failed to run fuzzer: %v", err)
+diff --git a/vm/qemu/qemu.go b/vm/qemu/qemu.go
+index bddace8f..f4e54838 100644
+--- a/vm/qemu/qemu.go
++++ b/vm/qemu/qemu.go
+@@ -383,6 +383,7 @@ func (inst *instance) boot() error {
+ 			)
+ 		}
+ 		cmdline = append(cmdline, inst.cfg.Cmdline)
++		cmdline = append(cmdline, "kasan_multi_shot=1")
+ 		args = append(args,
+ 			"-kernel", inst.cfg.Kernel,
+ 			"-append", strings.Join(cmdline, " "),
 diff --git a/vm/vm.go b/vm/vm.go
 index 0bd13a95..465945da 100644
 --- a/vm/vm.go
