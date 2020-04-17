@@ -69,7 +69,6 @@ if [ ! -d "tools/$1-$INDEX" ]; then
   exit 1
 fi
 
-TOOLS_PATH="$(pwd)/tools"
 # Check if linux is cloned by git
 cd tools/$1-$INDEX
 if [ ! -d ".git" ]; then
@@ -88,22 +87,6 @@ go version || build_golang
 
 if [ ! -d ".stamp" ]; then
   mkdir .stamp
-fi
-
-# Check for image
-echo "[+] Building image"
-if [ ! -f "$TOOLS_PATH/.stamp/MAKE_IMAGE" ]; then
-  if [ ! -d "img" ]; then
-    mkdir img
-  fi
-  cd img
-  if [ ! -f "stretch.img" ]; then
-    wget https://raw.githubusercontent.com/google/syzkaller/master/tools/create-image.sh -O create-image.sh
-    chmod +x create-image.sh
-    ./create-image.sh
-    touch $TOOLS_PATH/.stamp/MAKE_IMAGE
-  fi
-  cd ..
 fi
 
 #Building for syzkaller

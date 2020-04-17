@@ -156,13 +156,21 @@ class Deployer:
         dependent_syscalls = self.__extract_dependent_syscalls(last_syscall, self.syzkaller_path)
         if len(dependent_syscalls) < 1:
             print("Cannot find dependent syscalls for {}.\nTry to continue without them".format(last_syscall))
-        syscalls.extend(dependent_syscalls)
-        enable_syscalls = "\"" + "\",\n\t\"".join(syscalls) + "\""
+        new_syscalls = syscalls
+        new_syscalls.extend(dependent_syscalls)
+        enable_syscalls = "\"" + "\",\n\t\"".join(new_syscalls) + "\""
         syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash, default_port+self.index, self.current_case_path)
         f = open(os.path.join(self.syzkaller_path, "workdir/{}-poc.cfg".format(hash)), "w")
         f.writelines(syz_config)
         f.close()
+
+        #Add more syscalls
+        for i in range(0, len(syscalls)-2):
+            if syscalls[len(syscalls)-2-i] not in dependent_syscalls:
+                new_dependent_syscalls = self.__extract_dependent_syscalls(syscalls[len(syscalls)-2-i], self.syzkaller_path)
+                break
         raw_syscalls = self.__extract_raw_syscall(dependent_syscalls)
+        raw_syscalls.extend(self.__extract_raw_syscall(new_dependent_syscalls))
         #syzkaller would help remove the duplicates
         syscalls.extend(raw_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(syscalls) + "\""
@@ -233,8 +241,15 @@ class Deployer:
         crash_path = "{}/workdir/crashes".format(self.syzkaller_path)
         dest_path = "{}/crashes".format(self.current_case_path)
         if os.path.isdir(crash_path):
-            self.case_logger.info("Found crashes, copy them to {}".format(dest_path))
-            shutil.copytree(crash_path, dest_path)
+            for i in range(0,-1):
+                try:
+                    shutil.copytree(crash_path, dest_path)
+                    self.case_logger.info("Found crashes, copy them to {}".format(dest_path))
+                    break
+                except FileExistsError:
+                    dest_path = "{}/crashes-{}".format(self.current_case_path, i)
+
+
 
     def __create_stamp(self, name):
         stamp_path = "{}/.stamp/{}".format(self.current_case_path, name)

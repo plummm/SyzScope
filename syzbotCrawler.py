@@ -62,25 +62,27 @@ class Crawler:
             self.logger.error("error occur in gather_cases")
             return
         count = 0
-        table = tables[0]
-        for case in table.tbody.contents:
-            if type(case) == element.Tag:
-                title = case.find('td', {"class": "title"})
-                for keyword in self.keyword:
-                    if keyword in title.text:
-                        commit_list = case.find('td', {"class": "commit_list"})
-                        patch_url = commit_list.contents[1].contents[1].attrs['href']
-                        if patch_url in self.patches:
-                            break
-                        self.logger.debug("[{}] Find a suitable case: {}".format(count, title.text))
-                        self.patches[patch_url] = True
-                        href = title.next.attrs['href']
-                        hash = href[8:]
-                        self.logger.debug("[{}] Fetch {}".format(count, hash))
-                        self.cases[hash] = {}
-                        count += 1
-                if count == self.max_retrieve:
-                    break
+        for table in tables:
+            for case in table.tbody.contents:
+                if type(case) == element.Tag:
+                    title = case.find('td', {"class": "title"})
+                    if title == None:
+                        continue
+                    for keyword in self.keyword:
+                        if keyword in title.text:
+                            commit_list = case.find('td', {"class": "commit_list"})
+                            patch_url = commit_list.contents[1].contents[1].attrs['href']
+                            if patch_url in self.patches:
+                                break
+                            self.logger.debug("[{}] Find a suitable case: {}".format(count, title.text))
+                            self.patches[patch_url] = True
+                            href = title.next.attrs['href']
+                            hash = href[8:]
+                            self.logger.debug("[{}] Fetch {}".format(count, hash))
+                            self.cases[hash] = {}
+                            count += 1
+                    if count == self.max_retrieve:
+                        break
         res = [x for x in self.cases]
         return res
 

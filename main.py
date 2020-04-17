@@ -17,9 +17,9 @@ def args_parse():
                         help='Indicate an URL for automatically crawling and running.\n'
                              '(default value is \'https://syzkaller.appspot.com/upstream/fixed\')')
     parser.add_argument('-m', '--max', nargs='?', action='store',
-                        default=30,
+                        default=9999,
                         help='The maximum of cases for retrieving\n'
-                             '(default value is 10)')
+                             '(By default all the cases will be retrieved)')
     parser.add_argument('-k', '--key', nargs='*', action='store',
                         default=['slab-out-of-bounds Read'],
                         help='The keywords for detecting cases.\n'
@@ -48,7 +48,7 @@ def check_kvm():
 
 def deploy_one_case(index):
     while(1):
-        lock.acquire(blocking=True)
+        lock.acquire()
         l = list(crawler.cases.keys())
         if len(l) == 0:
             lock.release()
@@ -67,18 +67,17 @@ if __name__ == '__main__':
     args = args_parse()
     print_args_info(args)
     check_kvm()
+    if args.debug or args.input != None:
+        args.max = 1
     crawler = Crawler(url=args.url, keyword=args.key, max_retrieve=int(args.max), debug=args.debug)
     if args.input != None:
         crawler.run_one_case(args.input)
-        args.parallel_max = 1
     else:
         crawler.run()
     install_packages()
     deployer = []
     parallel_max = args.parallel_max
     parallel_count = 0
-    if args.debug:
-        parallel_max = 1
     lock = threading.Lock()
     for i in range(0,min(parallel_max,int(args.max))):
         deployer.append(Deployer(i, args.debug))
