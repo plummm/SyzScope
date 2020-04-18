@@ -137,6 +137,94 @@ index 4e413636..9ad59ac9 100644
  		}
  	}
  	if len(syscalls) == 0 {
+diff --git a/pkg/report/linux.go b/pkg/report/linux.go
+index 15047377..7c790961 100644
+--- a/pkg/report/linux.go
++++ b/pkg/report/linux.go
+@@ -14,6 +14,7 @@ import (
+ 	"strings"
+ 	"time"
+ 
++	"github.com/google/syzkaller/pkg/log"
+ 	"github.com/google/syzkaller/pkg/osutil"
+ 	"github.com/google/syzkaller/pkg/symbolizer"
+ )
+@@ -128,7 +129,7 @@ func (ctx *linux) ContainsCrash(output []byte) bool {
+ }
+ 
+ func (ctx *linux) Parse(output []byte) *Report {
+-	oops, startPos, context := ctx.findFirstOops(output)
++	oops, startPos, context := ctx.findCriticalOops(output)
+ 	if oops == nil {
+ 		return nil
+ 	}
+@@ -195,6 +196,66 @@ func (ctx *linux) findFirstOops(output []byte) (oops *oops, startPos int, contex
+ 	return
+ }
+ 
++func (ctx *linux) findCriticalOops(output []byte) (oops *oops, startPos int, context string) {
++	kasanRegx := regexp.MustCompile(`BUG: KASAN: ([a-z\\-]+) in ([a-zA-Z0-9_]+).*\n\s*?(Read|Write) of size (?:[0-9]+)`)
++	for pos, next := 0, 0; pos < len(output); pos = next + 1 {
++		next = bytes.IndexByte(output[pos:], '\n')
++		if next != -1 {
++			next += pos
++		} else {
++			next = len(output)
++		}
++		line := output[pos:next]
++		for _, oops1 := range linuxOopses {
++			if matchOops(line, oops1, ctx.ignores) {
++				line1 := ctx.takeAfterContext(line)
++				line2 := ctx.takeAfterContext(ctx.getNextLine(next+1, output))
++				line1 = append(line1, '\n')
++				line1 = append(line1, line2...)
++				line3 := make([]byte, len(line1))
++				for _, e := range line1 {
++					if (e >= 0x20 && e <= 0x7e) || e == 0xa {
++						line3 = append(line3, e)
++					}
++				}
++				log.Logf(0, "line3: %s", line3)
++				m := kasanRegx.Find(line3)
++				if m != nil {
++					log.Logf(0, "Match: [%s]", m)
++					oops = oops1
++					startPos = pos
++					context = ctx.extractContext(line)
++					return
++				}
++				oops = oops1
++				startPos = pos
++				context = ctx.extractContext(line)
++				break
++			}
++		}
++	}
++	return
++}
++
++func (ctx *linux) takeAfterContext(line []byte) []byte {
++	prefix := ctx.extractContext(line)
++	index := strings.Index(string(line), prefix)
++	new := make([]byte, len(line)-(index+len(prefix))+1)
++	copy(new, line[index+len(prefix):])
++	return new
++}
++
++func (ctx *linux) getNextLine(start int, output []byte) []byte {
++	next := bytes.IndexByte(output[start:], '\n')
++	if next != -1 {
++		next += start
++	} else {
++		next = len(output)
++	}
++	line := output[start:next]
++	return line
++}
++
+ // Yes, it is complex, but all state and logic are tightly coupled. It's unclear how to simplify it.
+ // nolint: gocyclo
+ func (ctx *linux) findReport(output []byte, oops *oops, startPos int, context string, useQuestionable bool) (
 diff --git a/pkg/rpctype/rpctype.go b/pkg/rpctype/rpctype.go
 index fcc01a99..0d159435 100644
 --- a/pkg/rpctype/rpctype.go
@@ -751,7 +839,7 @@ index 62648336..e31b664a 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index 2a0b7dd4..3494ebaa 100644
+index 2a0b7dd4..eda4d9f1 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
 @@ -13,6 +13,7 @@ import (
@@ -805,12 +893,13 @@ index 2a0b7dd4..3494ebaa 100644
  			if res.err != nil && shutdown != nil {
  				log.Logf(0, "%v", res.err)
  			}
-@@ -423,6 +439,12 @@ func (mgr *Manager) vmLoop() {
+@@ -423,6 +439,13 @@ func (mgr *Manager) vmLoop() {
  				}
  			} else {
  				mgr.saveRepro(res.res, res.stats, res.hub)
 +				log.Logf(0, "SaveRepro %s", res.report0.Title)
-+				if strings.Contains(res.report0.Title, "slab-out-of-bounds Write") {
++				if strings.Contains(res.report0.Title, "slab-out-of-bounds Write") ||
++					strings.Contains(res.report0.Title, "use-after-free Write") {
 +					log.Logf(0, "exit due to satisfied results")
 +					saveToSuccess(mgr.cfg.AnalyzerDir)
 +					shutdown = nil
@@ -818,7 +907,7 @@ index 2a0b7dd4..3494ebaa 100644
  			}
  		case <-shutdown:
  			log.Logf(1, "loop: shutting down...")
-@@ -569,7 +591,7 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
+@@ -569,7 +592,7 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
  	defer atomic.AddUint32(&mgr.numFuzzing, ^uint32(0))
  	cmd := instance.FuzzerCmd(fuzzerBin, executorCmd, fmt.Sprintf("vm-%v", index),
  		mgr.cfg.TargetOS, mgr.cfg.TargetArch, fwdAddr, mgr.cfg.Sandbox, procs, fuzzerV,
