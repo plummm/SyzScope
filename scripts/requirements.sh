@@ -6,6 +6,14 @@
 sudo apt-get update
 sudo apt-get -y install git qemu-system-x86 debootstrap flex bison libssl-dev libelf-dev
 
+if [ ! -d "work/completed" ]; then
+  mkdir -p work/completed
+fi
+
+if [ ! -d "work/incomplete" ]; then
+  mkdir -p work/incomplete
+fi
+
 TOOLS_PATH="$(pwd)/tools"
 # Check for image
 echo "[+] Building image"

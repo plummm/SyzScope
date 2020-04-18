@@ -51,7 +51,6 @@ class Deployer:
 
     def init_logger(self, debug):
         self.logger = logging.getLogger(__name__+str(self.index))
-        print("register logger "+__name__+str(self.index))
         handler = logging.StreamHandler(sys.stdout)
         format = logging.Formatter('Thread {}: %(message)s'.format(self.index, ))
         handler.setFormatter(format)
@@ -64,7 +63,7 @@ class Deployer:
     def deploy(self, hash, case):
         self.project_path = os.getcwd()
         self.image_path = "{}/tools/img".format(self.project_path)
-        self.current_case_path = "{}/work/{}".format(self.project_path, hash[:7])
+        self.current_case_path = "{}/work/incomplete/{}".format(self.project_path, hash[:7])
         self.syzkaller_path = "{}/gopath/src/github.com/google/syzkaller".format(self.current_case_path)
         self.kernel_path = "{}/linux".format(self.current_case_path)
         self.__create_dir_for_case()
@@ -72,7 +71,7 @@ class Deployer:
         self.case_info_logger = self.__init_case_logger("{}-info".format(hash))
         self.logger.info(hash)
 
-        if not self.__check_stamp(stamp_finish_fuzzing):
+        if not self.__check_stamp(stamp_finish_fuzzing, hash[:7]):
             r = self.__run_delopy_script(hash[:7], case)
             if r == 1:
                 self.logger.error("Error occur in deploy.sh")
@@ -80,7 +79,7 @@ class Deployer:
             self.__write_config(case["syz_repro"], hash[:7])
             self.run_syzkaller(hash)
         else:
-            self.logger.info("Current case has finished".format(self.index))
+            self.logger.info("{} has finished".format(hash[:7]))
         return self.index
 
     def clone_linux(self):
@@ -249,30 +248,38 @@ class Deployer:
         url = syzbotCrawler.syzbot_host_url + syzbotCrawler.syzbot_bug_base_url + hash
         self.case_info_logger.info(url)
         self.__create_stamp(stamp_finish_fuzzing)
+        self.__move_to_completed()
 
     def __copy_crashes(self):
         crash_path = "{}/workdir/crashes".format(self.syzkaller_path)
         dest_path = "{}/crashes".format(self.current_case_path)
+        i = 0
         if os.path.isdir(crash_path):
-            for i in range(0,-1):
+            while(1):
                 try:
                     shutil.copytree(crash_path, dest_path)
-                    self.case_logger.info("Found crashes, copy them to {}".format(dest_path))
+                    self.logger.info("Found crashes, copy them to {}".format(dest_path))
                     break
                 except FileExistsError:
                     dest_path = "{}/crashes-{}".format(self.current_case_path, i)
+                    i += 1
         else:
-            self.case_logger.info("No crashes found")
+            self.logger.info("No crashes found")
 
-
+    def __move_to_completed(self):
+        self.logger.info("Copy to completed")
+        src = self.current_case_path
+        base = os.path.basename(src)
+        des = "{}/work/completed/{}".format(self.project_path, base)
+        shutil.move(src, des)
 
     def __create_stamp(self, name):
         self.logger.info("Create stamp {}".format(self.index, name))
         stamp_path = "{}/.stamp/{}".format(self.current_case_path, name)
         call(['touch',stamp_path])
     
-    def __check_stamp(self, name):
-        stamp_path = "{}/.stamp/{}".format(self.current_case_path, name)
+    def __check_stamp(self, name, hash):
+        stamp_path = "{}/work/completed/{}/.stamp/{}".format(self.project_path, hash, name)
         return os.path.isfile(stamp_path)
 
     def __create_dir_for_case(self):

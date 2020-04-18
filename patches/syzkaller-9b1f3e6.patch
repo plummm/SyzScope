@@ -1,13 +1,15 @@
 diff --git a/courier/queue.go b/courier/queue.go
 new file mode 100644
-index 00000000..9808fcc0
+index 00000000..b060f598
 --- /dev/null
 +++ b/courier/queue.go
-@@ -0,0 +1,62 @@
+@@ -0,0 +1,69 @@
 +package courier
 +
 +import (
 +	"sync"
++
++	"github.com/google/syzkaller/pkg/rpctype"
 +)
 +
 +const (
@@ -21,15 +23,20 @@ index 00000000..9808fcc0
 +	Pointer []byte
 +}
 +
-+var MutateArgsQueue = make([]string, 0)
++var MutateArgsQueue = make([]rpctype.ProgQueue, 0)
 +
 +var CommandsQueue = make([]string, 0)
 +var S2EArgsQueue = make([]S2EArgs, 0)
 +var Mutex = &sync.Mutex{}
 +
 +//Append testcase to a queue waits for mutating
-+func AppendMutatingQueue(p []byte) {
-+	MutateArgsQueue = append(MutateArgsQueue, string(p))
++func AppendMutatingQueue(p, pocProg []byte, nOfCalls int) {
++	a := rpctype.ProgQueue{
++		Prog:     p,
++		NOfCalls: nOfCalls,
++		PocProg:  pocProg,
++	}
++	MutateArgsQueue = append(MutateArgsQueue, a)
 +}
 +
 +func AppendCommandsQueue(p []byte) {
@@ -48,7 +55,7 @@ index 00000000..9808fcc0
 +		}
 +		p := MutateArgsQueue[0]
 +		MutateArgsQueue = MutateArgsQueue[1:]
-+		return []byte(p)
++		return p
 +	case Commands:
 +		if len(CommandsQueue) == 0 {
 +			break
@@ -226,17 +233,19 @@ index 15047377..7c790961 100644
  // nolint: gocyclo
  func (ctx *linux) findReport(output []byte, oops *oops, startPos int, context string, useQuestionable bool) (
 diff --git a/pkg/rpctype/rpctype.go b/pkg/rpctype/rpctype.go
-index fcc01a99..0d159435 100644
+index fcc01a99..19abe3a5 100644
 --- a/pkg/rpctype/rpctype.go
 +++ b/pkg/rpctype/rpctype.go
-@@ -128,3 +128,20 @@ type RunTestDoneArgs struct {
+@@ -128,3 +128,27 @@ type RunTestDoneArgs struct {
  	Info   []*ipc.ProgInfo
  	Error  string
  }
 +
 +type ProgQueue struct {
-+	Length int
-+	Prog   []byte
++	Length   int
++	Prog     []byte
++	NOfCalls int
++	PocProg  []byte
 +}
 +
 +type GetQueueLenArgs struct {
@@ -249,6 +258,11 @@ index fcc01a99..0d159435 100644
 +
 +type FuzzerSignal struct {
 +	Signal string
++}
++
++type GetCallsFromFuzzerArgs struct {
++	EnabledCalls map[string][]int
++	Sandbox      string
 +}
 diff --git a/prog/minimization.go b/prog/minimization.go
 index 93a98655..6641b34c 100644
@@ -551,7 +565,7 @@ index 00000000..66cba158
 +	return false
 +}
 diff --git a/prog/rand.go b/prog/rand.go
-index 8583fbdc..97ac0d97 100644
+index c761d0b4..5936ef92 100644
 --- a/prog/rand.go
 +++ b/prog/rand.go
 @@ -14,6 +14,7 @@ import (
@@ -562,7 +576,7 @@ index 8583fbdc..97ac0d97 100644
  )
  
  const (
-@@ -696,7 +697,13 @@ func (a *ResourceType) generate(r *randGen, s *state) (arg Arg, calls []*Call) {
+@@ -689,7 +690,13 @@ func (a *ResourceType) generate(r *randGen, s *state) (arg Arg, calls []*Call) {
  			return
  		}
  	}
@@ -577,7 +591,7 @@ index 8583fbdc..97ac0d97 100644
  	return
  }
 diff --git a/syz-fuzzer/fuzzer.go b/syz-fuzzer/fuzzer.go
-index b6e8be4b..5368af83 100644
+index b6e8be4b..f52e76c5 100644
 --- a/syz-fuzzer/fuzzer.go
 +++ b/syz-fuzzer/fuzzer.go
 @@ -102,6 +102,8 @@ const (
@@ -597,6 +611,17 @@ index b6e8be4b..5368af83 100644
  	)
  	flag.Parse()
  	outputType := parseOutputType(*flagOutput)
+@@ -247,9 +250,9 @@ func main() {
+ 	for _, id := range r.CheckResult.EnabledCalls[sandbox] {
+ 		calls[target.Syscalls[id]] = true
+ 	}
++	fuzzer.sendCallsToManager(r.CheckResult.EnabledCalls, sandbox)
+ 	prios := target.CalculatePriorities(fuzzer.corpus)
+ 	fuzzer.choiceTable = target.BuildChoiceTable(prios, calls)
+-
+ 	for pid := 0; pid < *flagProcs; pid++ {
+ 		proc, err := newProc(fuzzer, pid)
+ 		if err != nil {
 @@ -259,7 +262,14 @@ func main() {
  		go proc.loop()
  	}
@@ -647,7 +672,7 @@ index b6e8be4b..5368af83 100644
  	}
  	if needCandidates && len(r.Candidates) == 0 && atomic.LoadUint32(&fuzzer.triagedCandidates) == 0 {
  		atomic.StoreUint32(&fuzzer.triagedCandidates, 1)
-@@ -541,3 +558,13 @@ func parseOutputType(str string) OutputType {
+@@ -541,3 +558,23 @@ func parseOutputType(str string) OutputType {
  		return OutputNone
  	}
  }
@@ -661,8 +686,18 @@ index b6e8be4b..5368af83 100644
 +		log.Fatalf("emitSignal: failed to connect to manager: %v ", err)
 +	}
 +}
++
++func (fuzzer *Fuzzer) sendCallsToManager(enabledCalls map[string][]int, sandbox string) {
++	a := &rpctype.GetCallsFromFuzzerArgs{
++		EnabledCalls: enabledCalls,
++		Sandbox:      sandbox,
++	}
++	if err := fuzzer.manager.Call("Manager.GetCallsFromFuzzer", a, nil); err != nil {
++		log.Fatalf("Manager.GetCallsFromFuzzer call failed: %v", err)
++	}
++}
 diff --git a/syz-fuzzer/proc.go b/syz-fuzzer/proc.go
-index d815a58b..c82bed03 100644
+index d815a58b..423cdd2f 100644
 --- a/syz-fuzzer/proc.go
 +++ b/syz-fuzzer/proc.go
 @@ -9,10 +9,12 @@ import (
@@ -746,7 +781,7 @@ index d815a58b..c82bed03 100644
 +			if err := proc.fuzzer.manager.Call("Manager.RetrieveArgsQueue", pq, pq); err != nil {
 +				log.Fatalf("failed to connect to manager: %v ", err)
 +			}
-+			log.Logf(0, "New Arg Aviable: %s\n", pq.Prog)
++			log.Logf(1, "New Arg Aviable: %s\n", pq.Prog)
 +			p, err := proc.fuzzer.target.Deserialize(pq.Prog, prog.NonStrict)
 +			if err != nil {
 +				log.Fatalf("checkArgsQueueLoop: failed to parse program from manager: %v", err)
@@ -755,13 +790,13 @@ index d815a58b..c82bed03 100644
 +			//sign := pq.Prog.Signal.Deserialize()
 +			//fuzzer.addInputToCorpus(p, sign, sig)
 +			flags := ProgNormal
-+			prog.NOfCalls = len(p.Calls)
-+			prog.PocProg = string(pq.Prog)
++			prog.NOfCalls = pq.NOfCalls
++			prog.PocProg = string(pq.PocProg)
 +			if strings.Compare(string(pq.Prog), string(p.Serialize())) != 0 {
 +				prog.PocProg = string(p.Serialize())
 +				log.Logf(0, "Prog is not minimized\n")
 +			}
-+			proc.fuzzer.workQueue.enqueue(&WorkGrow{
++			proc.fuzzer.workQueue.enqueue(&WorkCandidate{
 +				p:     p,
 +				flags: flags,
 +			})
@@ -769,6 +804,20 @@ index d815a58b..c82bed03 100644
 +		time.Sleep(10 * time.Second)
 +	}
 +}
+diff --git a/syz-fuzzer/testing.go b/syz-fuzzer/testing.go
+index 2ed615c8..9cf289dd 100644
+--- a/syz-fuzzer/testing.go
++++ b/syz-fuzzer/testing.go
+@@ -193,7 +193,8 @@ func checkCalls(args *checkArgs, features *host.Features) (*rpctype.CheckArgs, e
+ }
+ 
+ func checkRevisions(args *checkArgs) error {
+-	log.Logf(0, "checking revisions...")
++	//log.Logf(0, "checking revisions!...")
++	log.Logf(0, "checkRevisions prog.GitRevision %v", prog.GitRevision)
+ 	executorArgs := strings.Split(args.ipcConfig.Executor, " ")
+ 	executorArgs = append(executorArgs, "version")
+ 	cmd := osutil.Command(executorArgs[0], executorArgs[1:]...)
 diff --git a/syz-fuzzer/workqueue.go b/syz-fuzzer/workqueue.go
 index 62648336..e31b664a 100644
 --- a/syz-fuzzer/workqueue.go
@@ -839,7 +888,7 @@ index 62648336..e31b664a 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index 2a0b7dd4..eda4d9f1 100644
+index 2a0b7dd4..bed2ae60 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
 @@ -13,6 +13,7 @@ import (
@@ -858,19 +907,15 @@ index 2a0b7dd4..eda4d9f1 100644
  )
  
  type Manager struct {
-@@ -267,6 +269,11 @@ func RunManager(cfg *mgrconfig.Config, target *prog.Target, sysTarget *targets.T
+@@ -267,6 +269,7 @@ func RunManager(cfg *mgrconfig.Config, target *prog.Target, sysTarget *targets.T
  		<-vm.Shutdown
  		return
  	}
-+	log.Logf(0, "ParseCustomizedTestcase begin\n")
-+	err = ParseCustomizedTestcase(cfg.Testcase)
-+	if err != nil {
-+		log.Logf(0, "ParseCustomizedTestcase failed: %v\n", err)
-+	}
++	TestcasePath = cfg.Testcase
  	mgr.vmLoop()
  }
  
-@@ -311,6 +318,7 @@ func (mgr *Manager) vmLoop() {
+@@ -311,6 +314,7 @@ func (mgr *Manager) vmLoop() {
  	reproDone := make(chan *ReproResult, 1)
  	stopPending := false
  	shutdown := vm.Shutdown
@@ -878,7 +923,7 @@ index 2a0b7dd4..eda4d9f1 100644
  	for shutdown != nil || len(instances) != vmCount {
  		mgr.mu.Lock()
  		phase := mgr.phase
-@@ -387,6 +395,14 @@ func (mgr *Manager) vmLoop() {
+@@ -387,6 +391,14 @@ func (mgr *Manager) vmLoop() {
  			stopPending = true
  		case res := <-runDone:
  			log.Logf(1, "loop: instance %v finished, crash=%v", res.idx, res.crash != nil)
@@ -893,7 +938,7 @@ index 2a0b7dd4..eda4d9f1 100644
  			if res.err != nil && shutdown != nil {
  				log.Logf(0, "%v", res.err)
  			}
-@@ -423,6 +439,13 @@ func (mgr *Manager) vmLoop() {
+@@ -423,6 +435,13 @@ func (mgr *Manager) vmLoop() {
  				}
  			} else {
  				mgr.saveRepro(res.res, res.stats, res.hub)
@@ -907,7 +952,7 @@ index 2a0b7dd4..eda4d9f1 100644
  			}
  		case <-shutdown:
  			log.Logf(1, "loop: shutting down...")
-@@ -569,7 +592,7 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
+@@ -569,7 +588,7 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
  	defer atomic.AddUint32(&mgr.numFuzzing, ^uint32(0))
  	cmd := instance.FuzzerCmd(fuzzerBin, executorCmd, fmt.Sprintf("vm-%v", index),
  		mgr.cfg.TargetOS, mgr.cfg.TargetArch, fwdAddr, mgr.cfg.Sandbox, procs, fuzzerV,
@@ -917,7 +962,7 @@ index 2a0b7dd4..eda4d9f1 100644
  	if err != nil {
  		return nil, fmt.Errorf("failed to run fuzzer: %v", err)
 diff --git a/syz-manager/rpc.go b/syz-manager/rpc.go
-index 91e31dbd..945799c9 100644
+index 91e31dbd..88f37d21 100644
 --- a/syz-manager/rpc.go
 +++ b/syz-manager/rpc.go
 @@ -10,6 +10,7 @@ import (
@@ -928,7 +973,15 @@ index 91e31dbd..945799c9 100644
  	"github.com/google/syzkaller/pkg/cover"
  	"github.com/google/syzkaller/pkg/log"
  	"github.com/google/syzkaller/pkg/rpctype"
-@@ -309,3 +310,36 @@ func (serv *RPCServer) Poll(a *rpctype.PollArgs, r *rpctype.PollRes) error {
+@@ -54,6 +55,7 @@ type RPCManagerView interface {
+ 	newInput(inp rpctype.RPCInput, sign signal.Signal) bool
+ 	candidateBatch(size int) []rpctype.RPCCandidate
+ 	rotateCorpus() bool
++	parseCustomizedTestcase(a rpctype.GetCallsFromFuzzerArgs) error
+ }
+ 
+ func startRPCServer(mgr *Manager) (int, error) {
+@@ -309,3 +311,43 @@ func (serv *RPCServer) Poll(a *rpctype.PollArgs, r *rpctype.PollRes) error {
  		a.Name, len(r.Candidates), len(r.NewInputs), len(r.MaxSignal.Elems))
  	return nil
  }
@@ -951,10 +1004,9 @@ index 91e31dbd..945799c9 100644
 +	courier.Mutex.Lock()
 +	p := courier.RetrieveFirstArg(courier.Mutating)
 +	if p != nil {
-+		pq.Prog = p.([]byte)
++		*pq = p.(rpctype.ProgQueue)
 +	}
 +	courier.Mutex.Unlock()
-+	log.Logf(0, "Retrive %s\n", pq.Prog)
 +	return nil
 +}
 +
@@ -965,50 +1017,80 @@ index 91e31dbd..945799c9 100644
 +	courier.Mutex.Unlock()
 +	return nil
 +}
++
++func (serv *RPCServer) GetCallsFromFuzzer(a *rpctype.GetCallsFromFuzzerArgs, r *int) error {
++	err := serv.mgr.parseCustomizedTestcase(*a)
++	if err != nil {
++		log.Logf(0, "parseCustomizedTestcase failed %v", err)
++	}
++	return nil
++}
 diff --git a/syz-manager/utilities.go b/syz-manager/utilities.go
 new file mode 100644
-index 00000000..2c28ed60
+index 00000000..05ddf88f
 --- /dev/null
 +++ b/syz-manager/utilities.go
-@@ -0,0 +1,68 @@
+@@ -0,0 +1,90 @@
 +package main
 +
 +import (
 +	"bytes"
 +	"io/ioutil"
++	"math/rand"
 +	_ "net/http/pprof"
 +	"os"
 +	"path"
++	"time"
 +
 +	"github.com/google/syzkaller/courier"
 +	"github.com/google/syzkaller/pkg/log"
++	"github.com/google/syzkaller/pkg/rpctype"
++	"github.com/google/syzkaller/prog"
 +)
 +
++var TestcasePath string
++
 +//Read and parse testcase, send it to fuzzer
-+func ParseCustomizedTestcase(path string) error {
-+	info, err := os.Stat(path)
++func (mgr *Manager) parseCustomizedTestcase(a rpctype.GetCallsFromFuzzerArgs) error {
++	var corpus []*prog.Prog
++	info, err := os.Stat(TestcasePath)
 +	if !os.IsNotExist(err) {
 +		if !info.IsDir() {
-+			fileCache, err := os.Open(path)
++			fileCache, err := os.Open(TestcasePath)
 +			if err != nil {
 +				return err
 +			}
 +			defer fileCache.Close()
-+			testcase_raw, err := ioutil.ReadFile(path)
++			testcase_raw, err := ioutil.ReadFile(TestcasePath)
 +			if err != nil {
 +				return err
 +			}
 +			testcase := removeComments(testcase_raw)
 +			log.Logf(0, "testcase: %s\n", testcase)
-+			appendTestcase(testcase)
++			calls := make(map[*prog.Syscall]bool)
++			rnd := rand.New(rand.NewSource(time.Now().UnixNano() + int64(4)*1e12))
++			for _, id := range a.EnabledCalls[a.Sandbox] {
++				calls[mgr.target.Syscalls[id]] = true
++			}
++			prios := mgr.target.CalculatePriorities(corpus)
++			choiceTable := mgr.target.BuildChoiceTable(prios, calls)
++			p, err := mgr.target.Deserialize(testcase, prog.NonStrict)
++			prog.NOfCalls = len(p.Calls)
++			prog.PocProg = string(testcase)
++			appendTestcase(testcase, testcase, prog.NOfCalls)
++			for i := 0; i < 100; i++ {
++				p := p.Clone()
++				p.Mutate(rnd, prog.RecommendedCalls, choiceTable, corpus)
++				appendTestcase(p.Serialize(), []byte(prog.PocProg), prog.NOfCalls)
++			}
 +			return nil
 +		}
 +	}
 +	return err
 +}
 +
-+func appendTestcase(testcase []byte) {
-+	courier.AppendMutatingQueue(testcase)
++func appendTestcase(testcase, pocProg []byte, nOfCalls int) {
++	courier.AppendMutatingQueue(testcase, pocProg, nOfCalls)
 +}
 +
 +func removeComments(text []byte) []byte {

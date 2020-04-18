@@ -59,10 +59,10 @@ def deploy_one_case(index):
         lock.release()
         deployer[index].deploy(hash, case)
 
-def install_packages():
-    st = os.stat("scripts/install.sh")
-    os.chmod("scripts/install.sh", st.st_mode | stat.S_IEXEC)
-    call(['scripts/install.sh'], shell=False)
+def install_requirments():
+    st = os.stat("scripts/requirements.sh")
+    os.chmod("scripts/requirements.sh", st.st_mode | stat.S_IEXEC)
+    call(['scripts/requirements.sh'], shell=False)
 
 if __name__ == '__main__':
     args = args_parse()
@@ -75,7 +75,7 @@ if __name__ == '__main__':
         crawler.run_one_case(args.input)
     else:
         crawler.run()
-    install_packages()
+    install_requirments()
     deployer = []
     parallel_max = args.parallel_max
     parallel_count = 0

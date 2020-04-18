@@ -61,7 +61,7 @@ CONFIG=$5
 TESTCASE=$6
 INDEX=$7
 PROJECT_PATH="$(pwd)"
-CASE_PATH="$PROJECT_PATH/work/$HASH"
+CASE_PATH="$PROJECT_PATH/work/incomplete/$HASH"
 PATCHES_PATH="$PROJECT_PATH/patches"
 
 if [ ! -d "tools/$1-$INDEX" ]; then
