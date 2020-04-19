@@ -56,7 +56,7 @@ def deploy_one_case(index):
             return
         hash = l[0]
         case = crawler.cases.pop(hash)
-        print("Thread {}: run case {}".format(index, hash))
+        print("Thread {}: run case {} [{}/{}] left".format(index, hash, len(l)-1, total))
         lock.release()
         deployer[index].deploy(hash, case)
 
@@ -81,6 +81,8 @@ if __name__ == '__main__':
     parallel_max = int(args.parallel_max)
     parallel_count = 0
     lock = threading.Lock()
+    l = list(crawler.cases.keys())
+    total = len(l)
     for i in range(0,min(parallel_max,int(args.max))):
         deployer.append(Deployer(i, args.debug))
         x = threading.Thread(target=deploy_one_case, args=(i,))

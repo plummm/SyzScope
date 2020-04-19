@@ -52,7 +52,7 @@ class Deployer:
     def init_logger(self, debug):
         self.logger = logging.getLogger(__name__+str(self.index))
         handler = logging.StreamHandler(sys.stdout)
-        format = logging.Formatter('Thread {}: %(message)s'.format(self.index, ))
+        format = logging.Formatter('%(asctime)s Thread {}: %(message)s'.format(self.index, ))
         handler.setFormatter(format)
         self.logger.addHandler(handler)
         if debug:
@@ -66,12 +66,12 @@ class Deployer:
         self.current_case_path = "{}/work/incomplete/{}".format(self.project_path, hash[:7])
         self.syzkaller_path = "{}/gopath/src/github.com/google/syzkaller".format(self.current_case_path)
         self.kernel_path = "{}/linux".format(self.current_case_path)
-        self.case_logger = self.__init_case_logger("{}-log".format(hash))
-        self.case_info_logger = self.__init_case_logger("{}-info".format(hash))
         self.logger.info(hash)
 
         if not self.__check_stamp(stamp_finish_fuzzing, hash[:7]):
             self.__create_dir_for_case()
+            self.case_logger = self.__init_case_logger("{}-log".format(hash))
+            self.case_info_logger = self.__init_case_logger("{}-info".format(hash))
             r = self.__run_delopy_script(hash[:7], case)
             if r == 1:
                 self.logger.error("Error occur in deploy.sh")
@@ -248,7 +248,10 @@ class Deployer:
         url = syzbotCrawler.syzbot_host_url + syzbotCrawler.syzbot_bug_base_url + hash
         self.case_info_logger.info(url)
         self.__create_stamp(stamp_finish_fuzzing)
-        self.__move_to_completed()
+        if self.__success_check(hash[:7]):
+            self.__move_to_succeed()
+        else:
+            self.__move_to_completed()
 
     def __copy_crashes(self):
         crash_path = "{}/workdir/crashes".format(self.syzkaller_path)
@@ -270,7 +273,20 @@ class Deployer:
         self.logger.info("Copy to completed")
         src = self.current_case_path
         base = os.path.basename(src)
-        des = "{}/work/completed/{}".format(self.project_path, base)
+        completed = "{}/work/completed".format(self.project_path)
+        des = "{}/{}".format(completed, base)
+        if not os.path.isdir(completed):
+            os.makedirs(completed, exist_ok=True)
+        shutil.move(src, des)
+    
+    def __move_to_succeed(self):
+        self.logger.info("Copy to succeed")
+        src = self.current_case_path
+        base = os.path.basename(src)
+        succeed = "{}/work/succeed".format(self.project_path)
+        des = "{}/{}".format(succeed, base)
+        if not os.path.isdir(succeed):
+            os.makedirs(succeed, exist_ok=True)
         shutil.move(src, des)
 
     def __create_stamp(self, name):
@@ -279,8 +295,9 @@ class Deployer:
         call(['touch',stamp_path])
     
     def __check_stamp(self, name, hash):
-        stamp_path = "{}/work/completed/{}/.stamp/{}".format(self.project_path, hash, name)
-        return os.path.isfile(stamp_path)
+        stamp_path1 = "{}/work/completed/{}/.stamp/{}".format(self.project_path, hash, name)
+        stamp_path2 = "{}/work/succeed/{}/.stamp/{}".format(self.project_path, hash, name)
+        return os.path.isfile(stamp_path1) or os.path.isfile(stamp_path2)
 
     def __create_dir_for_case(self):
         if not os.path.isdir(self.current_case_path):

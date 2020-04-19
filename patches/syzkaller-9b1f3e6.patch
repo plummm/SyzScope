@@ -145,7 +145,7 @@ index 4e413636..9ad59ac9 100644
  	}
  	if len(syscalls) == 0 {
 diff --git a/pkg/report/linux.go b/pkg/report/linux.go
-index 15047377..7c790961 100644
+index 0657c4a1..f058da7c 100644
 --- a/pkg/report/linux.go
 +++ b/pkg/report/linux.go
 @@ -14,6 +14,7 @@ import (
@@ -165,12 +165,12 @@ index 15047377..7c790961 100644
  	if oops == nil {
  		return nil
  	}
-@@ -195,6 +196,66 @@ func (ctx *linux) findFirstOops(output []byte) (oops *oops, startPos int, contex
+@@ -195,6 +196,63 @@ func (ctx *linux) findFirstOops(output []byte) (oops *oops, startPos int, contex
  	return
  }
  
 +func (ctx *linux) findCriticalOops(output []byte) (oops *oops, startPos int, context string) {
-+	kasanRegx := regexp.MustCompile(`BUG: KASAN: ([a-z\\-]+) in ([a-zA-Z0-9_]+).*\n\s*?(Read|Write) of size (?:[0-9]+)`)
++	kasanRegx := regexp.MustCompile(`BUG: KASAN: ([a-z\\-]+) in ([a-zA-Z0-9_]+).*`)
 +	for pos, next := 0, 0; pos < len(output); pos = next + 1 {
 +		next = bytes.IndexByte(output[pos:], '\n')
 +		if next != -1 {
@@ -182,19 +182,16 @@ index 15047377..7c790961 100644
 +		for _, oops1 := range linuxOopses {
 +			if matchOops(line, oops1, ctx.ignores) {
 +				line1 := ctx.takeAfterContext(line)
-+				line2 := ctx.takeAfterContext(ctx.getNextLine(next+1, output))
-+				line1 = append(line1, '\n')
-+				line1 = append(line1, line2...)
-+				line3 := make([]byte, len(line1))
++				line2 := make([]byte, len(line1))
 +				for _, e := range line1 {
 +					if (e >= 0x20 && e <= 0x7e) || e == 0xa {
-+						line3 = append(line3, e)
++						line2 = append(line2, e)
 +					}
 +				}
-+				log.Logf(0, "line3: %s", line3)
-+				m := kasanRegx.Find(line3)
++				log.Logf(1, "line: %s", line2)
++				m := kasanRegx.Find(line2)
 +				if m != nil {
-+					log.Logf(0, "Match: [%s]", m)
++					log.Logf(1, "Match: [%s]", m)
 +					oops = oops1
 +					startPos = pos
 +					context = ctx.extractContext(line)
@@ -565,7 +562,7 @@ index 00000000..66cba158
 +	return false
 +}
 diff --git a/prog/rand.go b/prog/rand.go
-index c761d0b4..5936ef92 100644
+index b350e31c..133f5a3a 100644
 --- a/prog/rand.go
 +++ b/prog/rand.go
 @@ -14,6 +14,7 @@ import (
@@ -576,7 +573,7 @@ index c761d0b4..5936ef92 100644
  )
  
  const (
-@@ -689,7 +690,13 @@ func (a *ResourceType) generate(r *randGen, s *state) (arg Arg, calls []*Call) {
+@@ -692,7 +693,13 @@ func (a *ResourceType) generate(r *randGen, s *state) (arg Arg, calls []*Call) {
  			return
  		}
  	}
@@ -893,7 +890,7 @@ index 62648336..e31b664a 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index 2a0b7dd4..bed2ae60 100644
+index 2a0b7dd4..1763f2a2 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
 @@ -13,6 +13,7 @@ import (
@@ -947,9 +944,9 @@ index 2a0b7dd4..bed2ae60 100644
  				}
  			} else {
  				mgr.saveRepro(res.res, res.stats, res.hub)
-+				log.Logf(0, "SaveRepro %s", res.report0.Title)
-+				if strings.Contains(res.report0.Title, "slab-out-of-bounds Write") ||
-+					strings.Contains(res.report0.Title, "use-after-free Write") {
++				log.Logf(0, "SaveRepro %s", res.res.Report.Title)
++				if strings.Contains(res.res.Report.Title, "slab-out-of-bounds Write") ||
++					strings.Contains(res.res.Report.Title, "use-after-free Write") {
 +					log.Logf(0, "exit due to satisfied results")
 +					saveToSuccess(mgr.cfg.AnalyzerDir)
 +					shutdown = nil
@@ -967,7 +964,7 @@ index 2a0b7dd4..bed2ae60 100644
  	if err != nil {
  		return nil, fmt.Errorf("failed to run fuzzer: %v", err)
 diff --git a/syz-manager/rpc.go b/syz-manager/rpc.go
-index 91e31dbd..ddbdb8e2 100644
+index 91e31dbd..88f37d21 100644
 --- a/syz-manager/rpc.go
 +++ b/syz-manager/rpc.go
 @@ -10,6 +10,7 @@ import (
@@ -1026,21 +1023,20 @@ index 91e31dbd..ddbdb8e2 100644
 +func (serv *RPCServer) GetCallsFromFuzzer(a *rpctype.GetCallsFromFuzzerArgs, r *int) error {
 +	err := serv.mgr.parseCustomizedTestcase(*a)
 +	if err != nil {
-+		log.Logf(0, "%v", err)
++		log.Logf(0, "parseCustomizedTestcase failed %v", err)
 +	}
 +	return nil
 +}
 diff --git a/syz-manager/utilities.go b/syz-manager/utilities.go
 new file mode 100644
-index 00000000..7712c369
+index 00000000..a9638f05
 --- /dev/null
 +++ b/syz-manager/utilities.go
-@@ -0,0 +1,104 @@
+@@ -0,0 +1,96 @@
 +package main
 +
 +import (
 +	"bytes"
-+	"fmt"
 +	"io/ioutil"
 +	"math/rand"
 +	_ "net/http/pprof"
@@ -1081,18 +1077,11 @@ index 00000000..7712c369
 +			calls := make(map[*prog.Syscall]bool)
 +			rnd := rand.New(rand.NewSource(time.Now().UnixNano() + int64(4)*1e12))
 +			for _, id := range a.EnabledCalls[a.Sandbox] {
-+				if mgr.target.Syscalls[id] == nil {
-+					log.Logf(0, "a nil")
-+				} else {
-+					calls[mgr.target.Syscalls[id]] = true
-+				}
++				calls[mgr.target.Syscalls[id]] = true
 +			}
 +			prios := mgr.target.CalculatePriorities(corpus)
 +			choiceTable := mgr.target.BuildChoiceTable(prios, calls)
 +			p, err := mgr.target.Deserialize(testcase, prog.NonStrict)
-+			if err != nil {
-+				return fmt.Errorf("Fail to deserialize %v", err)
-+			}
 +			prog.NOfCalls = len(p.Calls)
 +			prog.PocProg = string(testcase)
 +			appendTestcase(testcase, testcase, prog.NOfCalls)
