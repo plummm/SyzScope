@@ -591,7 +591,7 @@ index c761d0b4..5936ef92 100644
  	return
  }
 diff --git a/syz-fuzzer/fuzzer.go b/syz-fuzzer/fuzzer.go
-index b6e8be4b..f52e76c5 100644
+index b6e8be4b..06a1c52f 100644
 --- a/syz-fuzzer/fuzzer.go
 +++ b/syz-fuzzer/fuzzer.go
 @@ -102,6 +102,8 @@ const (
@@ -638,7 +638,7 @@ index b6e8be4b..f52e76c5 100644
  }
  
  // Returns gateCallback for leak checking if enabled.
-@@ -310,7 +320,7 @@ func (fuzzer *Fuzzer) blacklistDataRaceFrames(frames []string) {
+@@ -310,11 +320,12 @@ func (fuzzer *Fuzzer) blacklistDataRaceFrames(frames []string) {
  	log.Logf(0, "%s", output)
  }
  
@@ -647,7 +647,12 @@ index b6e8be4b..f52e76c5 100644
  	var execTotal uint64
  	var lastPoll time.Time
  	var lastPrint time.Time
-@@ -327,6 +337,11 @@ func (fuzzer *Fuzzer) pollLoop() {
+ 	ticker := time.NewTicker(3 * time.Second).C
++	lastEnqueue = time.Now()
+ 	for {
+ 		poll := false
+ 		select {
+@@ -327,6 +338,11 @@ func (fuzzer *Fuzzer) pollLoop() {
  			log.Logf(0, "alive, executed %v", execTotal)
  			lastPrint = time.Now()
  		}
@@ -659,7 +664,7 @@ index b6e8be4b..f52e76c5 100644
  		if poll || time.Since(lastPoll) > 10*time.Second {
  			needCandidates := fuzzer.workQueue.wantCandidates()
  			if poll && !needCandidates {
-@@ -367,8 +382,10 @@ func (fuzzer *Fuzzer) poll(needCandidates bool, stats map[string]uint64) bool {
+@@ -367,8 +383,10 @@ func (fuzzer *Fuzzer) poll(needCandidates bool, stats map[string]uint64) bool {
  	for _, inp := range r.NewInputs {
  		fuzzer.addInputFromAnotherFuzzer(inp)
  	}
@@ -672,7 +677,7 @@ index b6e8be4b..f52e76c5 100644
  	}
  	if needCandidates && len(r.Candidates) == 0 && atomic.LoadUint32(&fuzzer.triagedCandidates) == 0 {
  		atomic.StoreUint32(&fuzzer.triagedCandidates, 1)
-@@ -541,3 +558,23 @@ func parseOutputType(str string) OutputType {
+@@ -541,3 +559,23 @@ func parseOutputType(str string) OutputType {
  		return OutputNone
  	}
  }
@@ -962,7 +967,7 @@ index 2a0b7dd4..bed2ae60 100644
  	if err != nil {
  		return nil, fmt.Errorf("failed to run fuzzer: %v", err)
 diff --git a/syz-manager/rpc.go b/syz-manager/rpc.go
-index 91e31dbd..88f37d21 100644
+index 91e31dbd..ddbdb8e2 100644
 --- a/syz-manager/rpc.go
 +++ b/syz-manager/rpc.go
 @@ -10,6 +10,7 @@ import (
@@ -1021,20 +1026,21 @@ index 91e31dbd..88f37d21 100644
 +func (serv *RPCServer) GetCallsFromFuzzer(a *rpctype.GetCallsFromFuzzerArgs, r *int) error {
 +	err := serv.mgr.parseCustomizedTestcase(*a)
 +	if err != nil {
-+		log.Logf(0, "parseCustomizedTestcase failed %v", err)
++		log.Logf(0, "%v", err)
 +	}
 +	return nil
 +}
 diff --git a/syz-manager/utilities.go b/syz-manager/utilities.go
 new file mode 100644
-index 00000000..05ddf88f
+index 00000000..7712c369
 --- /dev/null
 +++ b/syz-manager/utilities.go
-@@ -0,0 +1,90 @@
+@@ -0,0 +1,104 @@
 +package main
 +
 +import (
 +	"bytes"
++	"fmt"
 +	"io/ioutil"
 +	"math/rand"
 +	_ "net/http/pprof"
@@ -1049,9 +1055,14 @@ index 00000000..05ddf88f
 +)
 +
 +var TestcasePath string
++var flagParseTestcase = false
 +
 +//Read and parse testcase, send it to fuzzer
 +func (mgr *Manager) parseCustomizedTestcase(a rpctype.GetCallsFromFuzzerArgs) error {
++	if flagParseTestcase {
++		return nil
++	}
++	flagParseTestcase = true
 +	var corpus []*prog.Prog
 +	info, err := os.Stat(TestcasePath)
 +	if !os.IsNotExist(err) {
@@ -1070,11 +1081,18 @@ index 00000000..05ddf88f
 +			calls := make(map[*prog.Syscall]bool)
 +			rnd := rand.New(rand.NewSource(time.Now().UnixNano() + int64(4)*1e12))
 +			for _, id := range a.EnabledCalls[a.Sandbox] {
-+				calls[mgr.target.Syscalls[id]] = true
++				if mgr.target.Syscalls[id] == nil {
++					log.Logf(0, "a nil")
++				} else {
++					calls[mgr.target.Syscalls[id]] = true
++				}
 +			}
 +			prios := mgr.target.CalculatePriorities(corpus)
 +			choiceTable := mgr.target.BuildChoiceTable(prios, calls)
 +			p, err := mgr.target.Deserialize(testcase, prog.NonStrict)
++			if err != nil {
++				return fmt.Errorf("Fail to deserialize %v", err)
++			}
 +			prog.NOfCalls = len(p.Calls)
 +			prog.PocProg = string(testcase)
 +			appendTestcase(testcase, testcase, prog.NOfCalls)
@@ -1111,8 +1129,9 @@ index 00000000..05ddf88f
 +
 +func saveToSuccess(analyzerPath string) {
 +	hash := path.Base(analyzerPath)
-+	work := path.Dir(analyzerPath)
++	work := path.Dir(path.Dir(analyzerPath))
 +	success := path.Join(work, "success")
++	log.Logf(0, "Write success to %s", success)
 +	f, err := os.OpenFile(success, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 +	if err != nil {
 +		log.Logf(0, "Fail to open %s: %v", success, err)

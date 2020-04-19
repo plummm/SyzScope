@@ -66,12 +66,12 @@ class Deployer:
         self.current_case_path = "{}/work/incomplete/{}".format(self.project_path, hash[:7])
         self.syzkaller_path = "{}/gopath/src/github.com/google/syzkaller".format(self.current_case_path)
         self.kernel_path = "{}/linux".format(self.current_case_path)
-        self.__create_dir_for_case()
         self.case_logger = self.__init_case_logger("{}-log".format(hash))
         self.case_info_logger = self.__init_case_logger("{}-info".format(hash))
         self.logger.info(hash)
 
         if not self.__check_stamp(stamp_finish_fuzzing, hash[:7]):
+            self.__create_dir_for_case()
             r = self.__run_delopy_script(hash[:7], case)
             if r == 1:
                 self.logger.error("Error occur in deploy.sh")

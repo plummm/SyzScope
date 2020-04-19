@@ -26,7 +26,8 @@ def args_parse():
                              '(default value is \'slab-out-of-bounds Read\')\n'
                              'This argument could be multiple values')
     parser.add_argument('-pm', '--parallel-max', nargs='?', action='store',
-                        default=5, help='The maximum of parallel processes')
+                        default=5, help='The maximum of parallel processes\n'
+                                        '(default valus is 5)')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug mode')
 
@@ -77,7 +78,7 @@ if __name__ == '__main__':
         crawler.run()
     install_requirments()
     deployer = []
-    parallel_max = args.parallel_max
+    parallel_max = int(args.parallel_max)
     parallel_count = 0
     lock = threading.Lock()
     for i in range(0,min(parallel_max,int(args.max))):
