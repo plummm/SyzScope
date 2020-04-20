@@ -134,7 +134,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   patch -p1 -i kasan.patch
   #Add a rejection detector in future
   curl $CONFIG > .config
-  make -j16
+  make -j16 || exit 1
   touch $CASE_PATH/.stamp/BUILD_KERNEL
 fi
 

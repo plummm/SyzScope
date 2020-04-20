@@ -1,6 +1,7 @@
 import requests
 import logging
 import os
+import re
 
 from bs4 import BeautifulSoup
 from bs4 import element
@@ -104,9 +105,11 @@ class Crawler:
                             continue
                         try:
                             tags = case.find_all('td', {"class": "tag"})
-                            commit = tags[0].text
+                            m = re.search(r'id=([0-9a-z]*)', tags[0].next.attrs['href'])
+                            commit = m.groups()[0]
                             self.logger.debug("Kernel commit: {}".format(commit))
-                            syzkaller = tags[1].text
+                            m = re.search(r'commits\/([0-9a-z]*)', tags[1].next.attrs['href'])
+                            syzkaller = m.groups()[0]
                             self.logger.debug("Syzkaller commit: {}".format(syzkaller))
                             config = syzbot_host_url + case.find('td', {"class": "config"}).next.attrs['href']
                             self.logger.debug("Config URL: {}".format(config))
