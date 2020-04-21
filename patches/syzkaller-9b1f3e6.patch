@@ -964,7 +964,7 @@ index 2a0b7dd4..1763f2a2 100644
  	if err != nil {
  		return nil, fmt.Errorf("failed to run fuzzer: %v", err)
 diff --git a/syz-manager/rpc.go b/syz-manager/rpc.go
-index 91e31dbd..88f37d21 100644
+index 91e31dbd..ddbdb8e2 100644
 --- a/syz-manager/rpc.go
 +++ b/syz-manager/rpc.go
 @@ -10,6 +10,7 @@ import (
@@ -1023,20 +1023,21 @@ index 91e31dbd..88f37d21 100644
 +func (serv *RPCServer) GetCallsFromFuzzer(a *rpctype.GetCallsFromFuzzerArgs, r *int) error {
 +	err := serv.mgr.parseCustomizedTestcase(*a)
 +	if err != nil {
-+		log.Logf(0, "parseCustomizedTestcase failed %v", err)
++		log.Logf(0, "%v", err)
 +	}
 +	return nil
 +}
 diff --git a/syz-manager/utilities.go b/syz-manager/utilities.go
 new file mode 100644
-index 00000000..a9638f05
+index 00000000..149de8c7
 --- /dev/null
 +++ b/syz-manager/utilities.go
-@@ -0,0 +1,96 @@
+@@ -0,0 +1,100 @@
 +package main
 +
 +import (
 +	"bytes"
++	"fmt"
 +	"io/ioutil"
 +	"math/rand"
 +	_ "net/http/pprof"
@@ -1082,6 +1083,9 @@ index 00000000..a9638f05
 +			prios := mgr.target.CalculatePriorities(corpus)
 +			choiceTable := mgr.target.BuildChoiceTable(prios, calls)
 +			p, err := mgr.target.Deserialize(testcase, prog.NonStrict)
++			if err != nil {
++				return fmt.Errorf("Fail to parse testcase: %v", err)
++			}
 +			prog.NOfCalls = len(p.Calls)
 +			prog.PocProg = string(testcase)
 +			appendTestcase(testcase, testcase, prog.NOfCalls)

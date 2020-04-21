@@ -72,11 +72,15 @@ class Crawler:
                     for keyword in self.keyword:
                         if keyword in title.text:
                             commit_list = case.find('td', {"class": "commit_list"})
-                            patch_url = commit_list.contents[1].contents[1].attrs['href']
-                            if patch_url in self.patches:
-                                break
+                            try:
+                                patch_url = commit_list.contents[1].contents[1].attrs['href']
+                                if patch_url in self.patches:
+                                    break
+                                self.patches[patch_url] = True
+                            except:
+                                # patch only works on fixed cases
+                                pass
                             self.logger.debug("[{}] Find a suitable case: {}".format(count, title.text))
-                            self.patches[patch_url] = True
                             href = title.next.attrs['href']
                             hash = href[8:]
                             self.logger.debug("[{}] Fetch {}".format(count, hash))

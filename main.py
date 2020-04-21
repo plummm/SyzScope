@@ -28,6 +28,8 @@ def args_parse():
     parser.add_argument('-pm', '--parallel-max', nargs='?', action='store',
                         default=5, help='The maximum of parallel processes\n'
                                         '(default valus is 5)')
+    parser.add_argument('--force', action='store_true',
+                        help='Force to run all cases even it has finished\n')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug mode')
 
@@ -53,12 +55,13 @@ def deploy_one_case(index):
         l = list(crawler.cases.keys())
         if len(l) == 0:
             lock.release()
-            return
+            break
         hash = l[0]
         case = crawler.cases.pop(hash)
         print("Thread {}: run case {} [{}/{}] left".format(index, hash, len(l)-1, total))
         lock.release()
         deployer[index].deploy(hash, case)
+    print("Thread {} exit")
 
 def install_requirments():
     st = os.stat("scripts/requirements.sh")
@@ -84,6 +87,6 @@ if __name__ == '__main__':
     l = list(crawler.cases.keys())
     total = len(l)
     for i in range(0,min(parallel_max,int(args.max))):
-        deployer.append(Deployer(i, args.debug))
+        deployer.append(Deployer(i, args.debug, args.force))
         x = threading.Thread(target=deploy_one_case, args=(i,))
         x.start()

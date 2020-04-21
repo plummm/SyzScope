@@ -7,7 +7,7 @@ import logging
 
 from subprocess import call, Popen, PIPE, STDOUT
 
-default_port = 56745
+default_port = 53777
 stamp_finish_fuzzing = "FINISH_FUZZING"
 
 syz_config_template="""
@@ -35,7 +35,7 @@ syz_config_template="""
 }}"""
 
 class Deployer:
-    def __init__(self, index, debug=False):
+    def __init__(self, index, debug=False, force=False):
         self.linux_path = "linux"
         self.project_path = ""
         self.syzkaller_path = ""
@@ -46,6 +46,7 @@ class Deployer:
         self.case_logger = None
         self.logger = None
         self.case_info_logger = None
+        self.force = force
         self.init_logger(debug)
         self.clone_linux()
 
@@ -68,7 +69,7 @@ class Deployer:
         self.kernel_path = "{}/linux".format(self.current_case_path)
         self.logger.info(hash)
 
-        if not self.__check_stamp(stamp_finish_fuzzing, hash[:7]):
+        if self.force or not self.__check_stamp(stamp_finish_fuzzing, hash[:7]):
             self.__create_dir_for_case()
             self.case_logger = self.__init_case_logger("{}-log".format(hash))
             self.case_info_logger = self.__init_case_logger("{}-info".format(hash))
@@ -125,8 +126,11 @@ class Deployer:
                 with p.stdout:
                     self.__log_subprocess_output(p.stdout, logging.INFO)
                 exitcode = p.wait()
-        self.logger.info("syzkaller is done with exitcode {}".format(self.index, exitcode))
-        self.__save_case(hash)
+        self.logger.info("syzkaller is done with exitcode {}".format(exitcode))
+        if exitcode == 0:
+            self.__save_case(hash)
+        else:
+            self.logger.info("case {} encounter an error. See log for details.".format(hash))
 
     def __run_linux_clone_script(self):
         st = os.stat("scripts/linux-clone.sh")
@@ -153,7 +157,7 @@ class Deployer:
         with p.stdout:
             self.__log_subprocess_output(p.stdout, logging.INFO)
         exitcode = p.wait()
-        self.logger.info("script/deploy.sh from thread {0} is done with exitcode {1}".format(index, exitcode))
+        self.logger.info("script/deploy.sh is done with exitcode {}".format(exitcode))
         return exitcode
 
     def __write_config(self, testcase_url, hash):
@@ -277,6 +281,8 @@ class Deployer:
         des = "{}/{}".format(completed, base)
         if not os.path.isdir(completed):
             os.makedirs(completed, exist_ok=True)
+        if os.path.isdir(des):
+            os.rmdir(des)
         shutil.move(src, des)
     
     def __move_to_succeed(self):
@@ -287,6 +293,8 @@ class Deployer:
         des = "{}/{}".format(succeed, base)
         if not os.path.isdir(succeed):
             os.makedirs(succeed, exist_ok=True)
+        if os.path.isdir(des):
+            os.rmdir(des)
         shutil.move(src, des)
 
     def __create_stamp(self, name):
