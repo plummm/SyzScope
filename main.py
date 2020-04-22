@@ -61,7 +61,7 @@ def deploy_one_case(index):
         print("Thread {}: run case {} [{}/{}] left".format(index, hash, len(l)-1, total))
         lock.release()
         deployer[index].deploy(hash, case)
-    print("Thread {} exit")
+    print("Thread {} exit".format(index))
 
 def install_requirments():
     st = os.stat("scripts/requirements.sh")

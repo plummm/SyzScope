@@ -31,6 +31,10 @@ syz_config_template="""
         }},
         \"enable_syscalls\" : [
             {3}
+        ],
+        \"ignores\": [
+            "WARNING",
+            "INFO"
         ]
 }}"""
 
@@ -130,7 +134,7 @@ class Deployer:
         if exitcode == 0:
             self.__save_case(hash)
         else:
-            self.logger.info("case {} encounter an error. See log for details.".format(hash))
+            self.__save_error(hash)
 
     def __run_linux_clone_script(self):
         st = os.stat("scripts/linux-clone.sh")
@@ -257,6 +261,13 @@ class Deployer:
         else:
             self.__move_to_completed()
 
+    def __save_error(self, hash):
+        self.logger.info("case {} encounter an error. See log for details.".format(hash))
+        url = syzbotCrawler.syzbot_host_url + syzbotCrawler.syzbot_bug_base_url + hash
+        self.case_info_logger.info(url)
+        self.__move_to_error()
+
+
     def __copy_crashes(self):
         crash_path = "{}/workdir/crashes".format(self.syzkaller_path)
         dest_path = "{}/crashes".format(self.current_case_path)
@@ -293,6 +304,18 @@ class Deployer:
         des = "{}/{}".format(succeed, base)
         if not os.path.isdir(succeed):
             os.makedirs(succeed, exist_ok=True)
+        if os.path.isdir(des):
+            os.rmdir(des)
+        shutil.move(src, des)
+    
+    def __move_to_error(self):
+        self.logger.info("Copy to error")
+        src = self.current_case_path
+        base = os.path.basename(src)
+        error = "{}/work/error".format(self.project_path)
+        des = "{}/{}".format(error, base)
+        if not os.path.isdir(error):
+            os.makedirs(error, exist_ok=True)
         if os.path.isdir(des):
             os.rmdir(des)
         shutil.move(src, des)
