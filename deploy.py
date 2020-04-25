@@ -80,6 +80,7 @@ class Deployer:
             r = self.__run_delopy_script(hash[:7], case)
             if r == 1:
                 self.logger.error("Error occur in deploy.sh")
+                self.__save_error(hash)
                 return
             self.__write_config(case["syz_repro"], hash[:7])
             self.run_syzkaller(hash)

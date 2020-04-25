@@ -64,6 +64,7 @@ class Crawler:
             return
         count = 0
         for table in tables:
+            self.logger.info("table caption {}".format(table.caption.text))
             for case in table.tbody.contents:
                 if type(case) == element.Tag:
                     title = case.find('td', {"class": "title"})

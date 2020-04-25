@@ -890,7 +890,7 @@ index 62648336..e31b664a 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index 2a0b7dd4..1763f2a2 100644
+index 2a0b7dd4..3aa87428 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
 @@ -13,6 +13,7 @@ import (
@@ -917,20 +917,21 @@ index 2a0b7dd4..1763f2a2 100644
  	mgr.vmLoop()
  }
  
-@@ -311,6 +314,7 @@ func (mgr *Manager) vmLoop() {
+@@ -311,6 +314,8 @@ func (mgr *Manager) vmLoop() {
  	reproDone := make(chan *ReproResult, 1)
  	stopPending := false
  	shutdown := vm.Shutdown
++	succeed := 0
 +	start := time.Now()
  	for shutdown != nil || len(instances) != vmCount {
  		mgr.mu.Lock()
  		phase := mgr.phase
-@@ -387,6 +391,14 @@ func (mgr *Manager) vmLoop() {
+@@ -387,6 +392,14 @@ func (mgr *Manager) vmLoop() {
  			stopPending = true
  		case res := <-runDone:
  			log.Logf(1, "loop: instance %v finished, crash=%v", res.idx, res.crash != nil)
-+			if time.Since(start) >= 8*time.Hour {
-+				log.Logf(0, "running for 8 hours, exit now.")
++			if time.Since(start) >= time.Duration(8-succeed)*time.Hour {
++				log.Logf(0, "running for %d hours, exit now.", 8-succeed)
 +				shutdown = nil
 +			}
 +			if *flagPoC && res.crash != nil && res.crash.Report.Title == vm.NoOutputCrash {
@@ -940,21 +941,21 @@ index 2a0b7dd4..1763f2a2 100644
  			if res.err != nil && shutdown != nil {
  				log.Logf(0, "%v", res.err)
  			}
-@@ -423,6 +435,13 @@ func (mgr *Manager) vmLoop() {
+@@ -423,6 +436,13 @@ func (mgr *Manager) vmLoop() {
  				}
  			} else {
  				mgr.saveRepro(res.res, res.stats, res.hub)
 +				log.Logf(0, "SaveRepro %s", res.res.Report.Title)
-+				if strings.Contains(res.res.Report.Title, "slab-out-of-bounds Write") ||
++				if succeed == 0 && strings.Contains(res.res.Report.Title, "out-of-bounds Write") ||
 +					strings.Contains(res.res.Report.Title, "use-after-free Write") {
-+					log.Logf(0, "exit due to satisfied results")
++					succeed++
++					log.Logf(0, "Save to success file")
 +					saveToSuccess(mgr.cfg.AnalyzerDir)
-+					shutdown = nil
 +				}
  			}
  		case <-shutdown:
  			log.Logf(1, "loop: shutting down...")
-@@ -569,7 +588,7 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
+@@ -569,7 +589,7 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
  	defer atomic.AddUint32(&mgr.numFuzzing, ^uint32(0))
  	cmd := instance.FuzzerCmd(fuzzerBin, executorCmd, fmt.Sprintf("vm-%v", index),
  		mgr.cfg.TargetOS, mgr.cfg.TargetArch, fwdAddr, mgr.cfg.Sandbox, procs, fuzzerV,
@@ -1147,9 +1148,18 @@ index e7b41be6..4032849b 100644
  	if err != nil {
  		return nil, fmt.Errorf("failed to run fuzzer: %v", err)
 diff --git a/vm/qemu/qemu.go b/vm/qemu/qemu.go
-index bddace8f..f4e54838 100644
+index bddace8f..64f52e90 100644
 --- a/vm/qemu/qemu.go
 +++ b/vm/qemu/qemu.go
+@@ -186,7 +186,7 @@ var linuxCmdline = []string{
+ 	"earlyprintk=serial",
+ 	"oops=panic",
+ 	"nmi_watchdog=panic",
+-	"panic_on_warn=1",
++	//"panic_on_warn=1",
+ 	"panic=1",
+ 	"ftrace_dump_on_oops=orig_cpu",
+ 	"rodata=n",
 @@ -383,6 +383,7 @@ func (inst *instance) boot() error {
  			)
  		}
