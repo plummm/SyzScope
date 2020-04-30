@@ -3,7 +3,7 @@ from deploy import Deployer
 from subprocess import call
 
 import argparse, os, stat
-import threading
+import threading, re
 
 def args_parse():
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
@@ -17,7 +17,7 @@ def args_parse():
                         help='Indicate an URL for automatically crawling and running.\n'
                              '(default value is \'https://syzkaller.appspot.com/upstream/fixed\')')
     parser.add_argument('-m', '--max', nargs='?', action='store',
-                        default=9999,
+                        default='9999',
                         help='The maximum of cases for retrieving\n'
                              '(By default all the cases will be retrieved)')
     parser.add_argument('-k', '--key', nargs='*', action='store',
@@ -26,10 +26,24 @@ def args_parse():
                              '(default value is \'slab-out-of-bounds Read\')\n'
                              'This argument could be multiple values')
     parser.add_argument('-pm', '--parallel-max', nargs='?', action='store',
-                        default=5, help='The maximum of parallel processes\n'
+                        default='5', help='The maximum of parallel processes\n'
                                         '(default valus is 5)')
     parser.add_argument('--force', action='store_true',
                         help='Force to run all cases even it has finished\n')
+    parser.add_argument('--linux', nargs='?', action='store',
+                        default='-1',
+                        help='Indicate which linux repo to be used for running\n'
+                            '(--parallel-max will be set to 1)')
+    parser.add_argument('-r', '--replay', choices=['succeed', 'completed', 'incomplete', 'error'],
+                        help='Replay crashes of each case in one directory')
+    parser.add_argument('-sp', '--syzkaller-port', nargs='?',
+                        default='53777',
+                        help='The default port that is used by syzkaller\n'
+                        '(default value is 53777)')
+    parser.add_argument('-t', '--time', nargs='?',
+                        default='8',
+                        help='Time for each running(in hour)\n'
+                        '(default value is 8 hour)')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug mode')
 
@@ -68,14 +82,40 @@ def install_requirments():
     os.chmod("scripts/requirements.sh", st.st_mode | stat.S_IEXEC)
     call(['scripts/requirements.sh'], shell=False)
 
+def args_dependencies():
+    if args.debug or args.input != None:
+        args.max = '1'
+    if args.linux != '-1':
+        args.parallel_max = '1'
+
+def urlsOfCases(folder):
+    res = []
+    dirOfCases = "{}/work/{}".format(os.getcwd(), folder)
+
+    for dirs in os.listdir(dirOfCases):
+        path = os.path.join(dirOfCases,dirs)
+        for file in os.listdir(path):
+            if file == "log":
+                with open(os.path.join(path, file), "r") as f:
+                    for line in f:
+                        m = re.search(r'\[\d*\] https:\/\/syzkaller.appspot.com\/bug\?id=([a-z0-9]*)\n', line)
+                        if m != None and len(m.groups()) != 0:
+                            res.append(m.groups()[0])  
+                            break
+    
+    return res
+
 if __name__ == '__main__':
     args = args_parse()
     print_args_info(args)
     check_kvm()
-    if args.debug or args.input != None:
-        args.max = 1
+    args_dependencies()
+
     crawler = Crawler(url=args.url, keyword=args.key, max_retrieve=int(args.max), debug=args.debug)
-    if args.input != None:
+    if args.replay != None:
+        for url in urlsOfCases(args.replay):
+            crawler.run_one_case(url)
+    elif args.input != None:
         crawler.run_one_case(args.input)
     else:
         crawler.run()
@@ -87,6 +127,6 @@ if __name__ == '__main__':
     l = list(crawler.cases.keys())
     total = len(l)
     for i in range(0,min(parallel_max,int(args.max))):
-        deployer.append(Deployer(i, args.debug, args.force))
+        deployer.append(Deployer(i, args.debug, args.force, int(args.syzkaller_port), args.replay, int(args.linux), int(args.time)))
         x = threading.Thread(target=deploy_one_case, args=(i,))
         x.start()

@@ -22,7 +22,8 @@ syz_config_template="""
         \"procs\": 8,
         \"type\": \"qemu\",
         \"testcase\": \"{0}/workdir/testcase-{4}\",
-        \"analyzer_dir\": \"{6}",
+        \"analyzer_dir\": \"{6}\",
+        \"time_limit\": \"{7}\",
         \"vm\": {{
                 \"count\": 4,
                 \"kernel\": \"{1}/arch/x86/boot/bzImage\",
@@ -39,7 +40,7 @@ syz_config_template="""
 }}"""
 
 class Deployer:
-    def __init__(self, index, debug=False, force=False):
+    def __init__(self, index, debug=False, force=False, port=default_port, replay='incomplete', linux_index=-1, time=8):
         self.linux_path = "linux"
         self.project_path = ""
         self.syzkaller_path = ""
@@ -51,6 +52,16 @@ class Deployer:
         self.logger = None
         self.case_info_logger = None
         self.force = force
+        self.time_limit = time
+        if replay == None:
+            self.replay = False
+            self.catalog = 'incomplete'
+        else:
+            self.replay = True
+            self.catalog = replay
+        default_port = port
+        if linux_index != -1:
+            self.index = linux_index
         self.init_logger(debug)
         self.clone_linux()
 
@@ -64,19 +75,29 @@ class Deployer:
             self.logger.setLevel(logging.DEBUG)
         else:
             self.logger.setLevel(logging.INFO)
+    
+    def init_replay_crash(self, hash):
+        st = os.stat("scripts/init-replay.sh")
+        os.chmod("scripts/init-replay.sh", st.st_mode | stat.S_IEXEC)
+        self.logger.info("run: scripts/init-replay.sh {} {}".format(self.catalog, hash))
+        call(["scripts/init-replay.sh", self.catalog, hash])
 
     def deploy(self, hash, case):
         self.project_path = os.getcwd()
         self.image_path = "{}/tools/img".format(self.project_path)
-        self.current_case_path = "{}/work/incomplete/{}".format(self.project_path, hash[:7])
+        self.current_case_path = "{}/work/{}/{}".format(self.project_path, self.catalog, hash[:7])
         self.syzkaller_path = "{}/gopath/src/github.com/google/syzkaller".format(self.current_case_path)
         self.kernel_path = "{}/linux".format(self.current_case_path)
         self.logger.info(hash)
 
+        if self.replay:
+            self.init_replay_crash(hash[:7])    
         if self.force or not self.__check_stamp(stamp_finish_fuzzing, hash[:7]):
             self.__create_dir_for_case()
             self.case_logger = self.__init_case_logger("{}-log".format(hash))
             self.case_info_logger = self.__init_case_logger("{}-info".format(hash))
+            url = syzbotCrawler.syzbot_host_url + syzbotCrawler.syzbot_bug_base_url + hash
+            self.case_info_logger.info(url)
             r = self.__run_delopy_script(hash[:7], case)
             if r == 1:
                 self.logger.error("Error occur in deploy.sh")
@@ -155,7 +176,7 @@ class Deployer:
         os.chmod("scripts/deploy.sh", st.st_mode | stat.S_IEXEC)
         index = str(self.index)
         self.logger.info("run: scripts/deploy.sh".format(self.index))
-        p = Popen(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase, index],
+        p = Popen(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase, index, self.catalog],
                 stdout=PIPE,
                 stderr=STDOUT
                 )
@@ -179,7 +200,7 @@ class Deployer:
         new_syscalls = syscalls
         new_syscalls.extend(dependent_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(new_syscalls) + "\""
-        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash, default_port+self.index, self.current_case_path)
+        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash, default_port+self.index, self.current_case_path, self.time_limit)
         f = open(os.path.join(self.syzkaller_path, "workdir/{}-poc.cfg".format(hash)), "w")
         f.writelines(syz_config)
         f.close()
@@ -195,7 +216,7 @@ class Deployer:
         #syzkaller would help remove the duplicates
         syscalls.extend(raw_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(syscalls) + "\""
-        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash, default_port+self.index, self.current_case_path)
+        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash, default_port+self.index, self.current_case_path, self.time_limit)
         f = open(os.path.join(self.syzkaller_path, "workdir/{}.cfg".format(hash)), "w")
         f.writelines(syz_config)
         f.close()
@@ -254,8 +275,6 @@ class Deployer:
 
     def __save_case(self, hash):
         self.__copy_crashes()
-        url = syzbotCrawler.syzbot_host_url + syzbotCrawler.syzbot_bug_base_url + hash
-        self.case_info_logger.info(url)
         self.__create_stamp(stamp_finish_fuzzing)
         if self.__success_check(hash[:7]):
             self.__move_to_succeed()
@@ -264,8 +283,6 @@ class Deployer:
 
     def __save_error(self, hash):
         self.logger.info("case {} encounter an error. See log for details.".format(hash))
-        url = syzbotCrawler.syzbot_host_url + syzbotCrawler.syzbot_bug_base_url + hash
-        self.case_info_logger.info(url)
         self.__move_to_error()
 
 
@@ -293,6 +310,8 @@ class Deployer:
         des = "{}/{}".format(completed, base)
         if not os.path.isdir(completed):
             os.makedirs(completed, exist_ok=True)
+        if src == des:
+            return
         if os.path.isdir(des):
             os.rmdir(des)
         shutil.move(src, des)
@@ -305,6 +324,8 @@ class Deployer:
         des = "{}/{}".format(succeed, base)
         if not os.path.isdir(succeed):
             os.makedirs(succeed, exist_ok=True)
+        if src == des:
+            return
         if os.path.isdir(des):
             os.rmdir(des)
         shutil.move(src, des)
@@ -317,6 +338,8 @@ class Deployer:
         des = "{}/{}".format(error, base)
         if not os.path.isdir(error):
             os.makedirs(error, exist_ok=True)
+        if src == des:
+            return
         if os.path.isdir(des):
             os.rmdir(des)
         shutil.move(src, des)
@@ -332,8 +355,9 @@ class Deployer:
         return os.path.isfile(stamp_path1) or os.path.isfile(stamp_path2)
 
     def __create_dir_for_case(self):
-        if not os.path.isdir(self.current_case_path):
-            os.makedirs("{}/.stamp".format(self.current_case_path), exist_ok=True)
+        path = "{}/.stamp".format(self.current_case_path)
+        if not os.path.isdir(path):
+            os.makedirs(path, exist_ok=True)
     
     def __get_default_log_format(self):
         return logging.Formatter('%(asctime)s %(levelname)s [{}] %(message)s'.format(self.index))

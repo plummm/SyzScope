@@ -43,6 +43,7 @@ class Crawler:
             self.retreive_case(hash)
 
     def run_one_case(self, hash):
+        self.logger.info("retreive one case: %s",hash)
         self.cases[hash] = {}
         self.retreive_case(hash)
 
