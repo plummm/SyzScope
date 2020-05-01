@@ -75,10 +75,10 @@ index 00000000..b060f598
 +}
 diff --git a/courier/utilities.go b/courier/utilities.go
 new file mode 100644
-index 00000000..7ba36c23
+index 00000000..dd77605a
 --- /dev/null
 +++ b/courier/utilities.go
-@@ -0,0 +1,67 @@
+@@ -0,0 +1,68 @@
 +package courier
 +
 +import (
@@ -92,6 +92,7 @@ index 00000000..7ba36c23
 +)
 +
 +var AnalyzerPath string
++var ConfirmedSuccess = false
 +
 +func AppendTestcase(testcase, pocProg []byte, nOfCalls int) {
 +	AppendMutatingQueue(testcase, pocProg, nOfCalls)
@@ -146,10 +147,41 @@ index 00000000..7ba36c23
 +		f.WriteString(hash + "\n")
 +	}
 +}
+diff --git a/pkg/build/netbsd.go b/pkg/build/netbsd.go
+index 6faaeb2b..d22012b7 100644
+--- a/pkg/build/netbsd.go
++++ b/pkg/build/netbsd.go
+@@ -146,7 +146,7 @@ func (ctx netbsd) copyKernelToDisk(targetArch, vmType, outputDir, kernel string)
+ 		return fmt.Errorf("error syncing the instance %v", err)
+ 	}
+ 	// Make sure that the command has executed properly.
+-	rep := inst.MonitorExecution(outc, errc, reporter, vm.ExitNormal)
++	rep := inst.MonitorExecution(outc, errc, reporter, vm.ExitNormal, time.Now(), -1)
+ 	if rep != nil {
+ 		return fmt.Errorf("error executing sync: %v", rep.Title)
+ 	}
 diff --git a/pkg/instance/instance.go b/pkg/instance/instance.go
-index 5adc9dc6..862cab07 100644
+index 5adc9dc6..b95f196f 100644
 --- a/pkg/instance/instance.go
 +++ b/pkg/instance/instance.go
+@@ -322,7 +322,7 @@ func (inst *inst) testInstance() error {
+ 	if err != nil {
+ 		return fmt.Errorf("failed to run binary in VM: %v", err)
+ 	}
+-	rep := inst.vm.MonitorExecution(outc, errc, inst.reporter, vm.ExitNormal)
++	rep := inst.vm.MonitorExecution(outc, errc, inst.reporter, vm.ExitNormal, time.Now(), -1)
+ 	if rep != nil {
+ 		if err := inst.reporter.Symbolize(rep); err != nil {
+ 			// TODO(dvyukov): send such errors to dashboard.
+@@ -410,7 +410,7 @@ func (inst *inst) testProgram(command string, testTime time.Duration) error {
+ 		return fmt.Errorf("failed to run binary in VM: %v", err)
+ 	}
+ 	rep := inst.vm.MonitorExecution(outc, errc, inst.reporter,
+-		vm.ExitTimeout|vm.ExitNormal|vm.ExitError)
++		vm.ExitTimeout|vm.ExitNormal|vm.ExitError, time.Now(), -1)
+ 	if rep == nil {
+ 		return nil
+ 	}
 @@ -421,7 +421,7 @@ func (inst *inst) testProgram(command string, testTime time.Duration) error {
  }
  
@@ -219,7 +251,7 @@ index 4e413636..9ad59ac9 100644
  	}
  	if len(syscalls) == 0 {
 diff --git a/pkg/report/linux.go b/pkg/report/linux.go
-index 0657c4a1..5c0299e2 100644
+index 0657c4a1..14f4b069 100644
 --- a/pkg/report/linux.go
 +++ b/pkg/report/linux.go
 @@ -14,6 +14,9 @@ import (
@@ -241,14 +273,16 @@ index 0657c4a1..5c0299e2 100644
  	if oops == nil {
  		return nil
  	}
-@@ -195,6 +198,78 @@ func (ctx *linux) findFirstOops(output []byte) (oops *oops, startPos int, contex
+@@ -195,6 +198,97 @@ func (ctx *linux) findFirstOops(output []byte) (oops *oops, startPos int, contex
  	return
  }
  
 +func (ctx *linux) findCriticalOops(output []byte) (oops *oops, startPos int, context string) {
 +	kasanRegx := regexp.MustCompile(`BUG: KASAN: ([a-z\\-]+) in ([a-zA-Z0-9_]+).*`)
-+	oobReadRegx := regexp.MustCompile(`\?!\?MAGIC\?!\?read->(\w*)`)
-+	var rAddr []string
++	freeRegx := regexp.MustCompile(`BUG: KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*`)
++	oobReadRegx := regexp.MustCompile(`\?!\?MAGIC\?!\?read->(\w*) size->(\d*)`)
++	var rAddr []uint64
++	var rSize []uint64
 +	for pos, next := 0, 0; pos < len(output); pos = next + 1 {
 +		next = bytes.IndexByte(output[pos:], '\n')
 +		if next != -1 {
@@ -258,8 +292,15 @@ index 0657c4a1..5c0299e2 100644
 +		}
 +		line := output[pos:next]
 +		m := oobReadRegx.FindSubmatch(line)
-+		if len(m) == 2 {
-+			rAddr = append(rAddr, string(m[1]))
++		if len(m) == 3 {
++			addr, err1 := strconv.ParseUint(string(m[1]), 16, 64)
++			size, err2 := strconv.ParseUint(string(m[2]), 10, 64)
++			if err1 == nil && err2 == nil {
++				rAddr = append(rAddr, addr)
++				rSize = append(rSize, size)
++			} else {
++				log.Logf(0, "Fail to convert string to (u)int: %v %v", err1, err2)
++			}
 +		}
 +		for _, oops1 := range linuxOopses {
 +			if matchOops(line, oops1, ctx.ignores) {
@@ -272,15 +313,25 @@ index 0657c4a1..5c0299e2 100644
 +				}
 +				log.Logf(1, "line: %s", line2)
 +				m := kasanRegx.Find(line2)
++				if m == nil {
++					m = freeRegx.Find(line2)
++				}
 +				if m != nil {
 +					log.Logf(1, "Match: [%s]", m)
-+					for _, addr := range rAddr {
-+						re := fmt.Sprintf("Write of size \\d+ at addr (%s)", addr)
-+						oobWriteRegx := regexp.MustCompile(re)
-+						wAddr := oobWriteRegx.FindSubmatch(output[next:])
++					oobWriteRegx := regexp.MustCompile(`Write of size \d+ at addr (\w*)`)
++					wAddr := oobWriteRegx.FindSubmatch(output[next:])
++					for i, addr := range rAddr {
 +						if len(wAddr) > 0 {
-+							courier.SaveToFile("comfiredSuccess")
-+							break
++							addr2, err := strconv.ParseUint(string(wAddr[1]), 16, 64)
++							if err != nil {
++								log.Logf(0, "Fail to convert write address to uint64: %v", err)
++								continue
++							}
++							if addr+rSize[i] >= addr2 && addr <= addr2 {
++								log.Logf(0, "addr1:%x size:%d addr2:%x", addr, rSize[i], addr2)
++								courier.ConfirmedSuccess = true
++								break
++							}
 +						}
 +					}
 +					oops = oops1
@@ -320,6 +371,19 @@ index 0657c4a1..5c0299e2 100644
  // Yes, it is complex, but all state and logic are tightly coupled. It's unclear how to simplify it.
  // nolint: gocyclo
  func (ctx *linux) findReport(output []byte, oops *oops, startPos int, context string, useQuestionable bool) (
+diff --git a/pkg/repro/repro.go b/pkg/repro/repro.go
+index 9c05f34b..3d2884ee 100644
+--- a/pkg/repro/repro.go
++++ b/pkg/repro/repro.go
+@@ -621,7 +621,7 @@ func (ctx *context) testImpl(inst *vm.Instance, command string, duration time.Du
+ 		return false, fmt.Errorf("failed to run command in VM: %v", err)
+ 	}
+ 	rep := inst.MonitorExecution(outc, errc, ctx.reporter,
+-		vm.ExitTimeout|vm.ExitNormal|vm.ExitError)
++		vm.ExitTimeout|vm.ExitNormal|vm.ExitError, time.Now(), -1)
+ 	if rep == nil {
+ 		ctx.reproLog(2, "program did not crash")
+ 		return false, nil
 diff --git a/pkg/rpctype/rpctype.go b/pkg/rpctype/rpctype.go
 index fcc01a99..19abe3a5 100644
 --- a/pkg/rpctype/rpctype.go
@@ -981,10 +1045,18 @@ index 62648336..e31b664a 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index 2a0b7dd4..4de1e7e7 100644
+index 2a0b7dd4..63413f3b 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
-@@ -13,10 +13,13 @@ import (
+@@ -6,6 +6,7 @@ package main
+ import (
+ 	"bytes"
+ 	"encoding/json"
++	"errors"
+ 	"flag"
+ 	"fmt"
+ 	"math/rand"
+@@ -13,10 +14,13 @@ import (
  	"os"
  	"os/exec"
  	"path/filepath"
@@ -998,15 +1070,19 @@ index 2a0b7dd4..4de1e7e7 100644
  	"github.com/google/syzkaller/dashboard/dashapi"
  	"github.com/google/syzkaller/pkg/cover"
  	"github.com/google/syzkaller/pkg/csource"
-@@ -41,6 +44,7 @@ var (
+@@ -41,8 +45,11 @@ var (
  	flagConfig = flag.String("config", "", "configuration file")
  	flagDebug  = flag.Bool("debug", false, "dump all VM output to console")
  	flagBench  = flag.String("bench", "", "write execution statistics into this file periodically")
 +	flagPoC    = flag.Bool("poc", false, "mutate base on current PoC")
  )
  
++var shutdownErr = errors.New("An error to shutdown all vms")
++
  type Manager struct {
-@@ -267,6 +271,8 @@ func RunManager(cfg *mgrconfig.Config, target *prog.Target, sysTarget *targets.T
+ 	cfg            *mgrconfig.Config
+ 	vmPool         *vm.Pool
+@@ -267,6 +274,8 @@ func RunManager(cfg *mgrconfig.Config, target *prog.Target, sysTarget *targets.T
  		<-vm.Shutdown
  		return
  	}
@@ -1015,7 +1091,7 @@ index 2a0b7dd4..4de1e7e7 100644
  	mgr.vmLoop()
  }
  
-@@ -311,6 +317,8 @@ func (mgr *Manager) vmLoop() {
+@@ -311,6 +320,8 @@ func (mgr *Manager) vmLoop() {
  	reproDone := make(chan *ReproResult, 1)
  	stopPending := false
  	shutdown := vm.Shutdown
@@ -1024,18 +1100,26 @@ index 2a0b7dd4..4de1e7e7 100644
  	for shutdown != nil || len(instances) != vmCount {
  		mgr.mu.Lock()
  		phase := mgr.phase
-@@ -387,6 +395,18 @@ func (mgr *Manager) vmLoop() {
+@@ -367,7 +378,14 @@ func (mgr *Manager) vmLoop() {
+ 				instances = instances[:last]
+ 				log.Logf(1, "loop: starting instance %v", idx)
+ 				go func() {
+-					crash, err := mgr.runInstance(idx)
++					timeLimit, err := strconv.Atoi(mgr.cfg.TimeLimit)
++					if err != nil {
++						timeLimit = 8
++					}
++					crash, err := mgr.runInstance(idx, start, timeLimit-succeed)
++					if crash == nil && err == shutdownErr && len(reproQueue)+len(pendingRepro)+len(reproducing) == 0 {
++						shutdown = nil
++					}
+ 					runDone <- &RunResult{idx, crash, err}
+ 				}()
+ 			}
+@@ -387,6 +405,10 @@ func (mgr *Manager) vmLoop() {
  			stopPending = true
  		case res := <-runDone:
  			log.Logf(1, "loop: instance %v finished, crash=%v", res.idx, res.crash != nil)
-+			timeLimit, err := strconv.Atoi(mgr.cfg.TimeLimit)
-+			if err != nil {
-+				timeLimit = 8
-+			}
-+			if time.Since(start) >= time.Duration(timeLimit-succeed)*time.Hour {
-+				log.Logf(0, "running for %d hours, exit now.\nTime limit: %d  success count: %d", timeLimit-succeed, timeLimit, succeed)
-+				shutdown = nil
-+			}
 +			if *flagPoC && res.crash != nil && res.crash.Report.Title == vm.NoOutputCrash {
 +				log.Logf(0, "exit due to no output for a long time")
 +				shutdown = nil
@@ -1043,7 +1127,7 @@ index 2a0b7dd4..4de1e7e7 100644
  			if res.err != nil && shutdown != nil {
  				log.Logf(0, "%v", res.err)
  			}
-@@ -423,6 +443,13 @@ func (mgr *Manager) vmLoop() {
+@@ -423,6 +445,17 @@ func (mgr *Manager) vmLoop() {
  				}
  			} else {
  				mgr.saveRepro(res.res, res.stats, res.hub)
@@ -1053,11 +1137,24 @@ index 2a0b7dd4..4de1e7e7 100644
 +					succeed++
 +					log.Logf(0, "Save to success file")
 +					courier.SaveToFile("success")
++					if courier.ConfirmedSuccess {
++						courier.SaveToFile("confirmedSuccess")
++						courier.ConfirmedSuccess = false
++					}
 +				}
  			}
  		case <-shutdown:
  			log.Logf(1, "loop: shutting down...")
-@@ -569,7 +596,7 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
+@@ -528,7 +561,7 @@ func (mgr *Manager) loadCorpus() {
+ 	mgr.phase = phaseLoadedCorpus
+ }
+ 
+-func (mgr *Manager) runInstance(index int) (*Crash, error) {
++func (mgr *Manager) runInstance(index int, managerStart time.Time, timeLimit int) (*Crash, error) {
+ 	mgr.checkUsedFiles()
+ 	inst, err := mgr.vmPool.Create(index)
+ 	if err != nil {
+@@ -569,14 +602,17 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
  	defer atomic.AddUint32(&mgr.numFuzzing, ^uint32(0))
  	cmd := instance.FuzzerCmd(fuzzerBin, executorCmd, fmt.Sprintf("vm-%v", index),
  		mgr.cfg.TargetOS, mgr.cfg.TargetArch, fwdAddr, mgr.cfg.Sandbox, procs, fuzzerV,
@@ -1066,6 +1163,17 @@ index 2a0b7dd4..4de1e7e7 100644
  	outc, errc, err := inst.Run(time.Hour, mgr.vmStop, cmd)
  	if err != nil {
  		return nil, fmt.Errorf("failed to run fuzzer: %v", err)
+ 	}
+ 
+-	rep := inst.MonitorExecution(outc, errc, mgr.reporter, vm.ExitTimeout)
++	rep := inst.MonitorExecution(outc, errc, mgr.reporter, vm.ExitTimeout, managerStart, timeLimit)
+ 	if rep == nil {
++		if time.Since(managerStart) >= time.Duration(timeLimit)*time.Hour {
++			return nil, shutdownErr
++		}
+ 		// This is the only "OK" outcome.
+ 		log.Logf(0, "vm-%v: running for %v, restarting", index, time.Since(start))
+ 		return nil, nil
 diff --git a/syz-manager/rpc.go b/syz-manager/rpc.go
 index 91e31dbd..ddbdb8e2 100644
 --- a/syz-manager/rpc.go
@@ -1200,11 +1308,24 @@ index 00000000..1c243a31
 +	}
 +	return err
 +}
+diff --git a/tools/syz-crush/crush.go b/tools/syz-crush/crush.go
+index 33b9ccef..6796b061 100644
+--- a/tools/syz-crush/crush.go
++++ b/tools/syz-crush/crush.go
+@@ -113,7 +113,7 @@ func runInstance(cfg *mgrconfig.Config, reporter report.Reporter, vmPool *vm.Poo
+ 	}
+ 
+ 	log.Logf(0, "vm-%v: crushing...", index)
+-	rep := inst.MonitorExecution(outc, errc, reporter, vm.ExitTimeout)
++	rep := inst.MonitorExecution(outc, errc, reporter, vm.ExitTimeout, time.Now(), -1)
+ 	if rep == nil {
+ 		// This is the only "OK" outcome.
+ 		log.Logf(0, "vm-%v: running long enough, restarting", index)
 diff --git a/tools/syz-runtest/runtest.go b/tools/syz-runtest/runtest.go
-index e7b41be6..4032849b 100644
+index e7b41be6..652bdc5b 100644
 --- a/tools/syz-runtest/runtest.go
 +++ b/tools/syz-runtest/runtest.go
-@@ -187,7 +187,7 @@ func (mgr *Manager) boot(name string, index int) (*report.Report, error) {
+@@ -187,12 +187,12 @@ func (mgr *Manager) boot(name string, index int) (*report.Report, error) {
  	}
  	cmd := instance.FuzzerCmd(fuzzerBin, executorCmd, name,
  		mgr.cfg.TargetOS, mgr.cfg.TargetArch, fwdAddr, mgr.cfg.Sandbox, mgr.cfg.Procs, 0,
@@ -1213,6 +1334,12 @@ index e7b41be6..4032849b 100644
  	outc, errc, err := inst.Run(time.Hour, mgr.vmStop, cmd)
  	if err != nil {
  		return nil, fmt.Errorf("failed to run fuzzer: %v", err)
+ 	}
+-	rep := inst.MonitorExecution(outc, errc, mgr.reporter, vm.ExitNormal)
++	rep := inst.MonitorExecution(outc, errc, mgr.reporter, vm.ExitNormal, time.Now(), -1)
+ 	return rep, nil
+ }
+ 
 diff --git a/vm/qemu/qemu.go b/vm/qemu/qemu.go
 index bddace8f..64f52e90 100644
 --- a/vm/qemu/qemu.go
@@ -1235,10 +1362,38 @@ index bddace8f..64f52e90 100644
  			"-kernel", inst.cfg.Kernel,
  			"-append", strings.Join(cmdline, " "),
 diff --git a/vm/vm.go b/vm/vm.go
-index 0bd13a95..465945da 100644
+index 0bd13a95..33b064a7 100644
 --- a/vm/vm.go
 +++ b/vm/vm.go
-@@ -257,7 +257,7 @@ func (inst *Instance) MonitorExecution(outc <-chan []byte, errc <-chan error,
+@@ -15,6 +15,7 @@ import (
+ 	"path/filepath"
+ 	"time"
+ 
++	"github.com/google/syzkaller/pkg/log"
+ 	"github.com/google/syzkaller/pkg/mgrconfig"
+ 	"github.com/google/syzkaller/pkg/osutil"
+ 	"github.com/google/syzkaller/pkg/report"
+@@ -162,7 +163,7 @@ const (
+ // Exit says which exit modes should be considered as errors/OK.
+ // Returns a non-symbolized crash report, or nil if no error happens.
+ func (inst *Instance) MonitorExecution(outc <-chan []byte, errc <-chan error,
+-	reporter report.Reporter, exit ExitCondition) (rep *report.Report) {
++	reporter report.Reporter, exit ExitCondition, managerStart time.Time, timeLimit int) (rep *report.Report) {
+ 	mon := &monitor{
+ 		inst:     inst,
+ 		outc:     outc,
+@@ -233,6 +234,10 @@ func (inst *Instance) MonitorExecution(outc <-chan []byte, errc <-chan error,
+ 			if mon.matchPos < 0 {
+ 				mon.matchPos = 0
+ 			}
++			if timeLimit >= 0 && time.Since(managerStart) >= time.Duration(timeLimit)*time.Hour {
++				log.Logf(0, "running for %d hours, exit now.", timeLimit)
++				return nil
++			}
+ 		case <-ticker.C:
+ 			// Detect both "not output whatsoever" and "kernel episodically prints
+ 			// something to console, but fuzzer is not actually executing programs".
+@@ -257,7 +262,7 @@ func (inst *Instance) MonitorExecution(outc <-chan []byte, errc <-chan error,
  				mon.waitForOutput()
  			}
  			rep := &report.Report{
@@ -1247,7 +1402,7 @@ index 0bd13a95..465945da 100644
  				Output:     mon.output,
  				Suppressed: report.IsSuppressed(mon.reporter, mon.output),
  			}
-@@ -355,7 +355,7 @@ const (
+@@ -355,7 +360,7 @@ const (
  	maxErrorLength = 256
  
  	lostConnectionCrash  = "lost connection to test machine"
@@ -1257,7 +1412,7 @@ index 0bd13a95..465945da 100644
  	executingProgramStr1 = "executing program"  // syz-fuzzer output
  	executingProgramStr2 = "executed programs:" // syz-execprog output
 diff --git a/vm/vm_test.go b/vm/vm_test.go
-index 6f7f1848..edf64578 100644
+index 6f7f1848..8d894444 100644
 --- a/vm/vm_test.go
 +++ b/vm/vm_test.go
 @@ -243,7 +243,7 @@ var tests = []*Test{
@@ -1278,3 +1433,12 @@ index 6f7f1848..edf64578 100644
  		},
  	},
  	{
+@@ -370,7 +370,7 @@ func testMonitorExecution(t *testing.T, test *Test) {
+ 		test.Body(testInst.outc, testInst.errc)
+ 		done <- true
+ 	}()
+-	rep := inst.MonitorExecution(outc, errc, reporter, test.Exit)
++	rep := inst.MonitorExecution(outc, errc, reporter, test.Exit, time.Now(), -1)
+ 	<-done
+ 	if test.Report != nil && rep == nil {
+ 		t.Fatalf("got no report")

@@ -153,10 +153,7 @@ class Deployer:
                     self.__log_subprocess_output(p.stdout, logging.INFO)
                 exitcode = p.wait()
         self.logger.info("syzkaller is done with exitcode {}".format(exitcode))
-        if exitcode == 0:
-            self.__save_case(hash)
-        else:
-            self.__save_error(hash)
+        self.__save_case(hash, exitcode)
 
     def __run_linux_clone_script(self):
         st = os.stat("scripts/linux-clone.sh")
@@ -273,18 +270,20 @@ class Deployer:
                 res.append(syscall)
         return res
 
-    def __save_case(self, hash):
-        self.__copy_crashes()
-        self.__create_stamp(stamp_finish_fuzzing)
-        if self.__success_check(hash[:7]):
-            self.__move_to_succeed()
+    def __save_case(self, hash, exitcode):
+        if exitcode !=0:
+            self.__save_error(hash)
         else:
-            self.__move_to_completed()
+            self.__copy_crashes()
+            self.__create_stamp(stamp_finish_fuzzing)
+            if self.__success_check(hash[:7]):
+                self.__move_to_succeed()
+            else:
+                self.__move_to_completed()
 
     def __save_error(self, hash):
         self.logger.info("case {} encounter an error. See log for details.".format(hash))
         self.__move_to_error()
-
 
     def __copy_crashes(self):
         crash_path = "{}/workdir/crashes".format(self.syzkaller_path)
@@ -313,7 +312,10 @@ class Deployer:
         if src == des:
             return
         if os.path.isdir(des):
-            os.rmdir(des)
+            try:
+                os.rmdir(des)
+            except:
+                self.logger.info("Fail to delete directory {}".format(des))
         shutil.move(src, des)
     
     def __move_to_succeed(self):
@@ -327,7 +329,10 @@ class Deployer:
         if src == des:
             return
         if os.path.isdir(des):
-            os.rmdir(des)
+            try:
+                os.rmdir(des)
+            except:
+                self.logger.info("Fail to delete directory {}".format(des))
         shutil.move(src, des)
     
     def __move_to_error(self):
@@ -355,9 +360,27 @@ class Deployer:
         return os.path.isfile(stamp_path1) or os.path.isfile(stamp_path2)
 
     def __create_dir_for_case(self):
+        if self.__copy_from_duplicated_cases():
+            return
         path = "{}/.stamp".format(self.current_case_path)
         if not os.path.isdir(path):
             os.makedirs(path, exist_ok=True)
+
+    def __copy_from_duplicated_cases(self):
+        des = self.current_case_path
+        base = os.path.basename(des)
+        for dirs in ["completed", "incomplete", "error", "succeed"]:
+            src = "{}/work/{}/{}".format(self.project_path, dirs, base)
+            if src == des:
+                continue
+            if os.path.isdir(src):
+                try:
+                    shutil.copytree(src, des)
+                    self.logger.info("Found duplicated case in {}".format(src))
+                    return True
+                except:
+                    self.logger.info("Fail to copy the duplicated case from {}".format(src))
+        return False
     
     def __get_default_log_format(self):
         return logging.Formatter('%(asctime)s %(levelname)s [{}] %(message)s'.format(self.index))
