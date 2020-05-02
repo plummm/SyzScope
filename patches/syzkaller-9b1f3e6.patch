@@ -161,7 +161,7 @@ index 6faaeb2b..d22012b7 100644
  		return fmt.Errorf("error executing sync: %v", rep.Title)
  	}
 diff --git a/pkg/instance/instance.go b/pkg/instance/instance.go
-index 5adc9dc6..b95f196f 100644
+index d8883857..c24816ce 100644
 --- a/pkg/instance/instance.go
 +++ b/pkg/instance/instance.go
 @@ -322,7 +322,7 @@ func (inst *inst) testInstance() error {
@@ -173,7 +173,7 @@ index 5adc9dc6..b95f196f 100644
  	if rep != nil {
  		if err := inst.reporter.Symbolize(rep); err != nil {
  			// TODO(dvyukov): send such errors to dashboard.
-@@ -410,7 +410,7 @@ func (inst *inst) testProgram(command string, testTime time.Duration) error {
+@@ -412,7 +412,7 @@ func (inst *inst) testProgram(command string, testTime time.Duration) error {
  		return fmt.Errorf("failed to run binary in VM: %v", err)
  	}
  	rep := inst.vm.MonitorExecution(outc, errc, inst.reporter,
@@ -182,7 +182,7 @@ index 5adc9dc6..b95f196f 100644
  	if rep == nil {
  		return nil
  	}
-@@ -421,7 +421,7 @@ func (inst *inst) testProgram(command string, testTime time.Duration) error {
+@@ -423,7 +423,7 @@ func (inst *inst) testProgram(command string, testTime time.Duration) error {
  }
  
  func FuzzerCmd(fuzzer, executor, name, OS, arch, fwdAddr, sandbox string, procs, verbosity int,
@@ -191,7 +191,7 @@ index 5adc9dc6..b95f196f 100644
  	osArg := ""
  	if targets.Get(OS, arch).HostFuzzer {
  		// Only these OSes need the flag, because the rest assume host OS.
-@@ -438,13 +438,13 @@ func FuzzerCmd(fuzzer, executor, name, OS, arch, fwdAddr, sandbox string, procs,
+@@ -440,13 +440,13 @@ func FuzzerCmd(fuzzer, executor, name, OS, arch, fwdAddr, sandbox string, procs,
  		verbosityArg = fmt.Sprintf(" -vv=%v", verbosity)
  	}
  	return fmt.Sprintf("%v -executor=%v -name=%v -arch=%v%v -manager=%v -sandbox=%v"+
@@ -251,7 +251,7 @@ index 4e413636..9ad59ac9 100644
  	}
  	if len(syscalls) == 0 {
 diff --git a/pkg/report/linux.go b/pkg/report/linux.go
-index 0657c4a1..14f4b069 100644
+index 0657c4a1..cfc2221b 100644
 --- a/pkg/report/linux.go
 +++ b/pkg/report/linux.go
 @@ -14,6 +14,9 @@ import (
@@ -273,7 +273,7 @@ index 0657c4a1..14f4b069 100644
  	if oops == nil {
  		return nil
  	}
-@@ -195,6 +198,97 @@ func (ctx *linux) findFirstOops(output []byte) (oops *oops, startPos int, contex
+@@ -195,6 +198,109 @@ func (ctx *linux) findFirstOops(output []byte) (oops *oops, startPos int, contex
  	return
  }
  
@@ -318,20 +318,32 @@ index 0657c4a1..14f4b069 100644
 +				}
 +				if m != nil {
 +					log.Logf(1, "Match: [%s]", m)
-+					oobWriteRegx := regexp.MustCompile(`Write of size \d+ at addr (\w*)`)
-+					wAddr := oobWriteRegx.FindSubmatch(output[next:])
-+					for i, addr := range rAddr {
++					oobWriteRegx := regexp.MustCompile(`Write of size (\d+) at addr (\w*)`)
++					wAddrs := oobWriteRegx.FindAllSubmatch(output[next:], -1)
++					for _, wAddr := range wAddrs {
 +						if len(wAddr) > 0 {
-+							addr2, err := strconv.ParseUint(string(wAddr[1]), 16, 64)
-+							if err != nil {
-+								log.Logf(0, "Fail to convert write address to uint64: %v", err)
++							addr2, err1 := strconv.ParseUint(string(wAddr[2]), 16, 64)
++							if err1 != nil {
++								log.Logf(0, "Fail to convert write address to uint64: %v", err1)
 +								continue
 +							}
-+							if addr+rSize[i] >= addr2 && addr <= addr2 {
-+								log.Logf(0, "addr1:%x size:%d addr2:%x", addr, rSize[i], addr2)
-+								courier.ConfirmedSuccess = true
-+								break
++							size, err2 := strconv.ParseUint(string(wAddr[1]), 10, 64)
++							if err2 != nil {
++								log.Logf(0, "Fail to convert write size to uint64: %v", err2)
++								continue
 +							}
++
++							for i, _ := range rAddr {
++								if (rAddr[i]+rSize[i] >= addr2 && rAddr[i] <= addr2) ||
++									(addr2+size >= rAddr[i] && addr2+size <= rAddr[i]+rSize[i]) ||
++									(addr2 <= rAddr[i] && addr2+size >= rAddr[i]+rSize[i]) {
++									courier.ConfirmedSuccess = true
++									break
++								}
++							}
++						}
++						if courier.ConfirmedSuccess {
++							break
 +						}
 +					}
 +					oops = oops1
@@ -439,7 +451,7 @@ index 93a98655..6641b34c 100644
  			continue
  		}
 diff --git a/prog/mutation.go b/prog/mutation.go
-index 5a181956..93682823 100644
+index 7203a86e..8248ab3e 100644
 --- a/prog/mutation.go
 +++ b/prog/mutation.go
 @@ -34,19 +34,24 @@ func (p *Prog) Mutate(rs rand.Source, ncalls int, ct *ChoiceTable, corpus []*Pro
