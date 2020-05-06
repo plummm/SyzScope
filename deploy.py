@@ -6,6 +6,8 @@ import syzbotCrawler
 import logging
 
 from subprocess import call, Popen, PIPE, STDOUT
+from crash import CrashChecker
+from utilities import chmodX
 
 default_port = 53777
 stamp_finish_fuzzing = "FINISH_FUZZING"
@@ -53,6 +55,7 @@ class Deployer:
         self.case_info_logger = None
         self.force = force
         self.time_limit = time
+        self.crash_checker = None
         if replay == None:
             self.replay = False
             self.catalog = 'incomplete'
@@ -77,8 +80,7 @@ class Deployer:
             self.logger.setLevel(logging.INFO)
     
     def init_replay_crash(self, hash):
-        st = os.stat("scripts/init-replay.sh")
-        os.chmod("scripts/init-replay.sh", st.st_mode | stat.S_IEXEC)
+        chmodX("scripts/init-replay.sh")
         self.logger.info("run: scripts/init-replay.sh {} {}".format(self.catalog, hash))
         call(["scripts/init-replay.sh", self.catalog, hash])
 
@@ -88,6 +90,12 @@ class Deployer:
         self.current_case_path = "{}/work/{}/{}".format(self.project_path, self.catalog, hash[:7])
         self.syzkaller_path = "{}/gopath/src/github.com/google/syzkaller".format(self.current_case_path)
         self.kernel_path = "{}/linux".format(self.current_case_path)
+        self.crash_checker = CrashChecker(
+                self.project_path,
+                self.current_case_path,
+                default_port,
+                case["c_repro"],
+                self.logger)
         self.logger.info(hash)
 
         if self.replay:
@@ -105,6 +113,7 @@ class Deployer:
                 return
             self.__write_config(case["syz_repro"], hash[:7])
             self.run_syzkaller(hash)
+            self.confirmSuccess()
         else:
             self.logger.info("{} has finished".format(hash[:7]))
         return self.index
@@ -154,10 +163,21 @@ class Deployer:
                 exitcode = p.wait()
         self.logger.info("syzkaller is done with exitcode {}".format(exitcode))
         self.__save_case(hash, exitcode)
+    
+    def confirmSuccess(self, hash):
+        if not self.__check_confirmed(hash):
+            if self.crash_checker.run():
+                self.__write_to_confirmed_sucess()
+
+    def __check_confirmed(self, hash):
+        return False
+
+    def __write_to_confirmed_sucess(self, hash):
+        with open("{}/work/confirmedSuccess".format(self.project_path), "a+") as f:
+            f.write(hash[:7]+"\n")
 
     def __run_linux_clone_script(self):
-        st = os.stat("scripts/linux-clone.sh")
-        os.chmod("scripts/linux-clone.sh", st.st_mode | stat.S_IEXEC)
+        chmodX("scripts/linux-clone.sh")
         index = str(self.index)
         self.logger.info("run: scripts/linux-clone.sh {} {}".format(self.index, self.linux_path, index))
         call(["scripts/linux-clone.sh", self.linux_path, index])
@@ -169,8 +189,7 @@ class Deployer:
         testcase = case["syz_repro"]
         self.case_info_logger.info("\ncommit: {}\nsyzkaller: {}\nconfig: {}\ntestcase: {}".format(commit,syzkaller,config,testcase))
 
-        st = os.stat("scripts/deploy.sh")
-        os.chmod("scripts/deploy.sh", st.st_mode | stat.S_IEXEC)
+        chmodX("scripts/deploy.sh")
         index = str(self.index)
         self.logger.info("run: scripts/deploy.sh".format(self.index))
         p = Popen(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase, index, self.catalog],

@@ -1,6 +1,7 @@
 from syzbotCrawler import Crawler
 from deploy import Deployer
 from subprocess import call
+from utilities import urlsOfCases
 
 import argparse, os, stat
 import threading, re
@@ -87,23 +88,6 @@ def args_dependencies():
         args.max = '1'
     if args.linux != '-1':
         args.parallel_max = '1'
-
-def urlsOfCases(folder):
-    res = []
-    dirOfCases = "{}/work/{}".format(os.getcwd(), folder)
-
-    for dirs in os.listdir(dirOfCases):
-        path = os.path.join(dirOfCases,dirs)
-        for file in os.listdir(path):
-            if file == "log":
-                with open(os.path.join(path, file), "r") as f:
-                    for line in f:
-                        m = re.search(r'\[\d*\] https:\/\/syzkaller.appspot.com\/bug\?id=([a-z0-9]*)\n', line)
-                        if m != None and len(m.groups()) != 0:
-                            res.append(m.groups()[0])  
-                            break
-    
-    return res
 
 if __name__ == '__main__':
     args = args_parse()

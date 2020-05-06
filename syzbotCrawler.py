@@ -8,6 +8,7 @@ from bs4 import element
 
 syzbot_bug_base_url = "bug?id="
 syzbot_host_url = "https://syzkaller.appspot.com/"
+num_of_elements = 5
 
 class Crawler:
     def __init__(self,
@@ -49,7 +50,7 @@ class Crawler:
 
     def retreive_case(self, hash):
         detail = self.request_detail(hash)
-        if len(detail) < 4:
+        if len(detail) < num_of_elements:
             self.logger.error("Failed to get detail of a case {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
             self.cases.pop(hash)
             return -1
@@ -57,6 +58,7 @@ class Crawler:
         self.cases[hash]["syzkaller"] = detail[1]
         self.cases[hash]["config"] = detail[2]
         self.cases[hash]["syz_repro"] = detail[3]
+        self.cases[hash]["c_repro"] = detail[4]
 
     def gather_cases(self):
         tables = self.__get_table(self.url)
@@ -123,15 +125,17 @@ class Crawler:
                             try:
                                 syz_repro = syzbot_host_url + repros[2].next.attrs['href']
                                 self.logger.debug("Testcase URL: {}".format(syz_repro))
+                                c_repro = syzbot_host_url + repros[3].next.attrs['href']
+                                self.logger.debug("C Prog URL: {}".format(syz_repro))
                             except:
                                 self.logger.info(
-                                    "Syz repro is missing. Failed to retrieve case {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
-                                self.logger2file.info("[Failed] {} Syz repro is missing".format(url))
+                                    "Repro is missing. Failed to retrieve case {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
+                                self.logger2file.info("[Failed] {} Repro is missing".format(url))
                                 break
                         except:
                             self.logger.info("Failed to retrieve case {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
                             continue
-                        return [commit, syzkaller, config, syz_repro]
+                        return [commit, syzkaller, config, syz_repro, c_repro]
                 break
         self.logger2file.info("[Failed] {} fail to find a proper crash".format(url))
         return []
