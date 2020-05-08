@@ -58,7 +58,7 @@ class Crawler:
         self.cases[hash]["syzkaller"] = detail[1]
         self.cases[hash]["config"] = detail[2]
         self.cases[hash]["syz_repro"] = detail[3]
-        self.cases[hash]["c_repro"] = detail[4]
+        self.cases[hash]["log"] = detail[4]
 
     def gather_cases(self):
         tables = self.__get_table(self.url)
@@ -122,11 +122,11 @@ class Crawler:
                             config = syzbot_host_url + case.find('td', {"class": "config"}).next.attrs['href']
                             self.logger.debug("Config URL: {}".format(config))
                             repros = case.find_all('td', {"class": "repro"})
+                            log = syzbot_host_url + repros[0].next.attrs['href']
+                            self.logger.debug("Log URL: {}".format(log))
                             try:
                                 syz_repro = syzbot_host_url + repros[2].next.attrs['href']
                                 self.logger.debug("Testcase URL: {}".format(syz_repro))
-                                c_repro = syzbot_host_url + repros[3].next.attrs['href']
-                                self.logger.debug("C Prog URL: {}".format(syz_repro))
                             except:
                                 self.logger.info(
                                     "Repro is missing. Failed to retrieve case {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
@@ -135,7 +135,7 @@ class Crawler:
                         except:
                             self.logger.info("Failed to retrieve case {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
                             continue
-                        return [commit, syzkaller, config, syz_repro, c_repro]
+                        return [commit, syzkaller, config, syz_repro,log]
                 break
         self.logger2file.info("[Failed] {} fail to find a proper crash".format(url))
         return []

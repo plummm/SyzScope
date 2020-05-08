@@ -21,4 +21,4 @@ qemu-system-x86_64 \
   -display none -serial stdio -no-reboot \
   -hda $IMAGE/stretch.img \
   -kernel $LINUX/arch/x86_64/boot/bzImage \
-  -append "console=ttyS0 net.ifnames=0 root=/dev/sda"
+  -append "console=ttyS0 net.ifnames=0 root=/dev/sda printk.synchronous=1 kasan_multi_shot=1"

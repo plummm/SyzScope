@@ -94,7 +94,6 @@ class Deployer:
                 self.project_path,
                 self.current_case_path,
                 default_port,
-                case["c_repro"],
                 self.logger)
         self.logger.info(hash)
 
@@ -113,7 +112,7 @@ class Deployer:
                 return
             self.__write_config(case["syz_repro"], hash[:7])
             self.run_syzkaller(hash)
-            self.confirmSuccess()
+            self.confirmSuccess(case["syz_repro"], case["syzkaller"])
         else:
             self.logger.info("{} has finished".format(hash[:7]))
         return self.index
@@ -164,9 +163,9 @@ class Deployer:
         self.logger.info("syzkaller is done with exitcode {}".format(exitcode))
         self.__save_case(hash, exitcode)
     
-    def confirmSuccess(self, hash):
+    def confirmSuccess(self, hash, syz_repro, syz_commit):
         if not self.__check_confirmed(hash):
-            if self.crash_checker.run():
+            if self.crash_checker.run(syz_repro, syz_commit):
                 self.__write_to_confirmed_sucess()
 
     def __check_confirmed(self, hash):

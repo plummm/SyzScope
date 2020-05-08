@@ -96,12 +96,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then
   if [ -d "$GOPATH/src/github.com/google/syzkaller" ]; then
     rm -rf $GOPATH/src/github.com/google/syzkaller
   fi
-  mkdir -p $GOPATH/src/github.com/google || echo "Directory exist"
-  cd $GOPATH/src/github.com/google
-  git clone https://github.com/google/syzkaller.git
-  cd syzkaller
-  git checkout 136082ab38d86932bc3ed0087694e99d0e55491b
-  #go get -u -d github.com/google/syzkaller/...
+  go get -u -d github.com/google/syzkaller/prog
   #fi
   cd $GOPATH/src/github.com/google/syzkaller || exit 1
   make clean

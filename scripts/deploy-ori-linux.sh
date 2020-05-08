@@ -3,7 +3,7 @@
 #
 # Usage ./deploy-ori-linux linux_path patch_path [linux_commit, config_url]
 
-set -e
+set -ex
 
 echo $#
 if [ $# -lt 2 ] || [ $# -eq 3 ] || [ $# -gt 4 ]; then
