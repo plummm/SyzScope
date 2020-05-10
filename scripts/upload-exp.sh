@@ -27,14 +27,13 @@ scp -F /dev/null -o UserKnownHostsFile=/dev/null \
     -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
     -i $IMAGE_PATH/stretch.id_rsa -P $PORT ./testcase root@localhost:/root
 
-if [ ! -d "$CASE_PATH/gopath" ]; then
-    mkdir $CASE_PATH/gopath
+if [ ! -d "$CASE_PATH/poc/gopath" ]; then
+    mkdir $CASE_PATH/poc/gopath
 fi
-export GOPATH=$CASE_PATH/gopath
-if [ -d "$GOPATH/src/github.com/google/syzkaller" ]; then
-    rm -rf $GOPATH/src/github.com/google/syzkaller
+export GOPATH=$CASE_PATH/poc/gopath
+if [ ! -d "$GOPATH/src/github.com/google/syzkaller" ]; then
+    go get -u -d github.com/google/syzkaller/prog
 fi
-go get -u -d github.com/google/syzkaller/prog
 cd $GOPATH/src/github.com/google/syzkaller || exit 1
 git checkout $SYZKALLER
 make

@@ -12,6 +12,7 @@ from syzbotCrawler import Crawler
 startup_regx = r'Debian GNU\/Linux \d+ syzkaller ttyS\d+'
 boundary_regx = r'======================================================'
 message_drop_regx = r'printk messages dropped'
+panic_regx = r'Kernel panic'
 kasan_regx = r'BUG: KASAN: ([a-z\\-]+) in ([a-zA-Z0-9_]+).*'
 free_regx = r'BUG: KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
 default_port = 3777
@@ -31,11 +32,7 @@ class CrashChecker:
         self.kasan_func_list = self.read_kasan_funcs()
 
     def run(self, syz_repro, syz_commit, log=None, linux_commit=None, config=None):
-        exitcode = self.deploy_ori_linux(linux_commit, config)
-        if exitcode == 1:
-            self.logger.info("Error occur at deploy-ori-linux-sh")
-            return [False, None]
-        ori_crash_report = self.read_ori_crash(syz_repro, syz_commit, log)
+        ori_crash_report = self.read_ori_crash(syz_repro, syz_commit, log, linux_commit, config)
         if ori_crash_report == []:
             self.logger.info("No crash trigger by original poc")
             return [False, None]
@@ -85,12 +82,16 @@ class CrashChecker:
                             continue
         return res
     
-    def read_ori_crash(self, syz_repro, syz_commit, log):
+    def read_ori_crash(self, syz_repro, syz_commit, log, linux_commit, config):
         if log != None:
             print("Go for log")
             res = self.read_from_log(log)
         else:
             print("Go for triggering crash")
+            exitcode = self.deploy_ori_linux(linux_commit, config)
+            if exitcode == 1:
+                self.logger.info("Error occur at deploy-ori-linux-sh")
+                return []
             res = self.trigger_ori_crash(syz_repro, syz_commit)
         self.save_crash_log(res)
         return res
@@ -169,11 +170,29 @@ class CrashChecker:
 
     def trigger_ori_crash(self, syz_repro, syz_commit):
         res = []
-        p = Popen(["qemu-system-x86_64", "-m", "2048M", "-smp", "2", "-net", "nic,model=e1000", "-enable-kvm", "-no-reboot",
-                   "-cpu", "host", "-net", "user,host=10.0.2.10,hostfwd=tcp::{}-:22".format(self.ssh_port),
-                   "-display", "none", "-serial", "stdio", "-no-reboot", "-hda", "{}/stretch.img".format(self.image_path), 
-                   "-snapshot", "-kernel", "{}/arch/x86_64/boot/bzImage".format(self.linux_path),
-                   "-append", "console=ttyS0 net.ifnames=0 root=/dev/sda printk.synchronous=1 kasan_multi_shot=1 oops=panic"],
+        self.case_logger.info("qemu-system-x86_64 \\\n\
+-m 2G \\\n\
+-smp 2 \\\n\
+-net nic,model=e1000 \\\n\
+-enable-kvm -cpu host \\\n\
+-net user,host=10.0.2.10,hostfwd=tcp::{}-:22 \\\n\
+-display none -serial stdio -no-reboot \\\n\
+-hda {}/stretch.img \\\n\
+-snapshot -kernel {}/arch/x86_64/boot/bzImage \\\n\
+-append console=ttyS0 net.ifnames=0 root=/dev/sda printk.synchronous=1 oops=panic panic=86400 kvm-intel.nested=1".format(self.ssh_port, self.image_path, self.linux_path))
+        p = Popen(["qemu-system-x86_64", "-m", "2G", "-smp", "2", 
+                    "-net", "nic,model=e1000", "-net", "user,host=10.0.2.10,hostfwd=tcp::{}-:22".format(self.ssh_port),
+                    "-display", "none", "-serial", "stdio", "-no-reboot", "-enable-kvm", "-cpu", "host,migratable=off", 
+                    "-hda", "{}/stretch.img".format(self.image_path), 
+                    "-snapshot", "-kernel", "{}/arch/x86_64/boot/bzImage".format(self.linux_path),
+                    "-append", "earlyprintk=serial oops=panic nmi_watchdog=panic panic=1 \
+                        ftrace_dump_on_oops=orig_cpu rodata=n vsyscall=native net.ifnames=0 \
+                        biosdevname=0 root=/dev/sda console=ttyS0 kvm-intel.nested=1 \
+                        kvm-intel.unrestricted_guest=1 kvm-intel.vmm_exclusive=1 \
+                        kvm-intel.fasteoi=1 kvm-intel.ept=1 kvm-intel.flexpriority=1 \
+                        kvm-intel.vpid=1 kvm-intel.emulate_invalid_guest_state=1 \
+                        kvm-intel.eptad=1 kvm-intel.enable_shadow_vmcs=1 kvm-intel.pml=1 \
+                        kvm-intel.enable_apicv=1  kasan_multi_shot=1"],
                   stdout=PIPE,
                   stderr=STDOUT
                   )
@@ -187,6 +206,7 @@ class CrashChecker:
             for line in iter(p.stdout.readline, b''):
                 line = line.decode("utf-8").strip('\n').strip('\r')
                 self.case_logger.info(line)
+                print(line)
                 if utilities.regx_match(startup_regx, line):
                     utilities.chmodX("scripts/upload-exp.sh")
                     p2 = Popen(["scripts/upload-exp.sh", self.case_path, syz_repro, str(self.ssh_port), self.image_path, syz_commit],
@@ -198,18 +218,16 @@ class CrashChecker:
                         p.kill()
                         break
                     command = self.make_commands(syz_repro)
-                    p3 = Popen(["ssh", "-p", str(self.ssh_port), "-F", "/dev/null", "-o", "UserKnownHostsFile=/dev/null", 
+                    self.case_logger.info("running commands: {}".format(command))
+                    Popen(["ssh", "-p", str(self.ssh_port), "-F", "/dev/null", "-o", "UserKnownHostsFile=/dev/null", 
                     "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=no", 
                     "-o", "ConnectTimeout=10", "-i", "{}/stretch.id_rsa".format(self.image_path), 
-                    "-v", "root@localhost", command],
-                    stdout=PIPE,
-                    stderr=STDOUT)
-                    with p3.stdout:
-                        self.__log_subprocess_output(p3.stdout, logging.INFO)
+                    "-v", "root@localhost", command])
                     extract_report = True
                 if extract_report:
                     if utilities.regx_match(boundary_regx, line) or \
-                       utilities.regx_match(message_drop_regx, line):
+                       utilities.regx_match(message_drop_regx, line) or \
+                       utilities.regx_match(panic_regx, line):
                         record_flag ^= 1
                         if record_flag == 0 and kasan_flag == 1:
                             res.append(crash)
@@ -225,7 +243,7 @@ class CrashChecker:
     def make_commands(self, syz_repro):
         command = "./syz-execprog -executor=./syz-executor "
         enabled = "-enable="
-        normal_pm = ["arch", "timeout", "procs", "threaded", "collide", "sandbox", "fault_call", "fault_nth", "os"]
+        normal_pm = ["arch", "timeout", "threaded", "collide", "sandbox", "fault_call", "fault_nth", "os"]
         r = utilities.request_get(syz_repro)
         text = r.text.split('\n')
         for line in text:
@@ -239,26 +257,31 @@ class CrashChecker:
                 for each in normal_pm:
                     if each in pm and pm[each] != "":
                         command += "-" + each + "=" +str(pm[each]) + " "
+                if "procs" in pm and pm["procs"] != "1":
+                    num = int(pm["procs"])
+                    command += "-procs=" + str(num*2) + " "
+                else:
+                    command += "-procs=" + pm["procs"] + " "
                 if "repeat" in pm and pm["repeat"] != "":
-                    if pm["repeat"] == 'true':
+                    if str(pm["repeat"]).lower() == 'true':
                         command += "-repeat=" + "0 "
                     else:
                         command += "-repeat=" + "1 "
-                if "tun" in pm and pm["tun"] == "true":
+                if "tun" in pm and str(pm["tun"]).lower() == "true":
                     enabled += "tun,"
-                if "binfmt_misc" in pm and pm["binfmt_misc"] != "":
+                if "binfmt_misc" in pm and str(pm["binfmt_misc"]).lower() == 'true':
                     enabled += "binfmt_misc,"
-                if "cgroups" in pm and pm["cgroups"] == "true":
+                if "cgroups" in pm and str(pm["cgroups"]).lower() == "true":
                     enabled += "cgroups,"
-                if "close_fds" in pm and pm["close_fds"] == "true":
+                if "close_fds" in pm and str(pm["close_fds"]).lower() == "true":
                     enabled += "close_fds,"
-                if "devlinkpci" in pm and pm["devlinkpci"] == "true":
+                if "devlinkpci" in pm and str(pm["devlinkpci"]).lower() == "true":
                     enabled += "devlink_pci,"
-                if "netdev" in pm and pm["netdev"] == "true":
+                if "netdev" in pm and str(pm["netdev"]).lower() == "true":
                     enabled += "net_dev,"
-                if "resetnet" in pm and pm["resetnet"] == "true":
+                if "resetnet" in pm and str(pm["resetnet"]).lower() == "true":
                     enabled += "net_reset,"
-                if "usb" in pm and pm["usb"] == "true":
+                if "usb" in pm and str(pm["usb"]).lower() == "true":
                     enabled += "usb,"
                 if enabled[-1] == ',':
                     command += enabled[:-1] + " testcase"
@@ -300,7 +323,7 @@ class CrashChecker:
                 res['fault_nth']=pm[each]
             if each == 'EnableTun':
                 res['tun']=pm[each]
-            if each == 'EnableCgroups':
+            if each == 'EnableCgroups' or each == 'Cgroups':
                 res['cgroups']=pm[each]
             if each == 'UseTmpDir':
                 res['tmpdir']=pm[each]
@@ -314,6 +337,18 @@ class CrashChecker:
                 res['debug']=pm[each]
             if each == 'Repro':
                 res['repro']=pm[each]
+            if each == 'NetDevices':
+                res['netdev']=pm[each]
+            if each == 'NetReset':
+                res['resetnet']=pm[each]
+            if each == 'BinfmtMisc':
+                res['binfmt_misc']=pm[each]
+            if each == 'CloseFDs':
+                res['close_fds']=pm[each]
+            if each == 'DevlinkPCI':
+                res['devlinkpci']=pm[each]
+            if each == 'USB':
+                res['usb']=pm[each]
         if len(pm) != len(res):
             self.logger.info("parameter is missing:\n%s\n%s", new_line, str(res))
         return res
@@ -375,8 +410,7 @@ class CrashChecker:
                 res.append(line)
             if utilities.regx_match(r'Call Trace', line):
                 record_flag ^= 1
-            if record_flag == 1 and (utilities.regx_match(r'entry_SYSCALL', line) or\
-                utilities.regx_match(r'Allocated by task', line)):
+            if record_flag == 1 and utilities.regx_match(r'Allocated by task', line):
                 record_flag ^= 1
                 break
         return res
@@ -411,10 +445,13 @@ def args_parse():
                         help='By default it analyze all cases under folder \'succeed\', but you can indicate a specific one.')
     parser.add_argument('--ignore', nargs='?', action='store',
                         help='A file contains cases hashs which are ignored. One line for each hash.')
+    parser.add_argument('-r', '--reproduce', action='store_true',
+                        help='Reproduce cases with the original testcase')
     args = parser.parse_args()
     return args
 
 if __name__ == '__main__':
+    print("running crash.py")
     args = args_parse()
     crawler = Crawler()
 
@@ -455,7 +492,10 @@ if __name__ == '__main__':
         log = case["log"]
         logger.info("Running case: {}".format(hash))
         checker = CrashChecker(project_path, case_path, default_port, logger)
-        res = checker.run(syz_repro, syz_commit, log, commit, config)
+        if args.reproduce:
+            res = checker.run(syz_repro, syz_commit, None, commit, config)
+        else:
+            res = checker.run(syz_repro, syz_commit, log, commit, config)
         checker.logger.info("{}:{}".format(hash, res[0]))
         if res[0]:
             checker.logger.info("successful crash: {}".format(res[1]))

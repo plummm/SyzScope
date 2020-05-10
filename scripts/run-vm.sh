@@ -3,6 +3,8 @@
 #
 # Usage ./run-vm.sh image_path linux_path ssh_port
 
+set -ex
+
 if [ $# -ne 3 ]; then
   echo "Usage ./run-vm.sh image_path linux_path ssh_port"
   exit 1
@@ -13,7 +15,7 @@ LINUX=$2
 PORT=$3
 
 qemu-system-x86_64 \
-  -m 512M \
+  -m 2G \
   -smp 2 \
   -net nic,model=e1000 \
   -enable-kvm -cpu host \
@@ -21,4 +23,4 @@ qemu-system-x86_64 \
   -display none -serial stdio -no-reboot \
   -hda $IMAGE/stretch.img \
   -kernel $LINUX/arch/x86_64/boot/bzImage \
-  -append "console=ttyS0 net.ifnames=0 root=/dev/sda printk.synchronous=1 kasan_multi_shot=1"
+  -append "console=ttyS0 net.ifnames=0 root=/dev/sda printk.synchronous=1"
