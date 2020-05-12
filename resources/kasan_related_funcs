@@ -65,12 +65,10 @@ set_store_user_clean
 set_store_user_dirty
 set_store_user_dirty
 index_to_obj
-DEFINE_PER_CPU
 cache_estimate
 __slab_error
 noaliencache_setup
 slab_max_order_setup
-DEFINE_PER_CPU
 init_reap_node
 next_reap_node
 start_cpu_timer
@@ -451,7 +449,6 @@ get_bug_type
 print_error_description
 kernel_or_module_addr
 init_task_stack_addr
-DEFINE_SPINLOCK
 kasan_start_report
 kasan_end_report
 print_track

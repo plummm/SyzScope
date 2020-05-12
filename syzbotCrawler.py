@@ -8,7 +8,7 @@ from bs4 import element
 
 syzbot_bug_base_url = "bug?id="
 syzbot_host_url = "https://syzkaller.appspot.com/"
-num_of_elements = 5
+num_of_elements = 6
 
 class Crawler:
     def __init__(self,
@@ -47,6 +47,29 @@ class Crawler:
         self.logger.info("retreive one case: %s",hash)
         self.cases[hash] = {}
         self.retreive_case(hash)
+    
+    def get_patch_commit(self, hash):
+        url = syzbot_host_url + syzbot_bug_base_url + hash
+        req = requests.request(method='GET', url=url)
+        soup = BeautifulSoup(req.text, "html.parser")
+        fix = soup.body.span.contents[1]
+        url = fix.attrs['href']
+        m = re.search(r'id=(\w*)', url)
+        if m != None and m.groups() != None:
+            return m.groups()[0]
+    
+    def get_title_of_case(self, hash=None, text=None):
+        if hash==None and text==None:
+            self.logger.info("No case given")
+            return None
+        if hash!=None:
+            url = syzbot_host_url + syzbot_bug_base_url + hash
+            req = requests.request(method='GET', url=url)
+            soup = BeautifulSoup(req.text, "html.parser")
+        else:
+            soup = BeautifulSoup(text, "html.parser")
+        title = soup.body.b.contents[0]
+        return title
 
     def retreive_case(self, hash):
         detail = self.request_detail(hash)
@@ -59,6 +82,7 @@ class Crawler:
         self.cases[hash]["config"] = detail[2]
         self.cases[hash]["syz_repro"] = detail[3]
         self.cases[hash]["log"] = detail[4]
+        self.cases[hash]["c_repro"] = detail[5]
 
     def gather_cases(self):
         tables = self.__get_table(self.url)
@@ -132,10 +156,16 @@ class Crawler:
                                     "Repro is missing. Failed to retrieve case {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
                                 self.logger2file.info("[Failed] {} Repro is missing".format(url))
                                 break
+                            try:
+                                c_repro = syzbot_host_url + repros[3].next.attrs['href']
+                                self.logger.debug("C prog URL: {}".format(c_repro))
+                            except:
+                                c_repro = None
+                                self.logger.info("No c prog found")
                         except:
                             self.logger.info("Failed to retrieve case {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
                             continue
-                        return [commit, syzkaller, config, syz_repro,log]
+                        return [commit, syzkaller, config, syz_repro, log, c_repro]
                 break
         self.logger2file.info("[Failed] {} fail to find a proper crash".format(url))
         return []
@@ -149,3 +179,7 @@ class Crawler:
             print("Fail to retrieve bug cases from list_table")
             return []
         return tables
+
+if __name__ == '__main__':
+    crawler = Crawler()
+    print(crawler.get_title_of_case("511d0a90ad65cf4ba840e4d1c2762326321bf62f"))
