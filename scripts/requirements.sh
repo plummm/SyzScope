@@ -24,9 +24,12 @@ if [ ! -f "$TOOLS_PATH/.stamp/MAKE_IMAGE" ]; then
   fi
   cd img
   if [ ! -f "stretch.img" ]; then
-    wget https://raw.githubusercontent.com/google/syzkaller/master/tools/create-image.sh -O create-image.sh
-    chmod +x create-image.sh
-    ./create-image.sh
+    wget https://storage.googleapis.com/syzkaller/stretch.img
+    wget https://storage.googleapis.com/syzkaller/stretch.img.key
+    chmod 400 stretch.img.key
+    wget https://storage.googleapis.com/syzkaller/wheezy.img
+    wget https://storage.googleapis.com/syzkaller/wheezy.img.key
+    chmod 400 wheezy.img.key
     touch $TOOLS_PATH/.stamp/MAKE_IMAGE
   fi
   cd ..

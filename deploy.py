@@ -4,10 +4,12 @@ import requests
 import shutil
 import syzbotCrawler
 import logging
+import datetime
 
 from subprocess import call, Popen, PIPE, STDOUT
 from crash import CrashChecker
 from utilities import chmodX
+from dateutil import parser as time_parser
 
 default_port = 53777
 stamp_finish_fuzzing = "FINISH_FUZZING"
@@ -19,7 +21,7 @@ syz_config_template="""
         \"workdir\": \"{0}/workdir\",
         \"kernel_obj\": \"{1}\",
         \"image\": \"{2}/stretch.img\",
-        \"sshkey\": \"{2}/stretch.id_rsa\",
+        \"sshkey\": \"{2}/stretch.img.key\",
         \"syzkaller\": \"{0}\",
         \"procs\": 8,
         \"type\": \"qemu\",
@@ -56,6 +58,7 @@ class Deployer:
         self.force = force
         self.time_limit = time
         self.crash_checker = None
+        self.image_switching_date = datetime.datetime(2020, 3, 15)
         if replay == None:
             self.replay = False
             self.catalog = 'incomplete'
@@ -86,8 +89,8 @@ class Deployer:
 
     def deploy(self, hash, case):
         self.project_path = os.getcwd()
-        self.image_path = "{}/tools/img".format(self.project_path)
         self.current_case_path = "{}/work/{}/{}".format(self.project_path, self.catalog, hash[:7])
+        self.image_path = "{}/img".format(current_case_path)
         self.syzkaller_path = "{}/gopath/src/github.com/google/syzkaller".format(self.current_case_path)
         self.kernel_path = "{}/linux".format(self.current_case_path)
         self.crash_checker = CrashChecker(
@@ -186,12 +189,18 @@ class Deployer:
         syzkaller = case["syzkaller"]
         config = case["config"]
         testcase = case["syz_repro"]
-        self.case_info_logger.info("\ncommit: {}\nsyzkaller: {}\nconfig: {}\ntestcase: {}".format(commit,syzkaller,config,testcase))
+        time = case["time"]
+        self.case_info_logger.info("\ncommit: {}\nsyzkaller: {}\nconfig: {}\ntestcase: {}\ntime: {}".format(commit,syzkaller,config,testcase,time))
 
+        case_time = time_parser.parse(time)
+        if self.image_switching_date <= case_time:
+            image = "stretch"
+        else:
+            image = "wheezy"
         chmodX("scripts/deploy.sh")
         index = str(self.index)
         self.logger.info("run: scripts/deploy.sh".format(self.index))
-        p = Popen(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase, index, self.catalog],
+        p = Popen(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase, index, self.catalog, image],
                 stdout=PIPE,
                 stderr=STDOUT
                 )

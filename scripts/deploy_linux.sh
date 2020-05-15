@@ -37,6 +37,7 @@ if [ $# -eq 5 ]; then
     if [ "$CURRENT_HEAD" != "$COMMIT" ]; then
       make clean
       git stash --all
+      git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1
       git checkout $COMMIT
     fi
     curl $CONFIG > .config
@@ -44,5 +45,5 @@ if [ $# -eq 5 ]; then
     clean_and_jump
   fi
 fi
-make -j16 || exit 1
+make -j16 > log || exit 1
 exit 0

@@ -15,6 +15,7 @@ CASE_PATH=$4
 cd $CASE_PATH/poc || exit 1
 cat << EOF > run.sh
 #!/bin/bash
+set -ex
 
 if [ -f "./poc" ]; then
     ./poc
@@ -25,5 +26,5 @@ EOF
 
 scp -F /dev/null -o UserKnownHostsFile=/dev/null \
     -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-    -i $IMAGE_PATH/stretch.id_rsa -P $PORT ./run.sh root@localhost:/root
+    -i $IMAGE_PATH/stretch.img.key -P $PORT ./run.sh root@localhost:/root
 exit 0

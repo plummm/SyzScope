@@ -8,7 +8,7 @@ from bs4 import element
 
 syzbot_bug_base_url = "bug?id="
 syzbot_host_url = "https://syzkaller.appspot.com/"
-num_of_elements = 6
+num_of_elements = 8
 
 class Crawler:
     def __init__(self,
@@ -52,11 +52,15 @@ class Crawler:
         url = syzbot_host_url + syzbot_bug_base_url + hash
         req = requests.request(method='GET', url=url)
         soup = BeautifulSoup(req.text, "html.parser")
-        fix = soup.body.span.contents[1]
-        url = fix.attrs['href']
-        m = re.search(r'id=(\w*)', url)
-        if m != None and m.groups() != None:
-            return m.groups()[0]
+        try:
+            fix = soup.body.span.contents[1]
+            url = fix.attrs['href']
+            m = re.search(r'id=(\w*)', url)
+            if m != None and m.groups() != None:
+                res = m.groups()[0]
+        except:
+            res=None
+        return res
     
     def get_title_of_case(self, hash=None, text=None):
         if hash==None and text==None:
@@ -83,6 +87,8 @@ class Crawler:
         self.cases[hash]["syz_repro"] = detail[3]
         self.cases[hash]["log"] = detail[4]
         self.cases[hash]["c_repro"] = detail[5]
+        self.cases[hash]["time"] = detail[6]
+        self.cases[hash]["manager"] = detail[7]
 
     def gather_cases(self):
         tables = self.__get_table(self.url)
@@ -119,14 +125,15 @@ class Crawler:
         res = [x for x in self.cases]
         return res
 
-    def request_detail(self, hash):
+    def request_detail(self, hash, index=1):
         self.logger.debug("\nDetail: {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
         url = syzbot_host_url + syzbot_bug_base_url + hash
         tables = self.__get_table(url)
         if tables == []:
-            print("error occur in request_detail")
+            print("error occur in request_detail: {}".format(hash))
             self.logger2file.info("[Failed] {} error occur in request_detail".format(url))
-            return
+            return []
+        count = 0
         for table in tables:
             if table.caption.text.find('Crash') != -1:
                 for case in table.tbody.contents:
@@ -135,7 +142,14 @@ class Crawler:
                         if kernel.text != "upstream":
                             self.logger.debug("skip kernel: '{}'".format(kernel.text))
                             continue
+                        count += 1
+                        if count < index:
+                            continue
                         try:
+                            manager = case.find('td', {"class": "manager"})
+                            manager_str = manager.text
+                            time = case.find('td', {"class": "time"})
+                            time_str = time.text
                             tags = case.find_all('td', {"class": "tag"})
                             m = re.search(r'id=([0-9a-z]*)', tags[0].next.attrs['href'])
                             commit = m.groups()[0]
@@ -165,7 +179,7 @@ class Crawler:
                         except:
                             self.logger.info("Failed to retrieve case {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
                             continue
-                        return [commit, syzkaller, config, syz_repro, log, c_repro]
+                        return [commit, syzkaller, config, syz_repro, log, c_repro, time_str, manager_str]
                 break
         self.logger2file.info("[Failed] {} fail to find a proper crash".format(url))
         return []

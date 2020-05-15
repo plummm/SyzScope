@@ -1,7 +1,7 @@
 #!/bin/bash
 # Xiaochen Zou 2020, University of California-Riverside
 #
-# Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog
+# Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image
 
 set -ex
 
@@ -49,8 +49,8 @@ function retrieve_proper_patch() {
   git rev-list 9b1f3e6 | grep $(git rev-parse HEAD) || cp $PATCHES_PATH/syzkaller-9b1f3e6.patch ./syzkaller.patch
 }
 
-if [ $# -ne 8 ]; then
-  echo "Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog"
+if [ $# -ne 9 ]; then
+  echo "Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image"
   exit 1
 fi
 
@@ -61,6 +61,7 @@ CONFIG=$5
 TESTCASE=$6
 INDEX=$7
 CATALOG=$8
+IMAGE=$9
 PROJECT_PATH="$(pwd)"
 CASE_PATH="$PROJECT_PATH/work/$CATALOG/$HASH"
 PATCHES_PATH="$PROJECT_PATH/patches"
@@ -116,6 +117,13 @@ fi
 curl $TESTCASE > $GOPATH/src/github.com/google/syzkaller/workdir/testcase-$HASH
 
 cd $CASE_PATH || exit 1
+echo "[+] Copy image"
+if [ ! -f "$CASE_PATH/img" ]; then
+  mkdir -p $CASE_PATH/img
+fi
+cd img
+ln -s $PROJECT_PATH/tools/img/$IMAGE.img ./img/stretch.img
+ln -s $PROJECT_PATH/tools/img/$IMAGE.img.key ./img/stretch.img.key
 
 #Building kernel
 echo "[+] Building kernel"
@@ -127,6 +135,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   cd linux
   make clean
   git stash --all || set_git_config
+  git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1
   git checkout $COMMIT
   cp $PATCHES_PATH/kasan.patch ./
   patch -p1 -i kasan.patch

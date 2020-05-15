@@ -21,6 +21,6 @@ qemu-system-x86_64 \
   -enable-kvm -cpu host \
   -net user,host=10.0.2.10,hostfwd=tcp::$PORT-:22 \
   -display none -serial stdio -no-reboot \
-  -hda $IMAGE/stretch.img \
+  -hda $IMAGE \
   -kernel $LINUX/arch/x86_64/boot/bzImage \
   -append "console=ttyS0 net.ifnames=0 root=/dev/sda printk.synchronous=1"
