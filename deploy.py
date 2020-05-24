@@ -5,14 +5,17 @@ import shutil
 import syzbotCrawler
 import logging
 import datetime
+import utilities
 
 from subprocess import call, Popen, PIPE, STDOUT
-from crash import CrashChecker
+from crash import CrashChecker, kasan_regx, free_regx
 from utilities import chmodX
 from dateutil import parser as time_parser
 
 default_port = 53777
 stamp_finish_fuzzing = "FINISH_FUZZING"
+stamp_build_syzkaller = "BUILD_SYZKALLER"
+stamp_build_kernel = "BUILD_KERNEL"
 
 syz_config_template="""
 {{ 
@@ -69,6 +72,7 @@ class Deployer:
         if linux_index != -1:
             self.index = linux_index
         self.init_logger(debug)
+        self.debug = debug
         self.clone_linux()
 
     def init_logger(self, debug):
@@ -90,32 +94,68 @@ class Deployer:
     def deploy(self, hash, case):
         self.project_path = os.getcwd()
         self.current_case_path = "{}/work/{}/{}".format(self.project_path, self.catalog, hash[:7])
-        self.image_path = "{}/img".format(current_case_path)
+        self.image_path = "{}/img".format(self.current_case_path)
         self.syzkaller_path = "{}/gopath/src/github.com/google/syzkaller".format(self.current_case_path)
         self.kernel_path = "{}/linux".format(self.current_case_path)
-        self.crash_checker = CrashChecker(
-                self.project_path,
-                self.current_case_path,
-                default_port,
-                self.logger)
         self.logger.info(hash)
 
         if self.replay:
             self.init_replay_crash(hash[:7])    
         if self.force or not self.__check_stamp(stamp_finish_fuzzing, hash[:7]):
+            write_without_mutating = False
             self.__create_dir_for_case()
+            if self.force:
+                self.__clean_stamp(stamp_finish_fuzzing, hash[:7])
+                self.__clean_stamp(stamp_build_kernel, hash[:7])
+                self.__clean_stamp(stamp_build_syzkaller, hash[:7])
+            self.crash_checker = CrashChecker(
+                self.project_path,
+                self.current_case_path,
+                3777+self.index,
+                self.logger,
+                self.debug)
             self.case_logger = self.__init_case_logger("{}-log".format(hash))
             self.case_info_logger = self.__init_case_logger("{}-info".format(hash))
             url = syzbotCrawler.syzbot_host_url + syzbotCrawler.syzbot_bug_base_url + hash
             self.case_info_logger.info(url)
             r = self.__run_delopy_script(hash[:7], case)
-            if r == 1:
+            if r != 0:
                 self.logger.error("Error occur in deploy.sh")
                 self.__save_error(hash)
                 return
-            self.__write_config(case["syz_repro"], hash[:7])
-            self.run_syzkaller(hash)
-            self.confirmSuccess(case["syz_repro"], case["syzkaller"])
+            i386 = None
+            if utilities.regx_match(r'386', case["manager"]):
+                i386 = True
+            need_fuzzing = False
+            title = None
+            self.logger.info("Try to triger the OOB/UAF by running original poc")
+            report = self.crash_checker.read_crash(case["syz_repro"], case["syzkaller"], None, case["commit"], case["config"], 0, case["c_repro"], i386)
+            if report != []:
+                for each in report:
+                    for line in each:
+                        if utilities.regx_match(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line) or\
+                           utilities.regx_match(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line):
+                            m = re.search(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line)
+                            if m != None and len(m.groups()) > 0:
+                                title = m.groups()[0]
+                            m = re.search(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line)
+                            if m != None and len(m.groups()) > 0:
+                                title = m.groups()[0]
+                        if utilities.regx_match(r'Write of size (\d+) at addr (\w*)', line):
+                            write_without_mutating = True
+                            self.crash_checker.logger.info("OOB/UAF Write without mutating")
+                            self.crash_checker.logger.info("Detect read before write")
+                            self.logger.info("Write to confirmed success")
+                            self.__write_to_sucess(hash)
+                            self.__write_to_confirmed_sucess(hash)
+                            self.__save_case(hash, 0, case, need_fuzzing, title)
+                            break
+            if not write_without_mutating:
+                path = None
+                need_fuzzing = True
+                self.__write_config(case["syz_repro"], hash[:7])
+                exitcode = self.run_syzkaller(hash)
+                self.__save_case(hash, exitcode, case, need_fuzzing)
         else:
             self.logger.info("{} has finished".format(hash[:7]))
         return self.index
@@ -164,18 +204,44 @@ class Deployer:
                     self.__log_subprocess_output(p.stdout, logging.INFO)
                 exitcode = p.wait()
         self.logger.info("syzkaller is done with exitcode {}".format(exitcode))
-        self.__save_case(hash, exitcode)
+        return exitcode
     
-    def confirmSuccess(self, hash, syz_repro, syz_commit):
+    def confirmSuccess(self, hash, case):
+        syz_repro = case["syz_repro"]
+        syz_commit = case["syzkaller"]
+        commit = case["commit"]
+        config = case["config"]
+        c_repro = case["c_repro"]
+        i386 = None
+        if utilities.regx_match(r'386', case["manager"]):
+            i386 = True
+        log = case["log"]
         if not self.__check_confirmed(hash):
-            if self.crash_checker.run(syz_repro, syz_commit):
-                self.__write_to_confirmed_sucess()
+            self.logger.info("Compare with original PoC")
+            res = self.crash_checker.run(syz_repro, syz_commit, log, commit, config, c_repro, i386)
+            if res[0]:
+                n = self.crash_checker.diff_testcase(res[1], syz_repro)
+                self.crash_checker.logger.info("difference of characters of two testcase: {}".format(n))
+                self.crash_checker.logger.info("successful crash: {}".format(res[1]))
+                read_before_write = self.crash_checker.check_read_before_write(res[1])
+                if read_before_write:
+                    self.crash_checker.logger.info("Detect read before write")
+                self.logger.info("Write to confirmedSuccess")
+                self.__write_to_confirmed_sucess(hash)
+            else:
+                self.crash_checker.logger.info("Call trace match failed")
+            return res[1]
+        return None
 
     def __check_confirmed(self, hash):
         return False
 
     def __write_to_confirmed_sucess(self, hash):
         with open("{}/work/confirmedSuccess".format(self.project_path), "a+") as f:
+            f.write(hash[:7]+"\n")
+    
+    def __write_to_sucess(self, hash):
+        with open("{}/work/success".format(self.project_path), "a+") as f:
             f.write(hash[:7]+"\n")
 
     def __run_linux_clone_script(self):
@@ -211,18 +277,20 @@ class Deployer:
         return exitcode
 
     def __write_config(self, testcase_url, hash):
+        dependent_syscalls = []
         req = requests.request(method='GET', url=testcase_url)
         testcase = req.content
         syscalls = self.__extract_syscalls(testcase.decode("utf-8"))
         if syscalls == []:
             self.logger.info("No syscalls found in testcase: {}".format(self.index, testcase))
             return -1
-        last_syscall = syscalls[len(syscalls)-1]
-        dependent_syscalls = self.__extract_dependent_syscalls(last_syscall, self.syzkaller_path)
+        for each in syscalls:
+            dependent_syscalls.extend(self.__extract_dependent_syscalls(each, self.syzkaller_path))
         if len(dependent_syscalls) < 1:
             self.logger.info("Cannot find dependent syscalls for {}.\nTry to continue without them".format(self.index, last_syscall))
-        new_syscalls = syscalls
+        new_syscalls = syscalls.copy()
         new_syscalls.extend(dependent_syscalls)
+        new_syscalls = utilities.unique(new_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(new_syscalls) + "\""
         syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash, default_port+self.index, self.current_case_path, self.time_limit)
         f = open(os.path.join(self.syzkaller_path, "workdir/{}-poc.cfg".format(hash)), "w")
@@ -230,16 +298,15 @@ class Deployer:
         f.close()
 
         #Add more syscalls
-        new_dependent_syscalls = []
-        for i in range(0, len(syscalls)-2):
-            if syscalls[len(syscalls)-2-i] not in dependent_syscalls:
-                new_dependent_syscalls = self.__extract_dependent_syscalls(syscalls[len(syscalls)-2-i], self.syzkaller_path)
-                break
-        raw_syscalls = self.__extract_raw_syscall(dependent_syscalls)
-        raw_syscalls.extend(self.__extract_raw_syscall(new_dependent_syscalls))
-        #syzkaller would help remove the duplicates
-        syscalls.extend(raw_syscalls)
-        enable_syscalls = "\"" + "\",\n\t\"".join(syscalls) + "\""
+        new_added_syscalls = []
+        for i in range(0, min(2,len(syscalls))):
+            if syscalls[len(syscalls)-1-i] not in new_added_syscalls:
+                new_added_syscalls.extend(self.__extract_all_syscalls(syscalls[len(syscalls)-1-i], self.syzkaller_path))
+        raw_syscalls = self.__extract_raw_syscall(new_added_syscalls)
+        new_syscalls = syscalls.copy()
+        new_syscalls.extend(raw_syscalls)
+        new_syscalls = utilities.unique(new_syscalls)
+        enable_syscalls = "\"" + "\",\n\t\"".join(new_syscalls) + "\""
         syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash, default_port+self.index, self.current_case_path, self.time_limit)
         f = open(os.path.join(self.syzkaller_path, "workdir/{}.cfg".format(hash)), "w")
         f.writelines(syz_config)
@@ -259,7 +326,58 @@ class Deployer:
             res.append(syscall)
         return res
 
-    def __extract_dependent_syscalls(self, last_syscall, syzkaller_path, search_path="sys/linux", extension=".txt"):
+    def __extract_dependent_syscalls(self, syscall, syzkaller_path, search_path="sys/linux", extension=".txt"):
+        res = []
+        dir = os.path.join(syzkaller_path, search_path)
+        if not os.path.isdir(dir):
+            self.logger.info("{} do not exist".format(self.index, dir))
+            return res
+        for file in os.listdir(dir):
+            if file.endswith(extension):
+                find_it = False
+                f = open(os.path.join(dir, file), "r")
+                text = f.readlines()
+                f.close()
+                line_index = 0
+                for line in text:
+                    if line.find(syscall) != -1:
+                        find_it = True
+                        break
+                    line_index += 1
+
+                if find_it:
+                    upper_bound = 0
+                    lower_bound = 0
+                    for i in range(0, len(text)):
+                        if line_index+i<len(text):
+                            line = text[line_index+i]
+                            if utilities.regx_match(r'^\n', line):
+                                upper_bound = 1
+                            if upper_bound == 0:
+                                m = re.match(r'(\w+(\$\w+)?)\(', line)
+                                if m != None and len(m.groups()) > 0:
+                                    call = m.groups()[0]
+                                    res.append(call)
+                        else:
+                            upper_bound = 1
+
+                        if line_index-i>=0:
+                            line = text[line_index-i]
+                            if utilities.regx_match(r'^\n', line):
+                                lower_bound = 1
+                            if lower_bound == 0:
+                                m = re.match(r'(\w+(\$\w+)?)\(', line)
+                                if m != None and len(m.groups()) > 0:
+                                    call = m.groups()[0]
+                                    res.append(call)
+                        else:
+                            lower_bound = 1
+
+                        if upper_bound and lower_bound:
+                            return res
+        return res
+        
+    def __extract_all_syscalls(self, last_syscall, syzkaller_path, search_path="sys/linux", extension=".txt"):
         res = []
         dir = os.path.join(syzkaller_path, search_path)
         if not os.path.isdir(dir):
@@ -297,26 +415,64 @@ class Deployer:
                 res.append(syscall)
         return res
 
-    def __save_case(self, hash, exitcode):
+    def __save_case(self, hash, exitcode, case, need_fuzzing, title=None):
         if exitcode !=0:
             self.__save_error(hash)
         else:
-            self.__copy_crashes()
+            self.__copy_crashes(need_fuzzing)
             self.__create_stamp(stamp_finish_fuzzing)
             if self.__success_check(hash[:7]):
-                self.__move_to_succeed()
+                if need_fuzzing:
+                    path = self.confirmSuccess(hash, case)
+                    if path != None:
+                        self.__copy_new_capability(path, need_fuzzing, title)
+                        self.__move_to_succeed()
+                    else:
+                        self.__move_to_completed()
+                else:
+                    self.__copy_new_capability(case, need_fuzzing, title)
+                    self.__move_to_succeed()
             else:
                 self.__move_to_completed()
+    
+    def __copy_new_capability(self, path, need_fuzzing, title):
+        output = os.path.join(self.current_case_path, "output")
+        os.makedirs(output, exist_ok=True)
+        if not need_fuzzing:
+            case = path
+            if case['syz_repro'] != None:
+                r = utilities.request_get(case['syz_repro'])
+                with open(os.path.join(output, "repro.prog"), "w") as f:
+                    f.write(r.text)
+            if case['c_repro'] != None:
+                r = utilities.request_get(case['c_repro'])
+                with open(os.path.join(output, "repro.cprog"), "w") as f:
+                    f.write(r.text)
+            crash_log = "{}/{}".format(self.current_case_path, "poc/crash_log")
+            if os.path.isfile(crash_log):
+                shutil.copy(crash_log, os.path.join(output, "repro.log"))
+            with open(os.path.join(output, "description"), "w") as f:
+                    f.write(title)
+        else:
+            if path == None:
+                self.logger.error("Error: crash path is None")
+                return
+            src_files = os.listdir(path)
+            for file_name in src_files:
+                full_file_name = os.path.join(path, file_name)
+                if os.path.isfile(full_file_name):
+                    shutil.copy(full_file_name, output)
+
 
     def __save_error(self, hash):
         self.logger.info("case {} encounter an error. See log for details.".format(hash))
         self.__move_to_error()
 
-    def __copy_crashes(self):
+    def __copy_crashes(self, need_fuzzing):
         crash_path = "{}/workdir/crashes".format(self.syzkaller_path)
         dest_path = "{}/crashes".format(self.current_case_path)
         i = 0
-        if os.path.isdir(crash_path):
+        if os.path.isdir(crash_path) and len(os.listdir(crash_path)) > 0:
             while(1):
                 try:
                     shutil.copytree(crash_path, dest_path)
@@ -326,7 +482,8 @@ class Deployer:
                     dest_path = "{}/crashes-{}".format(self.current_case_path, i)
                     i += 1
         else:
-            self.logger.info("No crashes found")
+            if need_fuzzing:
+                self.logger.info("No crashes found in syzkaller")
 
     def __move_to_completed(self):
         self.logger.info("Copy to completed")
@@ -344,6 +501,7 @@ class Deployer:
             except:
                 self.logger.info("Fail to delete directory {}".format(des))
         shutil.move(src, des)
+        self.current_case_path = des
     
     def __move_to_succeed(self):
         self.logger.info("Copy to succeed")
@@ -361,6 +519,7 @@ class Deployer:
             except:
                 self.logger.info("Fail to delete directory {}".format(des))
         shutil.move(src, des)
+        self.current_case_path = des
     
     def __move_to_error(self):
         self.logger.info("Copy to error")
@@ -375,9 +534,10 @@ class Deployer:
         if os.path.isdir(des):
             os.rmdir(des)
         shutil.move(src, des)
+        self.current_case_path = des
 
     def __create_stamp(self, name):
-        self.logger.info("Create stamp {}".format(self.index, name))
+        self.logger.info("Create stamp {}".format(name))
         stamp_path = "{}/.stamp/{}".format(self.current_case_path, name)
         call(['touch',stamp_path])
     
@@ -385,6 +545,11 @@ class Deployer:
         stamp_path1 = "{}/work/completed/{}/.stamp/{}".format(self.project_path, hash, name)
         stamp_path2 = "{}/work/succeed/{}/.stamp/{}".format(self.project_path, hash, name)
         return os.path.isfile(stamp_path1) or os.path.isfile(stamp_path2)
+    
+    def __clean_stamp(self, name, hash):
+        stamp_path = "{}/.stamp/{}".format(self.current_case_path, name)
+        if os.path.isfile(stamp_path):
+            os.remove(stamp_path)
 
     def __create_dir_for_case(self):
         if self.__copy_from_duplicated_cases():
@@ -402,7 +567,7 @@ class Deployer:
                 continue
             if os.path.isdir(src):
                 try:
-                    shutil.copytree(src, des)
+                    shutil.move(src, des)
                     self.logger.info("Found duplicated case in {}".format(src))
                     return True
                 except:

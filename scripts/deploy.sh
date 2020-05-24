@@ -7,6 +7,12 @@ set -ex
 
 LATEST="9b1f3e6"
 
+function copy_log_then_exit() {
+  LOG=$1
+  cp $LOG $CASE_PATH
+  exit 1
+}
+
 function set_git_config() {
   set +x
   echo "set user.email for git config"
@@ -118,12 +124,17 @@ curl $TESTCASE > $GOPATH/src/github.com/google/syzkaller/workdir/testcase-$HASH
 
 cd $CASE_PATH || exit 1
 echo "[+] Copy image"
-if [ ! -f "$CASE_PATH/img" ]; then
+if [ ! -d "$CASE_PATH/img" ]; then
   mkdir -p $CASE_PATH/img
 fi
 cd img
-ln -s $PROJECT_PATH/tools/img/$IMAGE.img ./img/stretch.img
-ln -s $PROJECT_PATH/tools/img/$IMAGE.img.key ./img/stretch.img.key
+if [ ! -f "$CASE_PATH/img/stretch.img" ]; then
+  ln -s $PROJECT_PATH/tools/img/$IMAGE.img ./stretch.img
+fi
+if [ ! -f "$CASE_PATH/img/stretch.img.key" ]; then
+  ln -s $PROJECT_PATH/tools/img/$IMAGE.img.key ./stretch.img.key
+fi
+cd ..
 
 #Building kernel
 echo "[+] Building kernel"
@@ -135,13 +146,13 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   cd linux
   make clean
   git stash --all || set_git_config
-  git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1
+  git pull https://github.com/torvalds/linux.git master > pull.log || copy_log_then_exit pull.log
   git checkout $COMMIT
   cp $PATCHES_PATH/kasan.patch ./
   patch -p1 -i kasan.patch
   #Add a rejection detector in future
   curl $CONFIG > .config
-  make -j16 || exit 1
+  make -j16 > make.log || copy_log_then_exit make.log
   touch $CASE_PATH/.stamp/BUILD_KERNEL
 fi
 

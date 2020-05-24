@@ -67,6 +67,6 @@ git rev-list HEAD | grep $(git rev-parse dfd609eca1871f01757d6b04b19fc273c87c14e
 make TARGETARCH=$ARCH TARGETVMARCH=amd64 execprog executor
 scp -F /dev/null -o UserKnownHostsFile=/dev/null \
     -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-    -i $IMAGE_PATH/stretch.img.key -P $PORT bin/linux_amd64/syz-execprog bin/linux_amd64/syz-executor root@localhost:/root
+    -i $IMAGE_PATH/stretch.img.key -P $PORT bin/linux_amd64/syz-execprog bin/linux_$ARCH/syz-executor root@localhost:/root
 
 exit $EXITCODE

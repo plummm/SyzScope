@@ -16,10 +16,11 @@ panic_regx = r'Kernel panic'
 kasan_regx = r'BUG: KASAN: ([a-z\\-]+) in ([a-zA-Z0-9_]+).*'
 free_regx = r'BUG: KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
 reboot_regx = r'reboot: machine restart'
+magic_regx = r'\?!\?MAGIC\?!\?read->(\w*) size->(\d*)'
 default_port = 3777
 
 class CrashChecker:
-    def __init__(self, project_path, case_path, ssh_port, logger):
+    def __init__(self, project_path, case_path, ssh_port, logger, debug):
         os.makedirs("{}/poc".format(case_path), exist_ok=True)
         self.kasan_regx = r'KASAN: ([a-z\\-]+) Write in ([a-zA-Z0-9_]+).*'
         self.free_regx = r'KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
@@ -31,6 +32,7 @@ class CrashChecker:
         self.case_logger = self.__init_case_logger("{}-info".format(case_path))
         self.ssh_port = ssh_port
         self.kasan_func_list = self.read_kasan_funcs()
+        self.debug = debug
 
     def run(self, syz_repro, syz_commit, log=None, linux_commit=None, config=None, c_repro=None, i386=None):
         self.case_logger.info("=============================crash.run=============================")
@@ -39,12 +41,40 @@ class CrashChecker:
             self.logger.info("No crash trigger by original poc")
             return [False, None]
         crashes_path = self.extract_existed_crash(self.case_path)
+        self.case_logger.info("Found {} existed crashes".format(len(crashes_path)))
         for path in crashes_path:
             self.case_logger.info("Inspect crash: {}".format(path))
             new_crash_reports = self.read_existed_crash(path)
             if self.compare_crashes(ori_crash_report, new_crash_reports):
                 return [True, path]
         return [False, None]
+    
+    def check_read_before_write(self, path):
+        new_crash_reports = self.read_existed_crash(path)
+        for each_report in new_crash_reports:
+            for line in each_report:
+                if utilities.regx_match(magic_regx, line):
+                    return True
+        return False
+
+    
+    def diff_testcase(self, crash_path, syz_repro):
+        new_testcase = []
+        old_testcase = []
+        f = open(os.path.join(crash_path, "repro.prog"), "r")
+        text = f.readlines()
+        for line in text:
+            if len(line) > 0 and line[0] != '#':
+                line = line.strip('\n')
+                new_testcase.append(line)
+        r = utilities.request_get(syz_repro)
+        text = r.text.split('\n')
+        for line in text:
+            if len(line) > 0 and line[0] != '#':
+                line = line.strip('\n')
+                old_testcase.append(line)
+        return utilities.levenshtein("\n".join(old_testcase), "\n".join(new_testcase))
+
     
     def repro_on_fixed_kernel(self, syz_commit, linux_commit=None, config=None, c_repro=None, i386=None):
         self.case_logger.info("=============================crash.repro_on_fixed_kernel=============================")
@@ -67,15 +97,24 @@ class CrashChecker:
             return res
 
     def compare_crashes(self, ori_crash_report, new_crash_reports):
+        ratio_allocation = 1
+        ratio_call_race = 1
+        res_allocation = False
+        res_call_trace = False
         for report1 in ori_crash_report:
             if len(report1) > 2:
                 for report2 in new_crash_reports:
                     if len(report2) > 2:
-                        if self.__match_allocated_section(report1, report2):
-                            return True
-                        if self.__match_call_trace(report1, report2):
-                            return True
-        return False
+                        res1 = self.__match_allocated_section(report1, report2)     
+                        res2 = self.__match_call_trace(report1, report2)
+                        if ratio_allocation > res1[1]:
+                            ratio_allocation = res1[1]
+                            res_allocation = res1[0]
+                        if ratio_call_race > res2[1]:
+                            ratio_call_race = res2[1]
+                            res_call_trace = res2[0]
+        self.logger.info("ratio for allocation: {}  ratio for call trace: {}".format(ratio_allocation, ratio_call_race))
+        return res_allocation or res_call_trace
 
     def extract_existed_crash(self, path):
         crash_path = os.path.join(path, "crashes")
@@ -97,13 +136,11 @@ class CrashChecker:
     
     def read_crash(self, syz_repro, syz_commit, log, linux_commit, config, fixed, c_repro, i386):
         if log != None:
-            print("Go for log")
             res = self.read_from_log(log)
         else:
-            print("Go for triggering crash")
             exitcode = self.deploy_linux(linux_commit, config, fixed)
             if exitcode == 1:
-                self.logger.info("Error occur at deploy_linux-sh")
+                self.logger.info("Error occur at deploy_linux.sh")
                 return []
             res = self.trigger_ori_crash(syz_repro, syz_commit, c_repro, i386)
         self.save_crash_log(res)
@@ -168,12 +205,12 @@ class CrashChecker:
         patch_path = "{}/patches".format(self.project_path)
         p = None
         if commit == None and config == None:
-            print("run: scripts/deploy_linux.sh {} {}".format(self.linux_path, patch_path))
+            #self.logger.info("run: scripts/deploy_linux.sh {} {}".format(self.linux_path, patch_path))
             p = Popen(["scripts/deploy_linux.sh", str(fixed), self.linux_path, patch_path],
                 stdout=PIPE,
                 stderr=STDOUT)
         else:
-            print("run: scripts/deploy_linux.sh {} {} {} {}".format(self.linux_path, patch_path, commit, config))
+            #self.logger.info("run: scripts/deploy_linux.sh {} {} {} {}".format(self.linux_path, patch_path, commit, config))
             p = Popen(["scripts/deploy_linux.sh", str(fixed), self.linux_path, patch_path, commit, config],
                 stdout=PIPE,
                 stderr=STDOUT)
@@ -211,7 +248,8 @@ class CrashChecker:
                 line = line.decode("utf-8").strip('\n').strip('\r')
                 if utilities.regx_match(reboot_regx, line):
                     self.case_logger.info("Booting qemu failed")
-                print(line)
+                if self.debug:
+                    print(line)
                 if utilities.regx_match(startup_regx, line):
                     repro_type = utilities.CASE
                     if utilities.regx_match(r'https:\/\/syzkaller\.appspot\.com\/', syz_repro):
@@ -245,7 +283,9 @@ class CrashChecker:
                     Popen(["ssh", "-p", str(self.ssh_port), "-F", "/dev/null", "-o", "UserKnownHostsFile=/dev/null", 
                     "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=no", 
                     "-o", "ConnectTimeout=10", "-i", "{}/stretch.img.key".format(self.image_path), 
-                    "-v", "root@localhost", "chmod +x run.sh && ./run.sh"])
+                    "-v", "root@localhost", "chmod +x run.sh && ./run.sh"],
+                    stdout=PIPE,
+                    stderr=STDOUT)
                     extract_report = True
                 if extract_report:
                     self.case_logger.info(line)
@@ -296,7 +336,7 @@ class CrashChecker:
                     if str(pm["repeat"]).lower() == 'true':
                         command += "-repeat=" + "0 "
                     else:
-                        command += "-repeat=" + "1 "
+                        command += "-repeat=" + "0 " #make reproducer infinitely run
                 if support_enable_features != 2:
                     if "tun" in pm and str(pm["tun"]).lower() == "true":
                         enabled += "tun,"
@@ -323,7 +363,7 @@ class CrashChecker:
     
     def monitor_execution(self, p):
         count = 0
-        while (count < 10*60):
+        while (count <60*60):
             count += 1
             time.sleep(1)
             poll = p.poll()
@@ -334,49 +374,63 @@ class CrashChecker:
             
     def __match_allocated_section(self, report1 ,report2):
         self.case_logger.info("match allocated section")
+        ratio = 1
         allocation1 = self.__extract_allocated_section(report1)
         allocation2 = self.__extract_allocated_section(report2)
         seq1 = [self.__extract_func_name(x) for x in allocation1 if self.__extract_func_name(x) != None]
         seq2 = [self.__extract_func_name(x) for x in allocation2 if self.__extract_func_name(x) != None]
         counter = 0
 
+        """
         for i in range(0, min(len(seq1), len(seq2))):
             if seq1[i] == seq2[i]:
                 counter += 1
             else:
                 break
             if counter == 2 or counter == min(len(seq1), len(seq2)):
-                return True
+                return [True, ratio]
+        """
 
-        diff = utilities.levenshtein_for_calltrace(seq1, seq2)
-        ratio = diff/float(max(len(seq1), len(seq2)))
+        diff = utilities.levenshtein(seq1, seq2)
+        m = max(len(seq1), len(seq2))
+        if m > 0:
+            ratio = diff/float(m)
+        else:
+            self.case_logger.error("Allocation do not exist")
         self.case_logger.info("diff ratio: {}".format(ratio))
         if ratio > 0.3:
-            return False
-        return True
+            return [False, ratio]
+        return [True, ratio]
     
     def __match_call_trace(self, report1, report2):
         self.case_logger.info("match call trace")
+        ratio = 1
         trace1 = self.__extrace_call_trace(report1)
         trace2 = self.__extrace_call_trace(report2)
         seq1 = [self.__extract_func_name(x) for x in trace1 if self.__extract_func_name(x) != None]
         seq2 = [self.__extract_func_name(x) for x in trace2 if self.__extract_func_name(x) != None]
         counter = 0
 
+        """
         for i in range(0, min(len(seq1), len(seq2))):
             if seq1[i] == seq2[i]:
                 counter += 1
             else:
                 break
             if counter == 2 or counter == min(len(seq1), len(seq2)):
-                return True
+                return [True, ratio]
+        """
 
-        diff = utilities.levenshtein_for_calltrace(seq1, seq2)
-        ratio = diff/float(max(len(seq1), len(seq2)))
+        diff = utilities.levenshtein(seq1, seq2)
+        m = max(len(seq1), len(seq2))
+        if m > 0:
+            ratio = diff/float(m)
+        else:
+            self.case_logger.error("Call trace do not exist")
         self.case_logger.info("diff ratio: {}".format(ratio))
         if ratio > 0.3:
-            return False
-        return True
+            return [False, ratio]
+        return [True, ratio]
 
     def __is_kasan_func(self, func_name):
         if func_name in self.kasan_func_list:
@@ -444,10 +498,15 @@ def args_parse():
                         help='A file contains cases hashs which are ignored. One line for each hash.')
     parser.add_argument('-r', '--reproduce', action='store_true',
                         help='Reproduce cases with the original testcase')
+    parser.add_argument('--folder', const='succeed', nargs='?',
+                        choices=['succeed', 'completed', 'incomplete', 'error'],
+                        help='Reproduce cases with the original testcase')
     parser.add_argument('--fixed-only', action='store_true',
                         help='Reproduce on fixed kernel')
     parser.add_argument('--unfixed-only', action='store_true',
                         help='Reproduce on unfixed kernel')
+    parser.add_argument('--debug', action='store_true',
+                        help='Enable debug mode')
     args = parser.parse_args()
     return args
 
@@ -471,20 +530,20 @@ if __name__ == '__main__':
                 line = line.strip('\n')
                 ignore.append(line)
 
-    path = "succeed"
+    path = args.folder
     type = utilities.FOLDER
     if args.input != None:
-        path = os.path.join(path, args.input[:7])
-        type = utilities.CASE
-    for url in utilities.urlsOfCases(path, type):
-        if url not in ignore:
-            crawler.run_one_case(url)
+        crawler.run_one_case(args.input)
+    else:
+        for url in utilities.urlsOfCases(path, type):
+            if url not in ignore:
+                crawler.run_one_case(url)
     
     count = 0
     for hash in crawler.cases:
         print("running case {} [{}/{}]".format(hash, count, len(crawler.cases)))
         project_path = os.getcwd()
-        case_path = "{}/work/succeed/{}".format(project_path, hash[:7])
+        case_path = "{}/work/{}/{}".format(project_path, path, hash[:7])
         case = crawler.cases[hash]
         syz_repro = case["syz_repro"]
         syz_commit = case["syzkaller"]
@@ -496,7 +555,7 @@ if __name__ == '__main__':
             i386 = True
         log = case["log"]
         logger.info("\nRunning case: {}".format(hash))
-        checker = CrashChecker(project_path, case_path, default_port, logger)
+        checker = CrashChecker(project_path, case_path, default_port, logger, args.debug)
         if not args.fixed_only:
             if args.reproduce:
                 res = checker.run(syz_repro, syz_commit, None, commit, config, c_repro, i386)
@@ -504,6 +563,8 @@ if __name__ == '__main__':
                 res = checker.run(syz_repro, syz_commit, log, commit, config, c_repro, i386)
             checker.logger.info("{}:{}".format(hash, res[0]))
             if res[0]:
+                n = checker.diff_testcase(res[1], syz_repro)
+                checker.logger.info("difference of characters of two testcase: {}".format(n))
                 checker.logger.info("successful crash: {}".format(res[1]))
         if not args.unfixed_only:
             commit = crawler.get_patch_commit(hash)

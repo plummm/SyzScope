@@ -89,6 +89,7 @@ class Crawler:
         self.cases[hash]["c_repro"] = detail[5]
         self.cases[hash]["time"] = detail[6]
         self.cases[hash]["manager"] = detail[7]
+        self.cases[hash]["report"] = detail[8]
 
     def gather_cases(self):
         tables = self.__get_table(self.url)
@@ -162,6 +163,8 @@ class Crawler:
                             repros = case.find_all('td', {"class": "repro"})
                             log = syzbot_host_url + repros[0].next.attrs['href']
                             self.logger.debug("Log URL: {}".format(log))
+                            report = syzbot_host_url + repros[1].next.attrs['href']
+                            self.logger.debug("Log URL: {}".format(report))
                             try:
                                 syz_repro = syzbot_host_url + repros[2].next.attrs['href']
                                 self.logger.debug("Testcase URL: {}".format(syz_repro))
@@ -179,7 +182,7 @@ class Crawler:
                         except:
                             self.logger.info("Failed to retrieve case {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
                             continue
-                        return [commit, syzkaller, config, syz_repro, log, c_repro, time_str, manager_str]
+                        return [commit, syzkaller, config, syz_repro, log, c_repro, time_str, manager_str, report]
                 break
         self.logger2file.info("[Failed] {} fail to find a proper crash".format(url))
         return []

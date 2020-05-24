@@ -45,5 +45,5 @@ if [ $# -eq 5 ]; then
     clean_and_jump
   fi
 fi
-make -j16 > log || exit 1
+make -j16 > /dev/null 2>&1 || exit 1
 exit 0

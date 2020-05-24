@@ -53,7 +53,7 @@ def chmodX(path):
 def request_get(url):
     return requests.request(method='GET', url=url)
 
-def levenshtein_for_calltrace(seq1, seq2):
+def levenshtein(seq1, seq2):
     size_x = len(seq1) + 1
     size_y = len(seq2) + 1
     matrix = np.zeros ((size_x, size_y))
@@ -131,6 +131,13 @@ def syzrepro_convert_format(line):
         #if len(pm) != len(res):
         #    self.logger.info("parameter is missing:\n%s\n%s", new_line, str(res))
         return res
+
+def unique(seq):
+    res = []
+    for each in seq:
+        if each not in res:
+            res.append(each)
+    return res
 
 def use_and_free_same_task(url):
     res = None
@@ -283,16 +290,6 @@ def check_keyword_on_patch(hash):
     return False
 
 if __name__ == '__main__':
-    hashs = get_case_from_file('/tmp')
-    for each in hashs:
-        if check_keyword_on_patch(each):
-            print("{}".format(each))
-    """[race, nonrace] = get_types_of_cases(hashs)
-
-    print("race")
-    for each in race:
+    for each in urlsOfCases('succeed'):
         print(each)
-    print("non-race")
-    for each in nonrace:
-        print(each)"""
     

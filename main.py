@@ -84,7 +84,7 @@ def install_requirments():
     call(['scripts/requirements.sh'], shell=False)
 
 def args_dependencies():
-    if args.debug or args.input != None:
+    if args.debug:
         args.max = '1'
     if args.linux != '-1':
         args.parallel_max = '1'
@@ -100,7 +100,14 @@ if __name__ == '__main__':
         for url in urlsOfCases(args.replay):
             crawler.run_one_case(url)
     elif args.input != None:
-        crawler.run_one_case(args.input)
+        if len(args.input) == 40:
+            crawler.run_one_case(args.input)
+        else:
+            with open(args.input, 'r') as f:
+                text = f.readlines()
+                for line in text:
+                    line = line.strip('\n')
+                    crawler.run_one_case(line)
     else:
         crawler.run()
     install_requirments()
@@ -110,7 +117,7 @@ if __name__ == '__main__':
     lock = threading.Lock()
     l = list(crawler.cases.keys())
     total = len(l)
-    for i in range(0,min(parallel_max,int(args.max))):
+    for i in range(0,min(parallel_max,len(crawler.cases))):
         deployer.append(Deployer(i, args.debug, args.force, int(args.syzkaller_port), args.replay, int(args.linux), int(args.time)))
         x = threading.Thread(target=deploy_one_case, args=(i,))
         x.start()
