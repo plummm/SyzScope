@@ -5,10 +5,11 @@
 
 set -ex
 
-function clean_and_jump() {
+function clean_and_patch() {
   make clean
   git stash --all
-  git checkout $COMMIT
+  git format-patch -1 $COMMIT --stdout > fixed.patch
+  patch -p1 -N -i fixed.patch
   curl $CONFIG > .config
   make olddefconfig
 }

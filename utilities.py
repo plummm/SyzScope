@@ -79,6 +79,20 @@ def levenshtein(seq1, seq2):
     #print (matrix)
     return (matrix[size_x - 1, size_y - 1])
 
+def get_patch_commit(hash):
+        url = syzbot_host_url + syzbot_bug_base_url + hash
+        req = request_get(url)
+        soup = BeautifulSoup(req.text, "html.parser")
+        try:
+            fix = soup.body.span.contents[1]
+            url = fix.attrs['href']
+            m = re.search(r'id=(\w*)', url)
+            if m != None and m.groups() != None:
+                res = m.groups()[0]
+        except:
+            res=None
+        return res
+
 def syzrepro_convert_format(line):
         res = {}
         p = re.compile(r'({| )(\w+):([0-9a-zA-Z-]*)')
@@ -100,7 +114,7 @@ def syzrepro_convert_format(line):
                 res['fault_call']=pm[each]
             if each == 'FaultNth':
                 res['fault_nth']=pm[each]
-            if each == 'EnableTun':
+            if each == 'EnableTun' or each == 'NetInjection':
                 res['tun']=pm[each]
             if each == 'EnableCgroups' or each == 'Cgroups':
                 res['cgroups']=pm[each]

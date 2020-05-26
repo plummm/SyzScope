@@ -108,6 +108,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then
   cd $GOPATH/src/github.com/google/syzkaller || exit 1
   make clean
   git stash --all || set_git_config
+  git checkout 9b1f3e665308ee2ddd5b3f35a078219b5c509cdb
   #git checkout -
   #retrieve_proper_patch
   cp $PATCHES_PATH/syzkaller-9b1f3e6.patch ./syzkaller.patch

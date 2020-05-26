@@ -155,6 +155,7 @@ class Deployer:
                 need_fuzzing = True
                 self.__write_config(case["syz_repro"], hash[:7])
                 exitcode = self.run_syzkaller(hash)
+                self.repro_on_fixed_kernel(hash, case)
                 self.__save_case(hash, exitcode, case, need_fuzzing)
         else:
             self.logger.info("{} has finished".format(hash[:7]))
@@ -232,6 +233,19 @@ class Deployer:
                 self.crash_checker.logger.info("Call trace match failed")
             return res[1]
         return None
+    
+    def repro_on_fixed_kernel(self, hash, case):
+        syz_repro = case["syz_repro"]
+        syz_commit = case["syzkaller"]
+        commit = case["commit"]
+        config = case["config"]
+        c_repro = case["c_repro"]
+        i386 = None
+        if utilities.regx_match(r'386', case["manager"]):
+            i386 = True
+        commit = utilities.get_patch_commit(hash)
+        if commit != None:
+            self.crash_checker.repro_on_fixed_kernel(syz_commit, commit, config, c_repro, i386)
 
     def __check_confirmed(self, hash):
         return False

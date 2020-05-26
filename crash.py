@@ -239,17 +239,26 @@ class CrashChecker:
                   )
         x = threading.Thread(target=self.monitor_execution, args=(p,))
         x.start()
+        p_poc = None
         with p.stdout:
             extract_report = False
             record_flag = 0
             kasan_flag = 0
             crash = []
             for line in iter(p.stdout.readline, b''):
-                line = line.decode("utf-8").strip('\n').strip('\r')
+                try:
+                    line = line.decode("utf-8").strip('\n').strip('\r')
+                except:
+                    self.logger.error('bytes array \'{}\' cannot be converted to utf-8'.format(line))
+                    continue
                 if utilities.regx_match(reboot_regx, line):
                     self.case_logger.info("Booting qemu failed")
                 if self.debug:
                     print(line)
+                if p_poc != None:
+                    poll = p_poc.poll()
+                    if poll != None:
+                        p.kill()
                 if utilities.regx_match(startup_regx, line):
                     repro_type = utilities.CASE
                     if utilities.regx_match(r'https:\/\/syzkaller\.appspot\.com\/', syz_repro):
@@ -268,10 +277,17 @@ class CrashChecker:
                     if repro_type == utilities.URL:
                         r = utilities.request_get(syz_repro)
                         text = r.text.split('\n')
+                        command = self.make_commands(text, exitcode, i386)
                     else:
                         with open(syz_repro, "r") as f:
                             text = f.readlines()
-                    command = self.make_commands(text, exitcode, i386)
+                        dirname = os.path.dirname(syz_repro)
+                        command_path = os.path.join(dirname, "repro.command")
+                        if os.path.isfile(command_path):
+                            with open(command_path, 'r') as f:
+                                command = f.readline().strip('\n')
+                        else:
+                            command = self.make_commands(text, exitcode, i386)
                     utilities.chmodX("scripts/run-script.sh")
                     p3 = Popen(["scripts/run-script.sh", command, str(self.ssh_port), self.image_path, self.case_path],
                     stdout=PIPE,
@@ -280,7 +296,7 @@ class CrashChecker:
                     if exitcode == 1:
                         p.kill()
                         break
-                    Popen(["ssh", "-p", str(self.ssh_port), "-F", "/dev/null", "-o", "UserKnownHostsFile=/dev/null", 
+                    p_poc = Popen(["ssh", "-p", str(self.ssh_port), "-F", "/dev/null", "-o", "UserKnownHostsFile=/dev/null", 
                     "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=no", 
                     "-o", "ConnectTimeout=10", "-i", "{}/stretch.img.key".format(self.image_path), 
                     "-v", "root@localhost", "chmod +x run.sh && ./run.sh"],
@@ -336,7 +352,7 @@ class CrashChecker:
                     if str(pm["repeat"]).lower() == 'true':
                         command += "-repeat=" + "0 "
                     else:
-                        command += "-repeat=" + "0 " #make reproducer infinitely run
+                        command += "-repeat=" + "1 "
                 if support_enable_features != 2:
                     if "tun" in pm and str(pm["tun"]).lower() == "true":
                         enabled += "tun,"
@@ -567,7 +583,7 @@ if __name__ == '__main__':
                 checker.logger.info("difference of characters of two testcase: {}".format(n))
                 checker.logger.info("successful crash: {}".format(res[1]))
         if not args.unfixed_only:
-            commit = crawler.get_patch_commit(hash)
+            commit = utilities.get_patch_commit(hash)
             if commit != None:
                 checker.repro_on_fixed_kernel(syz_commit, commit, config, c_repro, i386)
         count += 1

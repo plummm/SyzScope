@@ -22,9 +22,9 @@ def args_parse():
                         help='The maximum of cases for retrieving\n'
                              '(By default all the cases will be retrieved)')
     parser.add_argument('-k', '--key', nargs='*', action='store',
-                        default=['slab-out-of-bounds Read'],
+                        default=[''],
                         help='The keywords for detecting cases.\n'
-                             '(default value is \'slab-out-of-bounds Read\')\n'
+                             '(By default, it retrieve all cases)\n'
                              'This argument could be multiple values')
     parser.add_argument('-pm', '--parallel-max', nargs='?', action='store',
                         default='5', help='The maximum of parallel processes\n'
@@ -119,5 +119,8 @@ if __name__ == '__main__':
     total = len(l)
     for i in range(0,min(parallel_max,len(crawler.cases))):
         deployer.append(Deployer(i, args.debug, args.force, int(args.syzkaller_port), args.replay, int(args.linux), int(args.time)))
-        x = threading.Thread(target=deploy_one_case, args=(i,))
+        if args.linux != '-1':
+             x = threading.Thread(target=deploy_one_case, args=(int(args.linux),))
+        else:
+            x = threading.Thread(target=deploy_one_case, args=(i,))
         x.start()

@@ -13,7 +13,7 @@ num_of_elements = 8
 class Crawler:
     def __init__(self,
                  url="https://syzkaller.appspot.com/upstream/fixed",
-                 keyword=['slab-out-of-bounds Read'],
+                 keyword=[''],
                  max_retrieve=10, debug=False):
         self.url = url
         self.keyword = keyword
@@ -47,20 +47,6 @@ class Crawler:
         self.logger.info("retreive one case: %s",hash)
         self.cases[hash] = {}
         self.retreive_case(hash)
-    
-    def get_patch_commit(self, hash):
-        url = syzbot_host_url + syzbot_bug_base_url + hash
-        req = requests.request(method='GET', url=url)
-        soup = BeautifulSoup(req.text, "html.parser")
-        try:
-            fix = soup.body.span.contents[1]
-            url = fix.attrs['href']
-            m = re.search(r'id=(\w*)', url)
-            if m != None and m.groups() != None:
-                res = m.groups()[0]
-        except:
-            res=None
-        return res
     
     def get_title_of_case(self, hash=None, text=None):
         if hash==None and text==None:
@@ -105,7 +91,7 @@ class Crawler:
                     if title == None:
                         continue
                     for keyword in self.keyword:
-                        if keyword in title.text:
+                        if keyword in title.text or keyword=='':
                             commit_list = case.find('td', {"class": "commit_list"})
                             try:
                                 patch_url = commit_list.contents[1].contents[1].attrs['href']
