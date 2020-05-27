@@ -30,7 +30,7 @@ fi
 
 cd $LINUX
 if [ $# -eq 3 ]; then
-  patch -p1 -N -R < $PATCH
+  #patch -p1 -N -R < $PATCH
 fi
 if [ $# -eq 5 ]; then
   if [ "$FIXED" != "1" ]; then

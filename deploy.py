@@ -16,6 +16,7 @@ default_port = 53777
 stamp_finish_fuzzing = "FINISH_FUZZING"
 stamp_build_syzkaller = "BUILD_SYZKALLER"
 stamp_build_kernel = "BUILD_KERNEL"
+stamp_reproduce_ori_poc = "REPRO_ORI_POC"
 
 syz_config_template="""
 {{ 
@@ -129,33 +130,34 @@ class Deployer:
             need_fuzzing = False
             title = None
             self.logger.info("Try to triger the OOB/UAF by running original poc")
-            report = self.crash_checker.read_crash(case["syz_repro"], case["syzkaller"], None, case["commit"], case["config"], 0, case["c_repro"], i386)
-            if report != []:
-                for each in report:
-                    for line in each:
-                        if utilities.regx_match(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line) or\
-                           utilities.regx_match(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line):
-                            m = re.search(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line)
-                            if m != None and len(m.groups()) > 0:
-                                title = m.groups()[0]
-                            m = re.search(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line)
-                            if m != None and len(m.groups()) > 0:
-                                title = m.groups()[0]
-                        if utilities.regx_match(r'Write of size (\d+) at addr (\w*)', line):
-                            write_without_mutating = True
-                            self.crash_checker.logger.info("OOB/UAF Write without mutating")
-                            self.crash_checker.logger.info("Detect read before write")
-                            self.logger.info("Write to confirmed success")
-                            self.__write_to_sucess(hash)
-                            self.__write_to_confirmed_sucess(hash)
-                            self.__save_case(hash, 0, case, need_fuzzing, title)
-                            break
+            if not self.__check_stamp(stamp_reproduce_ori_poc, hash[:7]):
+                report = self.crash_checker.read_crash(case["syz_repro"], case["syzkaller"], None, case["commit"], case["config"], 0, case["c_repro"], i386)
+                if report != []:
+                    for each in report:
+                        for line in each:
+                            if utilities.regx_match(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line) or\
+                            utilities.regx_match(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line):
+                                m = re.search(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line)
+                                if m != None and len(m.groups()) > 0:
+                                    title = m.groups()[0]
+                                m = re.search(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line)
+                                if m != None and len(m.groups()) > 0:
+                                    title = m.groups()[0]
+                            if utilities.regx_match(r'Write of size (\d+) at addr (\w*)', line):
+                                write_without_mutating = True
+                                self.crash_checker.logger.info("OOB/UAF Write without mutating")
+                                self.crash_checker.logger.info("Detect read before write")
+                                self.logger.info("Write to confirmed success")
+                                self.__write_to_sucess(hash)
+                                self.__write_to_confirmed_sucess(hash)
+                                self.__save_case(hash, 0, case, need_fuzzing, title)
+                                break
+                    self.__create_stamp(stamp_reproduce_ori_poc)
             if not write_without_mutating:
                 path = None
                 need_fuzzing = True
                 self.__write_config(case["syz_repro"], hash[:7])
                 exitcode = self.run_syzkaller(hash)
-                self.repro_on_fixed_kernel(hash, case)
                 self.__save_case(hash, exitcode, case, need_fuzzing)
         else:
             self.logger.info("{} has finished".format(hash[:7]))
@@ -217,6 +219,7 @@ class Deployer:
         if utilities.regx_match(r'386', case["manager"]):
             i386 = True
         log = case["log"]
+        path = None
         if not self.__check_confirmed(hash):
             self.logger.info("Compare with original PoC")
             res = self.crash_checker.run(syz_repro, syz_commit, log, commit, config, c_repro, i386)
@@ -229,9 +232,17 @@ class Deployer:
                     self.crash_checker.logger.info("Detect read before write")
                 self.logger.info("Write to confirmedSuccess")
                 self.__write_to_confirmed_sucess(hash)
+                path = res[1]
             else:
                 self.crash_checker.logger.info("Call trace match failed")
-            return res[1]
+            
+            res = self.repro_on_fixed_kernel(hash, case)
+            """
+            if res != []:
+                self.logger.info("Write to confirmedSuccess")
+                self.__write_to_confirmed_sucess(hash)
+            """
+            return path
         return None
     
     def repro_on_fixed_kernel(self, hash, case):
@@ -241,11 +252,13 @@ class Deployer:
         config = case["config"]
         c_repro = case["c_repro"]
         i386 = None
+        res = []
         if utilities.regx_match(r'386', case["manager"]):
             i386 = True
         commit = utilities.get_patch_commit(hash)
         if commit != None:
-            self.crash_checker.repro_on_fixed_kernel(syz_commit, commit, config, c_repro, i386)
+            res = self.crash_checker.repro_on_fixed_kernel(syz_commit, commit, config, c_repro, i386)
+        return res
 
     def __check_confirmed(self, hash):
         return False

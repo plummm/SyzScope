@@ -149,8 +149,8 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   git stash --all || set_git_config
   git pull https://github.com/torvalds/linux.git master > pull.log || copy_log_then_exit pull.log
   git checkout $COMMIT
-  cp $PATCHES_PATH/kasan.patch ./
-  patch -p1 -i kasan.patch
+  #cp $PATCHES_PATH/kasan.patch ./
+  #patch -p1 -i kasan.patch
   #Add a rejection detector in future
   curl $CONFIG > .config
   make -j16 > make.log || copy_log_then_exit make.log

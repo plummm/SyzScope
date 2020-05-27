@@ -79,6 +79,7 @@ class CrashChecker:
     def repro_on_fixed_kernel(self, syz_commit, linux_commit=None, config=None, c_repro=None, i386=None):
         self.case_logger.info("=============================crash.repro_on_fixed_kernel=============================")
         crashes_path = self.extract_existed_crash(self.case_path)
+        res = []
         for path in crashes_path:
             path_repro = os.path.join(path, "repro.prog")
             ori_crash_report = self.read_crash(path_repro, syz_commit, None, linux_commit, config, 1, c_repro, i386)
@@ -86,6 +87,9 @@ class CrashChecker:
                 self.logger.info("Reproduceable: {}".format(os.path.basename(path)))
             else:
                 self.logger.info("Fixed: {}".format(os.path.basename(path)))
+                res.append(path)
+        return path
+        
     
     def read_kasan_funcs(self):
         res = []
@@ -258,6 +262,7 @@ class CrashChecker:
                 if p_poc != None:
                     poll = p_poc.poll()
                     if poll != None:
+                        self.case_logger.info("PoC terminated, exit vm")
                         p.kill()
                 if utilities.regx_match(startup_regx, line):
                     repro_type = utilities.CASE
@@ -379,7 +384,7 @@ class CrashChecker:
     
     def monitor_execution(self, p):
         count = 0
-        while (count <60*60):
+        while (count <6*60):
             count += 1
             time.sleep(1)
             poll = p.poll()
@@ -504,6 +509,50 @@ class CrashChecker:
             if log_level == logging.DEBUG:
                 self.case_logger.debug(line)
 
+def reproduce_one_case(index):
+    while(1):
+        lock.acquire(blocking=True)
+        l = list(crawler.cases.keys())
+        if len(l) == 0:
+            lock.release()
+            break
+        hash = l[0]
+        case = crawler.cases.pop(hash)
+        lock.release()
+
+        print("Thread {}: running case {} [{}/{}]".format(index, hash, len(l)-1, total))
+        case_path = "{}/work/{}/{}".format(project_path, path, hash[:7])
+        if not os.path.isdir(case_path):
+            print("{} does not exist".format(case_path))
+            continue
+        syz_repro = case["syz_repro"]
+        syz_commit = case["syzkaller"]
+        commit = case["commit"]
+        config = case["config"]
+        c_repro = case["c_repro"]
+        i386 = None
+        if utilities.regx_match(r'386', case["manager"]):
+            i386 = True
+        log = case["log"]
+        logger.info("\nThread {}: Running case: {}".format(index, hash))
+        checker = CrashChecker(project_path, case_path, default_port+index, logger, args.debug)
+        if not args.fixed_only:
+            if args.reproduce:
+                res = checker.run(syz_repro, syz_commit, None, commit, config, c_repro, i386)
+            else:
+                res = checker.run(syz_repro, syz_commit, log, commit, config, c_repro, i386)
+            checker.logger.info("{}:{}".format(hash, res[0]))
+            if res[0]:
+                n = checker.diff_testcase(res[1], syz_repro)
+                checker.logger.info("difference of characters of two testcase: {}".format(n))
+                checker.logger.info("successful crash: {}".format(res[1]))
+        if not args.unfixed_only:
+            commit = utilities.get_patch_commit(hash)
+            if commit != None:
+                checker.repro_on_fixed_kernel(syz_commit, commit, config, c_repro, i386)
+
+    print("Thread {} exit->".format(index, hash))
+
 def args_parse():
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
                                      description='Determine if the new crashes are from the same root cause of the old one\n'
@@ -514,7 +563,10 @@ def args_parse():
                         help='A file contains cases hashs which are ignored. One line for each hash.')
     parser.add_argument('-r', '--reproduce', action='store_true',
                         help='Reproduce cases with the original testcase')
-    parser.add_argument('--folder', const='succeed', nargs='?',
+    parser.add_argument('-pm', '--parallel-max', nargs='?', action='store',
+                        default='5', help='The maximum of parallel processes\n'
+                        '(default valus is 5)')
+    parser.add_argument('--folder', const='succeed', nargs='?', default='succeed',
                         choices=['succeed', 'completed', 'incomplete', 'error'],
                         help='Reproduce cases with the original testcase')
     parser.add_argument('--fixed-only', action='store_true',
@@ -555,35 +607,12 @@ if __name__ == '__main__':
             if url not in ignore:
                 crawler.run_one_case(url)
     
-    count = 0
-    for hash in crawler.cases:
-        print("running case {} [{}/{}]".format(hash, count, len(crawler.cases)))
-        project_path = os.getcwd()
-        case_path = "{}/work/{}/{}".format(project_path, path, hash[:7])
-        case = crawler.cases[hash]
-        syz_repro = case["syz_repro"]
-        syz_commit = case["syzkaller"]
-        commit = case["commit"]
-        config = case["config"]
-        c_repro = case["c_repro"]
-        i386 = None
-        if utilities.regx_match(r'386', case["manager"]):
-            i386 = True
-        log = case["log"]
-        logger.info("\nRunning case: {}".format(hash))
-        checker = CrashChecker(project_path, case_path, default_port, logger, args.debug)
-        if not args.fixed_only:
-            if args.reproduce:
-                res = checker.run(syz_repro, syz_commit, None, commit, config, c_repro, i386)
-            else:
-                res = checker.run(syz_repro, syz_commit, log, commit, config, c_repro, i386)
-            checker.logger.info("{}:{}".format(hash, res[0]))
-            if res[0]:
-                n = checker.diff_testcase(res[1], syz_repro)
-                checker.logger.info("difference of characters of two testcase: {}".format(n))
-                checker.logger.info("successful crash: {}".format(res[1]))
-        if not args.unfixed_only:
-            commit = utilities.get_patch_commit(hash)
-            if commit != None:
-                checker.repro_on_fixed_kernel(syz_commit, commit, config, c_repro, i386)
-        count += 1
+    project_path = os.getcwd()
+    lock = threading.Lock()
+    l = list(crawler.cases.keys())
+    total = len(l)
+    parallel_max = int(args.parallel_max)
+    for i in range(min(len(crawler.cases), parallel_max)):
+        x = threading.Thread(target=reproduce_one_case, args=(i,))
+        x.start()
+        

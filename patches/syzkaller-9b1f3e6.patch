@@ -251,20 +251,10 @@ index 4e413636..9ad59ac9 100644
  	}
  	if len(syscalls) == 0 {
 diff --git a/pkg/report/linux.go b/pkg/report/linux.go
-index 07c061ff..418041fc 100644
+index 07c061ff..c1236705 100644
 --- a/pkg/report/linux.go
 +++ b/pkg/report/linux.go
-@@ -14,6 +14,9 @@ import (
- 	"strings"
- 	"time"
- 
-+	"github.com/google/syzkaller/courier"
-+
-+	"github.com/google/syzkaller/pkg/log"
- 	"github.com/google/syzkaller/pkg/osutil"
- 	"github.com/google/syzkaller/pkg/symbolizer"
- )
-@@ -129,7 +132,7 @@ func (ctx *linux) ContainsCrash(output []byte) bool {
+@@ -129,7 +129,7 @@ func (ctx *linux) ContainsCrash(output []byte) bool {
  }
  
  func (ctx *linux) Parse(output []byte) *Report {
@@ -273,16 +263,16 @@ index 07c061ff..418041fc 100644
  	if oops == nil {
  		return nil
  	}
-@@ -185,6 +188,109 @@ func (ctx *linux) findFirstOops(output []byte) (oops *oops, startPos int, contex
+@@ -185,6 +185,60 @@ func (ctx *linux) findFirstOops(output []byte) (oops *oops, startPos int, contex
  	return
  }
  
 +func (ctx *linux) findCriticalOops(output []byte) (oops *oops, startPos int, context string) {
-+	kasanRegx := regexp.MustCompile(`BUG: KASAN: ([a-z\\-]+) in ([a-zA-Z0-9_]+).*`)
-+	freeRegx := regexp.MustCompile(`BUG: KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*`)
-+	oobReadRegx := regexp.MustCompile(`\?!\?MAGIC\?!\?read->(\w*) size->(\d*)`)
-+	var rAddr []uint64
-+	var rSize []uint64
++	//kasanRegx := regexp.MustCompile(`BUG: KASAN: ([a-z\\-]+) in ([a-zA-Z0-9_]+).*`)
++	//freeRegx := regexp.MustCompile(`BUG: KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*`)
++	//oobReadRegx := regexp.MustCompile(`\?!\?MAGIC\?!\?read->(\w*) size->(\d*)`)
++	oobWriteRegx := regexp.MustCompile(`Write of size (\d+) at addr (\w*)`)
++	writeIndex := oobWriteRegx.FindAllIndex(output, -1)
 +	for pos, next := 0, 0; pos < len(output); pos = next + 1 {
 +		next = bytes.IndexByte(output[pos:], '\n')
 +		if next != -1 {
@@ -291,70 +281,21 @@ index 07c061ff..418041fc 100644
 +			next = len(output)
 +		}
 +		line := output[pos:next]
-+		m := oobReadRegx.FindSubmatch(line)
-+		if len(m) == 3 {
-+			addr, err1 := strconv.ParseUint(string(m[1]), 16, 64)
-+			size, err2 := strconv.ParseUint(string(m[2]), 10, 64)
-+			if err1 == nil && err2 == nil {
-+				rAddr = append(rAddr, addr)
-+				rSize = append(rSize, size)
-+			} else {
-+				log.Logf(0, "Fail to convert string to (u)int: %v %v", err1, err2)
-+			}
-+		}
 +		for _, oops1 := range linuxOopses {
 +			if matchOops(line, oops1, ctx.ignores) {
-+				line1 := ctx.takeAfterContext(line)
-+				line2 := make([]byte, len(line1))
-+				for _, e := range line1 {
-+					if (e >= 0x20 && e <= 0x7e) || e == 0xa {
-+						line2 = append(line2, e)
-+					}
-+				}
-+				log.Logf(1, "line: %s", line2)
-+				m := kasanRegx.Find(line2)
-+				if m == nil {
-+					m = freeRegx.Find(line2)
-+				}
-+				if m != nil {
-+					log.Logf(1, "Match: [%s]", m)
-+					oobWriteRegx := regexp.MustCompile(`Write of size (\d+) at addr (\w*)`)
-+					wAddrs := oobWriteRegx.FindAllSubmatch(output[next:], -1)
-+					for _, wAddr := range wAddrs {
-+						if len(wAddr) > 0 {
-+							addr2, err1 := strconv.ParseUint(string(wAddr[2]), 16, 64)
-+							if err1 != nil {
-+								log.Logf(0, "Fail to convert write address to uint64: %v", err1)
-+								continue
-+							}
-+							size, err2 := strconv.ParseUint(string(wAddr[1]), 10, 64)
-+							if err2 != nil {
-+								log.Logf(0, "Fail to convert write size to uint64: %v", err2)
-+								continue
-+							}
-+
-+							for i, _ := range rAddr {
-+								if (rAddr[i]+rSize[i] >= addr2 && rAddr[i] <= addr2) ||
-+									(addr2+size >= rAddr[i] && addr2+size <= rAddr[i]+rSize[i]) ||
-+									(addr2 <= rAddr[i] && addr2+size >= rAddr[i]+rSize[i]) {
-+									courier.ConfirmedSuccess = true
-+									break
-+								}
-+							}
-+						}
-+						if courier.ConfirmedSuccess {
-+							break
-+						}
-+					}
-+					oops = oops1
-+					startPos = pos
-+					context = ctx.extractContext(line)
-+					return
-+				}
 +				oops = oops1
 +				startPos = pos
 +				context = ctx.extractContext(line)
-+				break
++				if len(writeIndex) == 0 {
++					return
++				} else {
++					break
++				}
++			}
++		}
++		if len(writeIndex) > 0 {
++			if pos <= writeIndex[0][0] && next >= writeIndex[0][1] {
++				return
 +			}
 +		}
 +	}
@@ -1481,7 +1422,7 @@ index 91e31dbd..ddbdb8e2 100644
 +}
 diff --git a/syz-manager/utilities.go b/syz-manager/utilities.go
 new file mode 100644
-index 00000000..1c243a31
+index 00000000..bad071f8
 --- /dev/null
 +++ b/syz-manager/utilities.go
 @@ -0,0 +1,64 @@

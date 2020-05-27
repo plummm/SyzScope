@@ -15,6 +15,9 @@ if [ ! -d "work/incomplete" ]; then
 fi
 
 TOOLS_PATH="$(pwd)/tools"
+if [ ! -d "$TOOLS_PATH" ]; then
+  mkdir -p $TOOLS_PATH
+fi
 # Check for image
 echo "[+] Building image"
 cd $TOOLS_PATH
