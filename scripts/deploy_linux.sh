@@ -5,24 +5,22 @@
 
 set -ex
 
-function clean_and_patch() {
-  make clean
+echo "running deploy_linux.sh"
+
+function clean_and_jump() {
   git stash --all
-  git format-patch -1 $COMMIT --stdout > fixed.patch
-  patch -p1 -N -i fixed.patch
-  curl $CONFIG > .config
-  make olddefconfig
+  git checkout $COMMIT
 }
 
-echo $#
 if [ $# -lt 3 ] || [ $# -eq 4 ] || [ $# -gt 5 ]; then
-  echo "Usage ./deploy_linux fixed linux_path patch_path [linux_commit, config_url]"
+  echo "Usage ./deploy_linux fixed linux_path project_path [linux_commit, config_url]"
   exit 1
 fi
 
 FIXED=$1
 LINUX=$2
-PATCH=$3/kasan.patch
+PATCH=$3/patches/kasan.patch
+GCC=$3/tools/gcc/bin/gcc
 if [ $# -eq 5 ]; then
   COMMIT=$4
   CONFIG=$5
@@ -31,6 +29,7 @@ fi
 cd $LINUX
 if [ $# -eq 3 ]; then
   #patch -p1 -N -R < $PATCH
+  echo "no more patch"
 fi
 if [ $# -eq 5 ]; then
   if [ "$FIXED" != "1" ]; then
@@ -43,8 +42,13 @@ if [ $# -eq 5 ]; then
     fi
     curl $CONFIG > .config
   else
-    clean_and_jump
+    make clean
+    git stash --all
+    git format-patch -1 $COMMIT --stdout > fixed.patch
+    patch -p1 -N -i fixed.patch || clean_and_jump
+    curl $CONFIG > .config
+    make olddefconfig
   fi
 fi
-make -j16 > /dev/null 2>&1 || exit 1
+make -j16 CC=$GCC HOSTCC=$GCC > /dev/null 2>&1 || exit 1
 exit 0

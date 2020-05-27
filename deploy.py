@@ -152,7 +152,7 @@ class Deployer:
                                 self.__write_to_confirmed_sucess(hash)
                                 self.__save_case(hash, 0, case, need_fuzzing, title)
                                 break
-                    self.__create_stamp(stamp_reproduce_ori_poc)
+                self.__create_stamp(stamp_reproduce_ori_poc)
             if not write_without_mutating:
                 path = None
                 need_fuzzing = True
@@ -283,7 +283,10 @@ class Deployer:
         config = case["config"]
         testcase = case["syz_repro"]
         time = case["time"]
-        self.case_info_logger.info("\ncommit: {}\nsyzkaller: {}\nconfig: {}\ntestcase: {}\ntime: {}".format(commit,syzkaller,config,testcase,time))
+        arch = "amd64"
+        if utilities.regx_match(r'386', case["manager"]):
+            arch = "386"
+        self.case_info_logger.info("\ncommit: {}\nsyzkaller: {}\nconfig: {}\ntestcase: {}\ntime: {}\narch: {}".format(commit,syzkaller,config,testcase,time,arch))
 
         case_time = time_parser.parse(time)
         if self.image_switching_date <= case_time:
@@ -293,7 +296,7 @@ class Deployer:
         chmodX("scripts/deploy.sh")
         index = str(self.index)
         self.logger.info("run: scripts/deploy.sh".format(self.index))
-        p = Popen(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase, index, self.catalog, image],
+        p = Popen(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase, index, self.catalog, image, arch],
                 stdout=PIPE,
                 stderr=STDOUT
                 )

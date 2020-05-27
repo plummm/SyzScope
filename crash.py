@@ -146,7 +146,7 @@ class CrashChecker:
             if exitcode == 1:
                 self.logger.info("Error occur at deploy_linux.sh")
                 return []
-            res = self.trigger_ori_crash(syz_repro, syz_commit, c_repro, i386)
+            res = self.trigger_ori_crash(syz_repro, syz_commit, c_repro, i386, fixed)
         self.save_crash_log(res)
         return res
     
@@ -206,16 +206,15 @@ class CrashChecker:
     
     def deploy_linux(self, commit, config, fixed):
         utilities.chmodX("scripts/deploy_linux.sh")
-        patch_path = "{}/patches".format(self.project_path)
         p = None
         if commit == None and config == None:
             #self.logger.info("run: scripts/deploy_linux.sh {} {}".format(self.linux_path, patch_path))
-            p = Popen(["scripts/deploy_linux.sh", str(fixed), self.linux_path, patch_path],
+            p = Popen(["scripts/deploy_linux.sh", str(fixed), self.linux_path, self.project_path],
                 stdout=PIPE,
                 stderr=STDOUT)
         else:
             #self.logger.info("run: scripts/deploy_linux.sh {} {} {} {}".format(self.linux_path, patch_path, commit, config))
-            p = Popen(["scripts/deploy_linux.sh", str(fixed), self.linux_path, patch_path, commit, config],
+            p = Popen(["scripts/deploy_linux.sh", str(fixed), self.linux_path, self.project_path, commit, config],
                 stdout=PIPE,
                 stderr=STDOUT)
         with p.stdout:
@@ -223,7 +222,7 @@ class CrashChecker:
         exitcode = p.wait()
         return exitcode
 
-    def trigger_ori_crash(self, syz_repro, syz_commit, c_repro, i386):
+    def trigger_ori_crash(self, syz_repro, syz_commit, c_repro, i386, fixed=0):
         res = []
         p = Popen(["qemu-system-x86_64", "-m", "2G", "-smp", "2", 
                     "-net", "nic,model=e1000", "-net", "user,host=10.0.2.10,hostfwd=tcp::{}-:22".format(self.ssh_port),
@@ -241,8 +240,6 @@ class CrashChecker:
                   stdout=PIPE,
                   stderr=STDOUT
                   )
-        x = threading.Thread(target=self.monitor_execution, args=(p,))
-        x.start()
         p_poc = None
         with p.stdout:
             extract_report = False
@@ -259,18 +256,13 @@ class CrashChecker:
                     self.case_logger.info("Booting qemu failed")
                 if self.debug:
                     print(line)
-                if p_poc != None:
-                    poll = p_poc.poll()
-                    if poll != None:
-                        self.case_logger.info("PoC terminated, exit vm")
-                        p.kill()
                 if utilities.regx_match(startup_regx, line):
                     repro_type = utilities.CASE
                     if utilities.regx_match(r'https:\/\/syzkaller\.appspot\.com\/', syz_repro):
                         repro_type = utilities.URL
                     utilities.chmodX("scripts/upload-exp.sh")
                     p2 = Popen(["scripts/upload-exp.sh", self.case_path, syz_repro,
-                        str(self.ssh_port), self.image_path, syz_commit, str(repro_type), str(c_repro), str(i386)],
+                        str(self.ssh_port), self.image_path, syz_commit, str(repro_type), str(c_repro), str(i386), str(fixed)],
                     stdout=PIPE,
                     stderr=STDOUT)
                     with p2.stdout:
@@ -307,6 +299,8 @@ class CrashChecker:
                     "-v", "root@localhost", "chmod +x run.sh && ./run.sh"],
                     stdout=PIPE,
                     stderr=STDOUT)
+                    x = threading.Thread(target=self.monitor_execution, args=(p,p_poc,))
+                    x.start()
                     extract_report = True
                 if extract_report:
                     self.case_logger.info(line)
@@ -382,11 +376,17 @@ class CrashChecker:
                 break
         return command
     
-    def monitor_execution(self, p):
+    def monitor_execution(self, p, p_poc):
         count = 0
         while (count <6*60):
             count += 1
             time.sleep(1)
+            if p_poc != None:
+                poll = p_poc.poll()
+                if poll != None:
+                    self.case_logger.info("PoC terminated, exit vm")
+                    p.kill()
+                    return
             poll = p.poll()
             if poll != None:
                 return

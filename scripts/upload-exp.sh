@@ -5,9 +5,10 @@
 # EXITCODE: 2: syz-execprog supports -enable. 3: syz-execprog do not supports -enable.
 
 set -ex
+echo "running upload-exp.sh"
 
-if [ $# -ne 8 ]; then
-  echo "Usage ./upload-exp.sh case_path syz_repro_url ssh_port image_path syz_commit type, c_repro i386"
+if [ $# -ne 9 ]; then
+  echo "Usage ./upload-exp.sh case_path syz_repro_url ssh_port image_path syz_commit type, c_repro i386 fixed"
   exit 1
 fi
 
@@ -19,7 +20,9 @@ SYZKALLER=$5
 TYPE=$6
 C_REPRO=$7
 I386=$8
+FIXED=$9
 EXITCODE=3
+GCC=`pwd`/tools/gcc/bin/gcc
 
 M32=""
 ARCH="amd64"
@@ -45,28 +48,31 @@ scp -F /dev/null -o UserKnownHostsFile=/dev/null \
 
 if [ "$C_REPRO" != "None" ]; then
     curl $C_REPRO > poc.c
-    gcc -pthread $M32 -static -o poc poc.c || echo "Error occur when compiling poc"
+    $GCC -pthread $M32 -static -o poc poc.c || echo "Error occur when compiling poc"
 
     scp -F /dev/null -o UserKnownHostsFile=/dev/null \
     -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
     -i $IMAGE_PATH/stretch.img.key -P $PORT ./poc root@localhost:/root
 fi
 
-if [ ! -d "$CASE_PATH/poc/gopath" ]; then
-    mkdir $CASE_PATH/poc/gopath
+if [ "$FIXED" == "0" ]; then
+    if [ ! -d "$CASE_PATH/poc/gopath" ]; then
+        mkdir $CASE_PATH/poc/gopath
+    fi
+    export GOPATH=$CASE_PATH/poc/gopath
+    if [ ! -d "$GOPATH/src/github.com/google/syzkaller" ]; then
+        go get -u -d github.com/google/syzkaller/prog
+    fi
+    cd $GOPATH/src/github.com/google/syzkaller || exit 1
+    make clean
+    git stash --all
+    git checkout $SYZKALLER
+    git rev-list HEAD | grep $(git rev-parse dfd609eca1871f01757d6b04b19fc273c87c14e5) || EXITCODE=2
+    make TARGETARCH=$ARCH TARGETVMARCH=amd64 execprog executor
+else
+    cd $CASE_PATH/gopath/src/github.com/google/syzkaller
 fi
-export GOPATH=$CASE_PATH/poc/gopath
-if [ ! -d "$GOPATH/src/github.com/google/syzkaller" ]; then
-    go get -u -d github.com/google/syzkaller/prog
-fi
-cd $GOPATH/src/github.com/google/syzkaller || exit 1
-make clean
-git stash --all
-git checkout $SYZKALLER
-git rev-list HEAD | grep $(git rev-parse dfd609eca1871f01757d6b04b19fc273c87c14e5) || EXITCODE=2
-make TARGETARCH=$ARCH TARGETVMARCH=amd64 execprog executor
 scp -F /dev/null -o UserKnownHostsFile=/dev/null \
-    -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-    -i $IMAGE_PATH/stretch.img.key -P $PORT bin/linux_amd64/syz-execprog bin/linux_$ARCH/syz-executor root@localhost:/
-
+        -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+        -i $IMAGE_PATH/stretch.img.key -P $PORT bin/linux_amd64/syz-execprog bin/linux_$ARCH/syz-executor root@localhost:/
 exit $EXITCODE

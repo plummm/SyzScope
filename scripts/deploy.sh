@@ -1,9 +1,11 @@
 #!/bin/bash
 # Xiaochen Zou 2020, University of California-Riverside
 #
-# Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image
+# Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image arch
 
 set -ex
+
+echo "running deploy.sh"
 
 LATEST="9b1f3e6"
 
@@ -55,8 +57,8 @@ function retrieve_proper_patch() {
   git rev-list 9b1f3e6 | grep $(git rev-parse HEAD) || cp $PATCHES_PATH/syzkaller-9b1f3e6.patch ./syzkaller.patch
 }
 
-if [ $# -ne 9 ]; then
-  echo "Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image"
+if [ $# -ne 10 ]; then
+  echo "Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image arch"
   exit 1
 fi
 
@@ -68,9 +70,11 @@ TESTCASE=$6
 INDEX=$7
 CATALOG=$8
 IMAGE=$9
+ARCH=${10}
 PROJECT_PATH="$(pwd)"
-CASE_PATH="$PROJECT_PATH/work/$CATALOG/$HASH"
-PATCHES_PATH="$PROJECT_PATH/patches"
+CASE_PATH=$PROJECT_PATH/work/$CATALOG/$HASH
+PATCHES_PATH=$PROJECT_PATH/patches
+GCC=$PROJECT_PATH/tools/gcc/bin/gcc
 
 if [ ! -d "tools/$1-$INDEX" ]; then
   echo "No linux repositories detected"
@@ -115,7 +119,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then
   patch -p1 -i syzkaller.patch
   #rm -r executor
   #cp -r $PROJECT_PATH/tools/syzkaller/executor ./executor
-  make
+  make TARGETARCH=$ARCH TARGETVMARCH=amd64
   if [ ! -d "workdir" ]; then
     mkdir workdir
   fi
@@ -153,7 +157,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   #patch -p1 -i kasan.patch
   #Add a rejection detector in future
   curl $CONFIG > .config
-  make -j16 > make.log || copy_log_then_exit make.log
+  make -j16 CC=$GCC HOSTCC=$GCC > make.log || copy_log_then_exit make.log
   touch $CASE_PATH/.stamp/BUILD_KERNEL
 fi
 

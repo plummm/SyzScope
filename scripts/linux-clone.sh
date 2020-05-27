@@ -3,6 +3,8 @@
 #
 # Usage ./linux-clone linux_clone_path
 
+echo "running linux-clone.sh"
+
 if [ $# -ne 2 ]; then
   echo "Usage ./linux-clone linux_clone_path index"
   exit 1

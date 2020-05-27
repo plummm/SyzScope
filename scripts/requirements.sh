@@ -37,3 +37,12 @@ if [ ! -f "$TOOLS_PATH/.stamp/MAKE_IMAGE" ]; then
   fi
   cd ..
 fi
+
+echo "[+] Building gcc"
+if [ ! -f "$TOOLS_PATH/.stamp/MAKE_GCC" ]; then
+  wget https://storage.googleapis.com/syzkaller/gcc-9.0.0-20181231.tar.gz
+  tar xzf gcc-9.0.0-20181231.tar.gz
+  rm gcc-9.0.0-20181231.tar.gz
+  touch $TOOLS_PATH/.stamp/MAKE_GCC
+  cd ..
+fi
