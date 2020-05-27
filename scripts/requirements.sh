@@ -43,6 +43,9 @@ if [ ! -f "$TOOLS_PATH/.stamp/MAKE_GCC" ]; then
   wget https://storage.googleapis.com/syzkaller/gcc-9.0.0-20181231.tar.gz
   tar xzf gcc-9.0.0-20181231.tar.gz
   rm gcc-9.0.0-20181231.tar.gz
+  if [ ! -f "/usr/lib/x86_64-linux-gnu/libmpfr.so.4" ]; then
+    sudo ln -s /usr/lib/x86_64-linux-gnu/libmpfr.so.6 /usr/lib/x86_64-linux-gnu/libmpfr.so.4
+  fi
   touch $TOOLS_PATH/.stamp/MAKE_GCC
   cd ..
 fi

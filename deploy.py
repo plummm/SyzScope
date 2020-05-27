@@ -20,7 +20,7 @@ stamp_reproduce_ori_poc = "REPRO_ORI_POC"
 
 syz_config_template="""
 {{ 
-        "target": "linux/amd64",
+        "target": "linux/{8}",
         \"http\": \"127.0.0.1:{5}\",
         \"workdir\": \"{0}/workdir\",
         \"kernel_obj\": \"{1}\",
@@ -63,6 +63,7 @@ class Deployer:
         self.time_limit = time
         self.crash_checker = None
         self.image_switching_date = datetime.datetime(2020, 3, 15)
+        self.arch = None
         if replay == None:
             self.replay = False
             self.catalog = 'incomplete'
@@ -98,6 +99,9 @@ class Deployer:
         self.image_path = "{}/img".format(self.current_case_path)
         self.syzkaller_path = "{}/gopath/src/github.com/google/syzkaller".format(self.current_case_path)
         self.kernel_path = "{}/linux".format(self.current_case_path)
+        self.arch = "amd64"
+        if utilities.regx_match(r'386', case["manager"]):
+            self.arch = "386"
         self.logger.info(hash)
 
         if self.replay:
@@ -283,10 +287,7 @@ class Deployer:
         config = case["config"]
         testcase = case["syz_repro"]
         time = case["time"]
-        arch = "amd64"
-        if utilities.regx_match(r'386', case["manager"]):
-            arch = "386"
-        self.case_info_logger.info("\ncommit: {}\nsyzkaller: {}\nconfig: {}\ntestcase: {}\ntime: {}\narch: {}".format(commit,syzkaller,config,testcase,time,arch))
+        self.case_info_logger.info("\ncommit: {}\nsyzkaller: {}\nconfig: {}\ntestcase: {}\ntime: {}\narch: {}".format(commit,syzkaller,config,testcase,time,self.arch))
 
         case_time = time_parser.parse(time)
         if self.image_switching_date <= case_time:
@@ -296,7 +297,7 @@ class Deployer:
         chmodX("scripts/deploy.sh")
         index = str(self.index)
         self.logger.info("run: scripts/deploy.sh".format(self.index))
-        p = Popen(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase, index, self.catalog, image, arch],
+        p = Popen(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase, index, self.catalog, image, self.arch],
                 stdout=PIPE,
                 stderr=STDOUT
                 )
@@ -322,7 +323,7 @@ class Deployer:
         new_syscalls.extend(dependent_syscalls)
         new_syscalls = utilities.unique(new_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(new_syscalls) + "\""
-        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash, default_port+self.index, self.current_case_path, self.time_limit)
+        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash, default_port+self.index, self.current_case_path, self.time_limit, self.arch)
         f = open(os.path.join(self.syzkaller_path, "workdir/{}-poc.cfg".format(hash)), "w")
         f.writelines(syz_config)
         f.close()
@@ -337,7 +338,7 @@ class Deployer:
         new_syscalls.extend(raw_syscalls)
         new_syscalls = utilities.unique(new_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(new_syscalls) + "\""
-        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash, default_port+self.index, self.current_case_path, self.time_limit)
+        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash, default_port+self.index, self.current_case_path, self.time_limit, self.arch)
         f = open(os.path.join(self.syzkaller_path, "workdir/{}.cfg".format(hash)), "w")
         f.writelines(syz_config)
         f.close()
