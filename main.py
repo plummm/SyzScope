@@ -119,8 +119,5 @@ if __name__ == '__main__':
     total = len(l)
     for i in range(0,min(parallel_max,len(crawler.cases))):
         deployer.append(Deployer(i, args.debug, args.force, int(args.syzkaller_port), args.replay, int(args.linux), int(args.time)))
-        if args.linux != '-1':
-             x = threading.Thread(target=deploy_one_case, args=(int(args.linux),))
-        else:
-            x = threading.Thread(target=deploy_one_case, args=(i,))
+        x = threading.Thread(target=deploy_one_case, args=(i,))
         x.start()

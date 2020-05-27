@@ -12,6 +12,12 @@ function clean_and_jump() {
   git checkout $COMMIT
 }
 
+function copy_log_then_exit() {
+  LOG=$1
+  cp $LOG $CASE_PATH
+  exit 1
+}
+
 if [ $# -lt 3 ] || [ $# -eq 4 ] || [ $# -gt 5 ]; then
   echo "Usage ./deploy_linux fixed linux_path project_path [linux_commit, config_url]"
   exit 1
@@ -50,5 +56,5 @@ if [ $# -eq 5 ]; then
     make olddefconfig
   fi
 fi
-make -j16 CC=$GCC HOSTCC=$GCC > /dev/null 2>&1 || exit 1
+make -j16 CC=$GCC > make.log || copy_log_then_exit make.log
 exit 0

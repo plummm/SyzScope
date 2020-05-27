@@ -18,6 +18,7 @@ free_regx = r'BUG: KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
 reboot_regx = r'reboot: machine restart'
 magic_regx = r'\?!\?MAGIC\?!\?read->(\w*) size->(\d*)'
 default_port = 3777
+p_poc = None
 
 class CrashChecker:
     def __init__(self, project_path, case_path, ssh_port, logger, debug):
@@ -240,7 +241,8 @@ class CrashChecker:
                   stdout=PIPE,
                   stderr=STDOUT
                   )
-        p_poc = None
+        x = threading.Thread(target=self.monitor_execution, args=(p,))
+        x.start()
         with p.stdout:
             extract_report = False
             record_flag = 0
@@ -299,8 +301,6 @@ class CrashChecker:
                     "-v", "root@localhost", "chmod +x run.sh && ./run.sh"],
                     stdout=PIPE,
                     stderr=STDOUT)
-                    x = threading.Thread(target=self.monitor_execution, args=(p,p_poc,))
-                    x.start()
                     extract_report = True
                 if extract_report:
                     self.case_logger.info(line)
@@ -376,7 +376,7 @@ class CrashChecker:
                 break
         return command
     
-    def monitor_execution(self, p, p_poc):
+    def monitor_execution(self, p):
         count = 0
         while (count <6*60):
             count += 1

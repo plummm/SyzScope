@@ -251,7 +251,7 @@ index 4e413636..9ad59ac9 100644
  	}
  	if len(syscalls) == 0 {
 diff --git a/pkg/report/linux.go b/pkg/report/linux.go
-index 07c061ff..c1236705 100644
+index 07c061ff..fbf4773a 100644
 --- a/pkg/report/linux.go
 +++ b/pkg/report/linux.go
 @@ -129,7 +129,7 @@ func (ctx *linux) ContainsCrash(output []byte) bool {
@@ -263,16 +263,12 @@ index 07c061ff..c1236705 100644
  	if oops == nil {
  		return nil
  	}
-@@ -185,6 +185,60 @@ func (ctx *linux) findFirstOops(output []byte) (oops *oops, startPos int, contex
+@@ -185,6 +185,72 @@ func (ctx *linux) findFirstOops(output []byte) (oops *oops, startPos int, contex
  	return
  }
  
 +func (ctx *linux) findCriticalOops(output []byte) (oops *oops, startPos int, context string) {
-+	//kasanRegx := regexp.MustCompile(`BUG: KASAN: ([a-z\\-]+) in ([a-zA-Z0-9_]+).*`)
-+	//freeRegx := regexp.MustCompile(`BUG: KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*`)
-+	//oobReadRegx := regexp.MustCompile(`\?!\?MAGIC\?!\?read->(\w*) size->(\d*)`)
-+	oobWriteRegx := regexp.MustCompile(`Write of size (\d+) at addr (\w*)`)
-+	writeIndex := oobWriteRegx.FindAllIndex(output, -1)
++	index := chooseCriticalCrash(output)
 +	for pos, next := 0, 0; pos < len(output); pos = next + 1 {
 +		next = bytes.IndexByte(output[pos:], '\n')
 +		if next != -1 {
@@ -286,20 +282,36 @@ index 07c061ff..c1236705 100644
 +				oops = oops1
 +				startPos = pos
 +				context = ctx.extractContext(line)
-+				if len(writeIndex) == 0 {
++				if len(index) == 0 {
 +					return
-+				} else {
-+					break
 +				}
++				break
 +			}
 +		}
-+		if len(writeIndex) > 0 {
-+			if pos <= writeIndex[0][0] && next >= writeIndex[0][1] {
++		if len(index) > 0 {
++			if pos <= index[0][0] && next >= index[0][1] {
 +				return
 +			}
 +		}
 +	}
 +	return
++}
++
++func chooseCriticalCrash(output []byte) [][]int {
++	var index [][]int
++	var crashRegx []*regexp.Regexp
++	//kasanRegx := regexp.MustCompile(`BUG: KASAN: ([a-z\\-]+) in ([a-zA-Z0-9_]+).*`)
++	//oobReadRegx := regexp.MustCompile(`\?!\?MAGIC\?!\?read->(\w*) size->(\d*)`)
++	crashRegx = append(crashRegx, regexp.MustCompile(`Write of size (\d+) at addr (\w*)`))
++	crashRegx = append(crashRegx, regexp.MustCompile(`BUG: KASAN: double-free or invalid-free in`))
++	crashRegx = append(crashRegx, regexp.MustCompile(`invalid-free in`))
++	for _, each := range crashRegx {
++		index = each.FindAllIndex(output, -1)
++		if len(index) > 0 {
++			break
++		}
++	}
++	return index
 +}
 +
 +func (ctx *linux) takeAfterContext(line []byte) []byte {

@@ -20,30 +20,31 @@ stamp_reproduce_ori_poc = "REPRO_ORI_POC"
 
 syz_config_template="""
 {{ 
-        "target": "linux/{8}",
-        \"http\": \"127.0.0.1:{5}\",
-        \"workdir\": \"{0}/workdir\",
-        \"kernel_obj\": \"{1}\",
-        \"image\": \"{2}/stretch.img\",
-        \"sshkey\": \"{2}/stretch.img.key\",
-        \"syzkaller\": \"{0}\",
-        \"procs\": 8,
-        \"type\": \"qemu\",
-        \"testcase\": \"{0}/workdir/testcase-{4}\",
-        \"analyzer_dir\": \"{6}\",
-        \"time_limit\": \"{7}\",
-        \"vm\": {{
-                \"count\": 4,
-                \"kernel\": \"{1}/arch/x86/boot/bzImage\",
-                \"cpu\": 2,
-                \"mem\": 2048
+        "target": "linux/amd64/{8}",
+        "http": "127.0.0.1:{5}",
+        "workdir": "{0}/workdir",
+        "kernel_obj": "{1}",
+        "image": "{2}/stretch.img",
+        "sshkey": "{2}/stretch.img.key",
+        "syzkaller": "{0}",
+        "procs": 8,
+        "type": "qemu",
+        "testcase": "{0}/workdir/testcase-{4}",
+        "analyzer_dir": "{6}",
+        "time_limit": "{7}",
+        "vm": {{
+                "count": 4,
+                "kernel": "{1}/arch/x86/boot/bzImage",
+                "cpu": 2,
+                "mem": 2048
         }},
-        \"enable_syscalls\" : [
+        "enable_syscalls" : [
             {3}
         ],
-        \"ignores\": [
+        "ignores": [
             "WARNING",
-            "INFO"
+            "INFO",
+            "no output"
         ]
 }}"""
 
