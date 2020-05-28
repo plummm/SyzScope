@@ -609,6 +609,10 @@ def args_parse():
                         default='-1',
                         help='Indicate which linux repo to be used for running\n'
                             '(--parallel-max will be set to 1)')
+    parser.add_argument('-p', '--port', nargs='?',
+                        default='3777',
+                        help='The default port that is used by reproducing\n'
+                        '(default value is 3777)')
     parser.add_argument('--fixed-only', action='store_true',
                         help='Reproduce on fixed kernel')
     parser.add_argument('--unfixed-only', action='store_true',
@@ -651,6 +655,7 @@ if __name__ == '__main__':
     lock = threading.Lock()
     l = list(crawler.cases.keys())
     total = len(l)
+    default_port = int(args.port)
     parallel_max = int(args.parallel_max)
     for i in range(min(len(crawler.cases), parallel_max)):
         x = threading.Thread(target=reproduce_one_case, args=(i,))
