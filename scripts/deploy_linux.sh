@@ -51,9 +51,9 @@ if [ $# -eq 5 ]; then
     make clean
     git stash --all
     git format-patch -1 $COMMIT --stdout > fixed.patch
-    patch -p1 -N -i fixed.patch || clean_and_jump
+    patch -p1 -N -i fixed.patch || exit 1
     curl $CONFIG > .config
-    make olddefconfig
+    make olddefconfig CC=$GCC
   fi
 fi
 make -j16 CC=$GCC > make.log || copy_log_then_exit make.log

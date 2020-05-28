@@ -21,7 +21,7 @@ default_port = 3777
 p_poc = None
 
 class CrashChecker:
-    def __init__(self, project_path, case_path, ssh_port, logger, debug):
+    def __init__(self, project_path, case_path, ssh_port, logger, debug, linux_index=-1):
         os.makedirs("{}/poc".format(case_path), exist_ok=True)
         self.kasan_regx = r'KASAN: ([a-z\\-]+) Write in ([a-zA-Z0-9_]+).*'
         self.free_regx = r'KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
@@ -34,10 +34,21 @@ class CrashChecker:
         self.ssh_port = ssh_port
         self.kasan_func_list = self.read_kasan_funcs()
         self.debug = debug
+        if linux_index > -1:
+            self.rearrange_linux(linux_index)
+        
+    def rearrange_linux(self, linux_index):
+        os.remove(self.linux_path)
+        src = "{}/tools/linux-{}".format(self.project_path, linux_index)
+        os.symlink(src, self.linux_path)
 
     def run(self, syz_repro, syz_commit, log=None, linux_commit=None, config=None, c_repro=None, i386=None):
         self.case_logger.info("=============================crash.run=============================")
-        ori_crash_report = self.read_crash(syz_repro, syz_commit, log, linux_commit, config, 0, c_repro, i386)
+        exitcode = self.deploy_linux(linux_commit, config, 0)
+        if exitcode == 1:
+            self.logger.info("Error occur at deploy_linux.sh")
+            return [False, None]
+        ori_crash_report = self.read_crash(syz_repro, syz_commit, log, 0, c_repro, i386)
         if ori_crash_report == []:
             self.logger.info("No crash trigger by original poc")
             return [False, None]
@@ -81,14 +92,34 @@ class CrashChecker:
         self.case_logger.info("=============================crash.repro_on_fixed_kernel=============================")
         crashes_path = self.extract_existed_crash(self.case_path)
         res = []
+        reproduceable = {}
+        #reproduce on unfixed kernel
         for path in crashes_path:
+            key = os.path.basename(path)
             path_repro = os.path.join(path, "repro.prog")
-            ori_crash_report = self.read_crash(path_repro, syz_commit, None, linux_commit, config, 1, c_repro, i386)
+            ori_crash_report = self.read_crash(path_repro, syz_commit, None, 0, c_repro, i386)
             if ori_crash_report != []:
-                self.logger.info("Reproduceable: {}".format(os.path.basename(path)))
+                reproduceable[key] = True
             else:
-                self.logger.info("Fixed: {}".format(os.path.basename(path)))
-                res.append(path)
+                reproduceable[key] = False
+        #apply the patch
+        exitcode = self.deploy_linux(linux_commit, config, 1)
+        if exitcode == 1:
+            self.logger.info("Error occur at deploy_linux.sh")
+            return [False, None]
+        #reproduce on fixed kernel
+        for path in crashes_path:
+            key = os.path.basename(path)
+            path_repro = os.path.join(path, "repro.prog")
+            ori_crash_report = self.read_crash(path_repro, syz_commit, None, 1, c_repro, i386)
+            if ori_crash_report != []:
+                self.logger.info("Reproduceable: {}".format(key))
+            else:
+                if reproduceable[key]:
+                    self.logger.info("Fixed: {}".format(key))
+                    res.append(path)
+                else:
+                    self.logger.info("Invalid crash {}, unreproduceable on both fixed and unfixed kernel".format(key))
         return path
         
     
@@ -139,14 +170,10 @@ class CrashChecker:
                             continue
         return res
     
-    def read_crash(self, syz_repro, syz_commit, log, linux_commit, config, fixed, c_repro, i386):
+    def read_crash(self, syz_repro, syz_commit, log, fixed, c_repro, i386):
         if log != None:
             res = self.read_from_log(log)
         else:
-            exitcode = self.deploy_linux(linux_commit, config, fixed)
-            if exitcode == 1:
-                self.logger.info("Error occur at deploy_linux.sh")
-                return []
             res = self.trigger_ori_crash(syz_repro, syz_commit, c_repro, i386, fixed)
         self.save_crash_log(res)
         return res
@@ -535,7 +562,12 @@ def reproduce_one_case(index):
             i386 = True
         log = case["log"]
         logger.info("\nThread {}: Running case: {}".format(index, hash))
-        checker = CrashChecker(project_path, case_path, default_port+index, logger, args.debug)
+        offset = index
+        linux_index = -1
+        if args.linux != "-1":
+            offset = int(args.linux)
+            linux_index = int(args.linux)
+        checker = CrashChecker(project_path, case_path, default_port+offset, logger, args.debug, linux_index)
         if not args.fixed_only:
             if args.reproduce:
                 res = checker.run(syz_repro, syz_commit, None, commit, config, c_repro, i386)
@@ -569,6 +601,10 @@ def args_parse():
     parser.add_argument('--folder', const='succeed', nargs='?', default='succeed',
                         choices=['succeed', 'completed', 'incomplete', 'error'],
                         help='Reproduce cases with the original testcase')
+    parser.add_argument('--linux', nargs='?', action='store',
+                        default='-1',
+                        help='Indicate which linux repo to be used for running\n'
+                            '(--parallel-max will be set to 1)')
     parser.add_argument('--fixed-only', action='store_true',
                         help='Reproduce on fixed kernel')
     parser.add_argument('--unfixed-only', action='store_true',
