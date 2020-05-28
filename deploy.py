@@ -290,6 +290,8 @@ class Deployer:
         time = case["time"]
         self.case_info_logger.info("\ncommit: {}\nsyzkaller: {}\nconfig: {}\ntestcase: {}\ntime: {}\narch: {}".format(commit,syzkaller,config,testcase,time,self.arch))
 
+        if self.__check_using_flag(self.kernel_path):
+            return 1
         case_time = time_parser.parse(time)
         if self.image_switching_date <= case_time:
             image = "stretch"
@@ -307,6 +309,13 @@ class Deployer:
         exitcode = p.wait()
         self.logger.info("script/deploy.sh is done with exitcode {}".format(exitcode))
         return exitcode
+    
+    def __check_using_flag(self, path):
+        flag_path = "{}/THIS_KERNEL_HAS_BEEN_USED".format(path)
+        if os.path.isfile(flag_path):
+            self.logger.error("THIS_KERNEL_HAS_BEEN_USED is detected, check if anything wrong, this happen at when two cases are using the same linue repo.")
+            return True
+        return False
 
     def __write_config(self, testcase_url, hash):
         dependent_syscalls = []

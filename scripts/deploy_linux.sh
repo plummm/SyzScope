@@ -42,7 +42,7 @@ if [ $# -eq 5 ]; then
     CURRENT_HEAD=`git rev-parse HEAD`
     if [ "$CURRENT_HEAD" != "$COMMIT" ]; then
       git stash
-      make clean
+      make clean CC=$GCC
       git stash --all
       git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1
       git checkout $COMMIT
@@ -50,7 +50,7 @@ if [ $# -eq 5 ]; then
     curl $CONFIG > .config
   else
     git stash
-    make clean
+    make clean CC=$GCC
     git stash --all
     git format-patch -1 $COMMIT --stdout > fixed.patch
     patch -p1 -N -i fixed.patch || exit 1

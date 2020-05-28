@@ -150,7 +150,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   ln -s $PROJECT_PATH/tools/$1-$INDEX ./linux
   cd linux
   git stash
-  make clean
+  make clean CC=$GCC
   git stash --all || set_git_config
   git pull https://github.com/torvalds/linux.git master > pull.log || copy_log_then_exit pull.log
   git checkout $COMMIT
@@ -159,6 +159,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   #Add a rejection detector in future
   curl $CONFIG > .config
   make -j16 CC=$GCC > make.log || copy_log_then_exit make.log
+  touch THIS_KERNEL_HAS_BEEN_USED
   touch $CASE_PATH/.stamp/BUILD_KERNEL
 fi
 

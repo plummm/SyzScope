@@ -76,7 +76,14 @@ def deploy_one_case(index):
         print("Thread {}: run case {} [{}/{}] left".format(index, hash, len(l)-1, total))
         lock.release()
         deployer[index].deploy(hash, case)
+        remove_using_flag(index)
     print("Thread {} exit->".format(index, hash))
+
+def remove_using_flag(index):
+    project_path = os.getcwd()
+    flag_path = "{}/tools/linux-{}/THIS_KERNEL_HAS_BEEN_USED".format(project_path,index)
+    if os.path.isfile(flag_path):
+        os.remove(flag_path)
 
 def install_requirments():
     st = os.stat("scripts/requirements.sh")
