@@ -106,7 +106,7 @@ class CrashChecker:
         exitcode = self.deploy_linux(linux_commit, config, 1)
         if exitcode == 1:
             self.logger.info("Error occur at deploy_linux.sh")
-            return [False, None]
+            return res
         #reproduce on fixed kernel
         for path in crashes_path:
             key = os.path.basename(path)
@@ -120,7 +120,7 @@ class CrashChecker:
                     res.append(path)
                 else:
                     self.logger.info("Invalid crash {}, unreproduceable on both fixed and unfixed kernel".format(key))
-        return path
+        return res
         
     
     def read_kasan_funcs(self):
