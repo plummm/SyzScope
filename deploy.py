@@ -136,31 +136,27 @@ class Deployer:
             title = None
             self.logger.info("Try to triger the OOB/UAF by running original poc")
             if not self.__check_stamp(stamp_reproduce_ori_poc, hash[:7]):
-                exitcode = self.crash_checker.deploy_linux(case["commit"], case["config"], 0)
-                if exitcode == 1:
-                    self.logger.info("Error occur at deploy_linux.sh")
-                else:
-                    report = self.crash_checker.read_crash(case["syz_repro"], case["syzkaller"], None, 0, case["c_repro"], i386)
-                    if report != []:
-                        for each in report:
-                            for line in each:
-                                if utilities.regx_match(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line) or\
-                                utilities.regx_match(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line):
-                                    m = re.search(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line)
-                                    if m != None and len(m.groups()) > 0:
-                                        title = m.groups()[0]
-                                    m = re.search(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line)
-                                    if m != None and len(m.groups()) > 0:
-                                        title = m.groups()[0]
-                                if utilities.regx_match(r'Write of size (\d+) at addr (\w*)', line):
-                                    write_without_mutating = True
-                                    self.crash_checker.logger.info("OOB/UAF Write without mutating")
-                                    self.crash_checker.logger.info("Detect read before write")
-                                    self.logger.info("Write to confirmed success")
-                                    self.__write_to_sucess(hash)
-                                    self.__write_to_confirmed_sucess(hash)
-                                    self.__save_case(hash, 0, case, need_fuzzing, title)
-                                    break
+                report = self.crash_checker.read_crash(case["syz_repro"], case["syzkaller"], None, 0, case["c_repro"], i386)
+                if report != []:
+                    for each in report:
+                        for line in each:
+                            if utilities.regx_match(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line) or\
+                            utilities.regx_match(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line):
+                                m = re.search(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line)
+                                if m != None and len(m.groups()) > 0:
+                                    title = m.groups()[0]
+                                m = re.search(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line)
+                                if m != None and len(m.groups()) > 0:
+                                    title = m.groups()[0]
+                            if utilities.regx_match(r'Write of size (\d+) at addr (\w*)', line):
+                                write_without_mutating = True
+                                self.crash_checker.logger.info("OOB/UAF Write without mutating")
+                                self.crash_checker.logger.info("Detect read before write")
+                                self.logger.info("Write to confirmed success")
+                                self.__write_to_sucess(hash)
+                                self.__write_to_confirmed_sucess(hash)
+                                self.__save_case(hash, 0, case, need_fuzzing, title)
+                                break
                 self.__create_stamp(stamp_reproduce_ori_poc)
             if not write_without_mutating:
                 path = None
