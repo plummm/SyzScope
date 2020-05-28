@@ -579,6 +579,10 @@ def reproduce_one_case(index):
                 checker.logger.info("difference of characters of two testcase: {}".format(n))
                 checker.logger.info("successful crash: {}".format(res[1]))
         if not args.unfixed_only:
+            exitcode = checker.deploy_linux(commit, config, 0)
+            if exitcode == 1:
+                checker.logger.info("Error occur at deploy_linux.sh")
+                continue
             commit = utilities.get_patch_commit(hash)
             if commit != None:
                 checker.repro_on_fixed_kernel(syz_commit, commit, config, c_repro, i386)

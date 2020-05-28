@@ -15,8 +15,8 @@ if [ ! -d "work/incomplete" ]; then
 fi
 
 TOOLS_PATH="$(pwd)/tools"
-if [ ! -d "$TOOLS_PATH" ]; then
-  mkdir -p $TOOLS_PATH
+if [ ! -d "$TOOLS_PATH/.stamp" ]; then
+  mkdir -p $TOOLS_PATH/.stamp
 fi
 # Check for image
 echo "[+] Building image"
@@ -27,11 +27,11 @@ if [ ! -f "$TOOLS_PATH/.stamp/MAKE_IMAGE" ]; then
   fi
   cd img
   if [ ! -f "stretch.img" ]; then
-    wget https://storage.googleapis.com/syzkaller/stretch.img
-    wget https://storage.googleapis.com/syzkaller/stretch.img.key
+    wget https://storage.googleapis.com/syzkaller/stretch.img > /dev/null
+    wget https://storage.googleapis.com/syzkaller/stretch.img.key > /dev/null
     chmod 400 stretch.img.key
-    wget https://storage.googleapis.com/syzkaller/wheezy.img
-    wget https://storage.googleapis.com/syzkaller/wheezy.img.key
+    wget https://storage.googleapis.com/syzkaller/wheezy.img > /dev/null
+    wget https://storage.googleapis.com/syzkaller/wheezy.img.key > /dev/null
     chmod 400 wheezy.img.key
     touch $TOOLS_PATH/.stamp/MAKE_IMAGE
   fi
