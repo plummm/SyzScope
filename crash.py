@@ -405,7 +405,7 @@ class CrashChecker:
     
     def monitor_execution(self, p):
         count = 0
-        while (count <6*60):
+        while (count <6):
             count += 1
             time.sleep(60)
             if p_poc != None:
