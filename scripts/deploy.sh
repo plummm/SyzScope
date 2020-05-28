@@ -149,6 +149,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   fi
   ln -s $PROJECT_PATH/tools/$1-$INDEX ./linux
   cd linux
+  git stash
   make clean
   git stash --all || set_git_config
   git pull https://github.com/torvalds/linux.git master > pull.log || copy_log_then_exit pull.log
