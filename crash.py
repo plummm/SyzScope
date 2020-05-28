@@ -407,7 +407,7 @@ class CrashChecker:
         count = 0
         while (count <6*60):
             count += 1
-            time.sleep(1)
+            time.sleep(60)
             if p_poc != None:
                 poll = p_poc.poll()
                 if poll != None:
