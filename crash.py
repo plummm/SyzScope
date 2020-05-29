@@ -97,11 +97,14 @@ class CrashChecker:
         for path in crashes_path:
             key = os.path.basename(path)
             path_repro = os.path.join(path, "repro.prog")
+            self.case_logger.info("Go for {}".format(path_repro))
             ori_crash_report = self.read_crash(path_repro, syz_commit, None, 0, c_repro, i386)
             if ori_crash_report != []:
                 reproduceable[key] = True
             else:
                 reproduceable[key] = False
+        for key in reproduceable:
+            self.case_logger.info("{}: {}".format(key,str(reproduceable[key])))
         #apply the patch
         exitcode = self.deploy_linux(linux_commit, config, 1)
         if exitcode == 1:
@@ -379,6 +382,8 @@ class CrashChecker:
                         command += "-repeat=" + "0 "
                     else:
                         command += "-repeat=" + "1 "
+                #It makes no sense that limiting the features of syz-execrpog, just enable them all
+                """
                 if support_enable_features != 2:
                     if "tun" in pm and str(pm["tun"]).lower() == "true":
                         enabled += "tun,"
@@ -396,6 +401,7 @@ class CrashChecker:
                         enabled += "net_reset,"
                     if "usb" in pm and str(pm["usb"]).lower() == "true":
                         enabled += "usb,"
+                """
                 if enabled[-1] == ',':
                     command += enabled[:-1] + " testcase"
                 else:

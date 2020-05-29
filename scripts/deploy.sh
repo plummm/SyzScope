@@ -158,7 +158,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   #patch -p1 -i kasan.patch
   #Add a rejection detector in future
   curl $CONFIG > .config
-  make -j16 CC=$GCC > make.log || copy_log_then_exit make.log
+  make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_exit make.log
   touch THIS_KERNEL_HAS_BEEN_USED
   touch $CASE_PATH/.stamp/BUILD_KERNEL
 fi

@@ -20,10 +20,11 @@ cat << EOF > run.sh
 #!/bin/bash
 set -ex
 
-if [ -f "./poc" ]; then
-    ./poc
-fi
-sleep 1
+# cprog somehow work not as good as prog, an infinite loop even blocks the execution of syz-execprog
+#if [ -f "./poc" ]; then
+#    ./poc
+#fi
+
 ${COMMAND}
 EOF
 

@@ -58,5 +58,5 @@ if [ $# -eq 5 ]; then
     make olddefconfig CC=$GCC
   fi
 fi
-make -j16 CC=$GCC > make.log || copy_log_then_exit make.log
+make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_exit make.log
 exit 0
