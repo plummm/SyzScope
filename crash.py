@@ -5,12 +5,14 @@ import utilities
 import time
 import threading
 import json
+import pathlib
 
 from subprocess import call, Popen, PIPE, STDOUT
 from syzbotCrawler import Crawler
 
 startup_regx = r'Debian GNU\/Linux \d+ syzkaller ttyS\d+'
 boundary_regx = r'======================================================'
+call_trace_regx = r'Call Trace:'
 message_drop_regx = r'printk messages dropped'
 panic_regx = r'Kernel panic'
 kasan_regx = r'BUG: KASAN: ([a-z\\-]+) in ([a-zA-Z0-9_]+).*'
@@ -18,6 +20,7 @@ free_regx = r'BUG: KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
 reboot_regx = r'reboot: machine restart'
 magic_regx = r'\?!\?MAGIC\?!\?read->(\w*) size->(\d*)'
 default_port = 3777
+project_path = ""
 
 class CrashChecker:
     def __init__(self, project_path, case_path, ssh_port, logger, debug, linux_index=-1):
@@ -213,6 +216,9 @@ class CrashChecker:
         r = utilities.request_get(log)
         text = r.text.split('\n')
         for line in text:
+            if utilities.regx_match(call_trace_regx, line):
+                record_flag ^= 1
+                kasan_flag ^= 1
             if utilities.regx_match(boundary_regx, line) or \
                 utilities.regx_match(message_drop_regx, line):
                 record_flag ^= 1
@@ -322,6 +328,7 @@ class CrashChecker:
                     stderr=STDOUT)
                     exitcode = p3.wait()
                     if exitcode == 1:
+                        self.case_logger.error("Usually, there is no reproducer in the crash")
                         p.kill()
                         break
                     Popen(["ssh", "-p", str(self.ssh_port), "-F", "/dev/null", "-o", "UserKnownHostsFile=/dev/null", 
@@ -535,6 +542,13 @@ class CrashChecker:
             if log_level == logging.DEBUG:
                 self.case_logger.debug(line)
 
+def link_correct_linux_repro(case_path, index):
+    dst = os.path.join(case_path, "linux")
+    if os.path.isdir(dst):
+        os.remove(dst)
+    src = "{}/tools/linux-{}".format(project_path, index)
+    os.symlink(src, dst)
+
 def reproduce_one_case(index):
     while(1):
         lock.acquire(blocking=True)
@@ -551,6 +565,7 @@ def reproduce_one_case(index):
         if not os.path.isdir(case_path):
             print("{} does not exist".format(case_path))
             continue
+        link_correct_linux_repro(case_path, index)
         syz_repro = case["syz_repro"]
         syz_commit = case["syzkaller"]
         commit = case["commit"]
@@ -567,6 +582,7 @@ def reproduce_one_case(index):
             offset = int(args.linux)
             linux_index = int(args.linux)
         checker = CrashChecker(project_path, case_path, default_port+offset, logger, args.debug, linux_index)
+        checker.logger.info("=============================A reproducing process starts=============================")
         if not args.fixed_only:
             if args.reproduce:
                 res = checker.run(syz_repro, syz_commit, None, commit, config, c_repro, i386)
@@ -586,7 +602,7 @@ def reproduce_one_case(index):
             if commit != None:
                 checker.repro_on_fixed_kernel(syz_commit, commit, config, c_repro, i386)
 
-    print("Thread {} exit->".format(index, hash))
+    print("Thread {} exit->".format(index))
 
 def args_parse():
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
@@ -633,6 +649,9 @@ if __name__ == '__main__':
     logger.addHandler(hdlr) 
     logger.setLevel(logging.INFO)
 
+    if args.debug:
+        args.parallel_max="1"
+
     ignore = []
     if args.ignore != None:
         with open(args.ignore, "r") as f:
@@ -644,7 +663,14 @@ if __name__ == '__main__':
     path = args.folder
     type = utilities.FOLDER
     if args.input != None:
-        crawler.run_one_case(args.input)
+        if len(args.input) == 40:
+            crawler.run_one_case(args.input)
+        else:
+            with open(args.input, 'r') as f:
+                text = f.readlines()
+                for line in text:
+                    line = line.strip('\n')
+                    crawler.run_one_case(line)
     else:
         for url in utilities.urlsOfCases(path, type):
             if url not in ignore:

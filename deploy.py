@@ -328,7 +328,7 @@ class Deployer:
         for each in syscalls:
             dependent_syscalls.extend(self.__extract_dependent_syscalls(each, self.syzkaller_path))
         if len(dependent_syscalls) < 1:
-            self.logger.info("Cannot find dependent syscalls for {}.\nTry to continue without them".format(self.index, last_syscall))
+            self.logger.info("Cannot find dependent syscalls for {}.\nTry to continue without them".format(self.index))
         new_syscalls = syscalls.copy()
         new_syscalls.extend(dependent_syscalls)
         new_syscalls = utilities.unique(new_syscalls)

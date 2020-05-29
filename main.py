@@ -96,7 +96,7 @@ def install_requirments():
 
 def args_dependencies():
     if args.debug:
-        args.max = '1'
+        args.parallel_max = '1'
     if args.linux != '-1':
         args.parallel_max = '1'
 

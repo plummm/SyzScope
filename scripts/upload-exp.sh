@@ -38,7 +38,7 @@ fi
 
 cd $CASE_PATH/poc
 if [ "$TYPE" == "1" ]; then
-    cp $TESTCASE ./testcase
+    cp $TESTCASE ./testcase || exit 1
 else
     curl $TESTCASE > testcase
 fi
