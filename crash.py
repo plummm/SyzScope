@@ -566,6 +566,12 @@ def reproduce_one_case(index):
             print("{} does not exist".format(case_path))
             continue
         link_correct_linux_repro(case_path, index)
+
+        logger = logging.getLogger('crash-{}'.format(hash))
+        formatter = logging.Formatter('%(asctime)s Thread {}: %(message)s'.format(index))
+        logger.addHandler(hdlr) 
+        logger.setLevel(logging.INFO)
+
         syz_repro = case["syz_repro"]
         syz_commit = case["syzkaller"]
         commit = case["commit"]
@@ -575,7 +581,7 @@ def reproduce_one_case(index):
         if utilities.regx_match(r'386', case["manager"]):
             i386 = True
         log = case["log"]
-        logger.info("\nThread {}: Running case: {}".format(index, hash))
+        logger.info("\nRunning case: {}".format(index, hash))
         offset = index
         linux_index = -1
         if args.linux != "-1":
@@ -642,12 +648,8 @@ if __name__ == '__main__':
     args = args_parse()
     crawler = Crawler()
 
-    logger = logging.getLogger('crash')
     hdlr = logging.FileHandler('./replay.out')
-    formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
     hdlr.setFormatter(formatter)
-    logger.addHandler(hdlr) 
-    logger.setLevel(logging.INFO)
 
     if args.debug:
         args.parallel_max="1"

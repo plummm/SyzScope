@@ -81,7 +81,7 @@ class Deployer:
     def init_logger(self, debug):
         self.logger = logging.getLogger(__name__+str(self.index))
         handler = logging.StreamHandler(sys.stdout)
-        format = logging.Formatter('%(asctime)s Thread {}: %(message)s'.format(self.index, ))
+        format = logging.Formatter('%(asctime)s Thread {}: %(message)s'.format(self.index))
         handler.setFormatter(format)
         self.logger.addHandler(handler)
         if debug:
