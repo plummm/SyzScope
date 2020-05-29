@@ -106,7 +106,7 @@ class CrashChecker:
             else:
                 reproduceable[key] = False
         for key in reproduceable:
-            self.case_logger.info("{}: {}".format(key,str(reproduceable[key])))
+            self.logger.info("{}: {}".format(key,str(reproduceable[key])))
         #apply the patch
         exitcode = self.deploy_linux(linux_commit, config, 1)
         if exitcode == 1:
@@ -567,8 +567,10 @@ def reproduce_one_case(index):
             continue
         link_correct_linux_repro(case_path, index)
 
+        hdlr = logging.FileHandler('./replay.out')
         logger = logging.getLogger('crash-{}'.format(hash))
         formatter = logging.Formatter('%(asctime)s Thread {}: %(message)s'.format(index))
+        hdlr.setFormatter(formatter)
         logger.addHandler(hdlr) 
         logger.setLevel(logging.INFO)
 
@@ -581,7 +583,7 @@ def reproduce_one_case(index):
         if utilities.regx_match(r'386', case["manager"]):
             i386 = True
         log = case["log"]
-        logger.info("\nRunning case: {}".format(index, hash))
+        logger.info("Running case: {}".format(hash))
         offset = index
         linux_index = -1
         if args.linux != "-1":
@@ -647,9 +649,6 @@ if __name__ == '__main__':
     print("running crash.py")
     args = args_parse()
     crawler = Crawler()
-
-    hdlr = logging.FileHandler('./replay.out')
-    hdlr.setFormatter(formatter)
 
     if args.debug:
         args.parallel_max="1"

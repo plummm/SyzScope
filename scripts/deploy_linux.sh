@@ -40,8 +40,8 @@ fi
 if [ $# -eq 5 ]; then
   if [ "$FIXED" != "1" ]; then
     CURRENT_HEAD=`git rev-parse HEAD`
+    git stash
     if [ "$CURRENT_HEAD" != "$COMMIT" ]; then
-      git stash
       make clean CC=$GCC
       git stash --all
       git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1
