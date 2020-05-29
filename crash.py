@@ -18,7 +18,6 @@ free_regx = r'BUG: KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
 reboot_regx = r'reboot: machine restart'
 magic_regx = r'\?!\?MAGIC\?!\?read->(\w*) size->(\d*)'
 default_port = 3777
-p_poc = None
 
 class CrashChecker:
     def __init__(self, project_path, case_path, ssh_port, logger, debug, linux_index=-1):
@@ -325,7 +324,7 @@ class CrashChecker:
                     if exitcode == 1:
                         p.kill()
                         break
-                    p_poc = Popen(["ssh", "-p", str(self.ssh_port), "-F", "/dev/null", "-o", "UserKnownHostsFile=/dev/null", 
+                    Popen(["ssh", "-p", str(self.ssh_port), "-F", "/dev/null", "-o", "UserKnownHostsFile=/dev/null", 
                     "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=no", 
                     "-o", "ConnectTimeout=10", "-i", "{}/stretch.img.key".format(self.image_path), 
                     "-v", "root@localhost", "chmod +x run.sh && ./run.sh"],
@@ -414,12 +413,6 @@ class CrashChecker:
         while (count <6):
             count += 1
             time.sleep(60)
-            if p_poc != None:
-                poll = p_poc.poll()
-                if poll != None:
-                    self.case_logger.info("PoC terminated, exit vm")
-                    p.kill()
-                    return
             poll = p.poll()
             if poll != None:
                 return

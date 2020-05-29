@@ -41,6 +41,8 @@ def args_parse():
                         default='53777',
                         help='The default port that is used by syzkaller\n'
                         '(default value is 53777)')
+    parser.add_argument('--ignore', nargs='?', action='store',
+                        help='A file contains cases hashs which are ignored. One line for each hash.')
     parser.add_argument('-t', '--time', nargs='?',
                         default='8',
                         help='Time for each running(in hour)\n'
@@ -73,8 +75,10 @@ def deploy_one_case(index):
             break
         hash = l[0]
         case = crawler.cases.pop(hash)
-        print("Thread {}: run case {} [{}/{}] left".format(index, hash, len(l)-1, total))
         lock.release()
+        if hash in ignore:
+            continue
+        print("Thread {}: run case {} [{}/{}] left".format(index, hash, len(l)-1, total))
         deployer[index].deploy(hash, case)
         remove_using_flag(index)
     print("Thread {} exit->".format(index, hash))
@@ -101,6 +105,14 @@ if __name__ == '__main__':
     print_args_info(args)
     check_kvm()
     args_dependencies()
+
+    ignore = []
+    if args.ignore != None:
+        with open(args.ignore, "r") as f:
+            text = f.readlines()
+            for line in text:
+                line = line.strip('\n')
+                ignore.append(line)
 
     crawler = Crawler(url=args.url, keyword=args.key, max_retrieve=int(args.max), debug=args.debug)
     if args.replay != None:

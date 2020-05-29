@@ -304,6 +304,6 @@ def check_keyword_on_patch(hash):
     return False
 
 if __name__ == '__main__':
-    for each in urlsOfCases('succeed'):
+    for each in urlsOfCases('completed'):
         print(each)
     
