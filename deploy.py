@@ -262,7 +262,7 @@ class Deployer:
             i386 = True
         commit = utilities.get_patch_commit(hash)
         if commit != None:
-            res = self.crash_checker.repro_on_fixed_kernel(syz_commit, commit, config, c_repro, i386)
+            res = self.crash_checker.repro_on_fixed_kernel(syz_commit, case["commit"], config, c_repro, i386, commit)
         return res
 
     def __check_confirmed(self, hash):

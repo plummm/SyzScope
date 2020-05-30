@@ -21,6 +21,9 @@ reboot_regx = r'reboot: machine restart'
 magic_regx = r'\?!\?MAGIC\?!\?read->(\w*) size->(\d*)'
 default_port = 3777
 project_path = ""
+NONCRASH = 0
+CONFIRM = 1
+SUSPICIOUS = 2
 
 class CrashChecker:
     def __init__(self, project_path, case_path, ssh_port, logger, debug, linux_index=-1):
@@ -90,11 +93,17 @@ class CrashChecker:
         return utilities.levenshtein("\n".join(old_testcase), "\n".join(new_testcase))
 
     
-    def repro_on_fixed_kernel(self, syz_commit, linux_commit=None, config=None, c_repro=None, i386=None):
+    def repro_on_fixed_kernel(self, syz_commit, linux_commit=None, config=None, c_repro=None, i386=None, patch_commit=None):
         self.case_logger.info("=============================crash.repro_on_fixed_kernel=============================")
         crashes_path = self.extract_existed_crash(self.case_path)
         res = []
         reproduceable = {}
+
+        #check if the patch can be applied
+        exitcode = self.patch_applying_check(linux_commit, config, patch_commit)
+        if exitcode == 1:
+            self.logger.info("Error occur at patch_applying_check.sh")
+            return res
         #reproduce on unfixed kernel
         for path in crashes_path:
             key = os.path.basename(path)
@@ -102,13 +111,13 @@ class CrashChecker:
             self.case_logger.info("Go for {}".format(path_repro))
             ori_crash_report = self.read_crash(path_repro, syz_commit, None, 0, c_repro, i386)
             if ori_crash_report != []:
-                reproduceable[key] = True
+                reproduceable[key] = CONFIRM
             else:
-                reproduceable[key] = False
-        for key in reproduceable:
-            self.logger.info("{}: {}".format(key,str(reproduceable[key])))
+                reproduceable[key] = NONCRASH
+            if len(ori_crash_report) == 1 and ori_crash_report[0] == 'crash without kasan':
+                reproduceable[key] = SUSPICIOUS
         #apply the patch
-        exitcode = self.deploy_linux(linux_commit, config, 1)
+        exitcode = self.deploy_linux(patch_commit, config, 1)
         if exitcode == 1:
             self.logger.info("Error occur at deploy_linux.sh")
             return res
@@ -120,13 +129,24 @@ class CrashChecker:
             if ori_crash_report != []:
                 self.logger.info("Reproduceable: {}".format(key))
             else:
-                if reproduceable[key]:
+                if reproduceable[key] == CONFIRM:
                     self.logger.info("Fixed: {}".format(key))
                     res.append(path)
-                else:
-                    self.logger.info("Invalid crash {}, unreproduceable on both fixed and unfixed kernel".format(key))
+                if reproduceable[key] == NONCRASH:
+                    self.logger.info("Invalid crash: {} unreproduceable on both fixed and unfixed kernel".format(key))
+                if reproduceable[key] == SUSPICIOUS:
+                    self.logger.info("Suspicious crash: {} triggered a crash but doesn't belong to OOB/UAF write".format(key))
         return res
-        
+    
+    def patch_applying_check(self, linux_commit, config, patch_commit):
+        utilities.chmodX("scripts/patch_applying_check.sh")
+        p = Popen(["scripts/patch_applying_check.sh", self.linux_path, linux_commit, config, patch_commit],
+                stdout=PIPE,
+                stderr=STDOUT)
+        with p.stdout:
+            self.__log_subprocess_output(p.stdout, logging.INFO)
+        exitcode = p.wait()
+        return exitcode
     
     def read_kasan_funcs(self):
         res = []
@@ -167,10 +187,10 @@ class CrashChecker:
                 if os.path.isfile(description_file):
                     with open(description_file, "r") as f:
                         line = f.readline()
-                        if utilities.regx_match(self.kasan_regx, line):
+                        if utilities.regx_match(self.kasan_regx, line) and os.path.isfile('{}/{}/repro.prog'.format(crash_path, case)):
                             res.append(os.path.join(crash_path, case))
                             continue
-                        if utilities.regx_match(self.free_regx, line):
+                        if utilities.regx_match(self.free_regx, line) and os.path.isfile('{}/{}/repro.prog'.format(crash_path, case)):
                             res.append(os.path.join(crash_path, case))
                             continue
         return res
@@ -216,7 +236,7 @@ class CrashChecker:
         r = utilities.request_get(log)
         text = r.text.split('\n')
         for line in text:
-            if utilities.regx_match(call_trace_regx, line):
+            if record_flag == 0 and utilities.regx_match(call_trace_regx, line):
                 record_flag ^= 1
                 kasan_flag ^= 1
             if utilities.regx_match(boundary_regx, line) or \
@@ -340,6 +360,9 @@ class CrashChecker:
                     extract_report = True
                 if extract_report:
                     self.case_logger.info(line)
+                    if record_flag == 0 and utilities.regx_match(call_trace_regx, line):
+                        p.kill()
+                        return ['crash without kasan']
                     if utilities.regx_match(boundary_regx, line) or \
                        utilities.regx_match(message_drop_regx, line) or \
                        utilities.regx_match(panic_regx, line):
@@ -417,7 +440,7 @@ class CrashChecker:
     
     def monitor_execution(self, p):
         count = 0
-        while (count <6):
+        while (count <10):
             count += 1
             time.sleep(60)
             poll = p.poll()
@@ -569,7 +592,7 @@ def reproduce_one_case(index):
 
         hdlr = logging.FileHandler('./replay.out')
         logger = logging.getLogger('crash-{}'.format(hash))
-        formatter = logging.Formatter('%(asctime)s Thread {}: %(message)s'.format(index))
+        formatter = logging.Formatter('%(asctime)s Thread {}: {}: %(message)s'.format(index, hash[:7]))
         hdlr.setFormatter(formatter)
         logger.addHandler(hdlr) 
         logger.setLevel(logging.INFO)
@@ -590,7 +613,7 @@ def reproduce_one_case(index):
             offset = int(args.linux)
             linux_index = int(args.linux)
         checker = CrashChecker(project_path, case_path, default_port+offset, logger, args.debug, linux_index)
-        checker.logger.info("=============================A reproducing process starts=============================")
+        checker.case_logger.info("=============================A reproducing process starts=============================")
         if not args.fixed_only:
             if args.reproduce:
                 res = checker.run(syz_repro, syz_commit, None, commit, config, c_repro, i386)
@@ -602,13 +625,9 @@ def reproduce_one_case(index):
                 checker.logger.info("difference of characters of two testcase: {}".format(n))
                 checker.logger.info("successful crash: {}".format(res[1]))
         if not args.unfixed_only:
-            exitcode = checker.deploy_linux(commit, config, 0)
-            if exitcode == 1:
-                checker.logger.info("Error occur at deploy_linux.sh")
-                continue
             commit = utilities.get_patch_commit(hash)
             if commit != None:
-                checker.repro_on_fixed_kernel(syz_commit, commit, config, c_repro, i386)
+                checker.repro_on_fixed_kernel(syz_commit, case["commit"], config, c_repro, i386, commit)
 
     print("Thread {} exit->".format(index))
 

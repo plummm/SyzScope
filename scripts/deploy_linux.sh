@@ -33,6 +33,9 @@ if [ $# -eq 5 ]; then
 fi
 
 cd $LINUX
+cd ..
+CASE_PATH=`pwd`
+cd linux
 if [ $# -eq 3 ]; then
   #patch -p1 -N -R < $PATCH
   echo "no more patch"
@@ -49,9 +52,6 @@ if [ $# -eq 5 ]; then
     fi
     curl $CONFIG > .config
   else
-    git stash
-    make clean CC=$GCC
-    git stash --all
     git format-patch -1 $COMMIT --stdout > fixed.patch
     patch -p1 -N -i fixed.patch || exit 1
     curl $CONFIG > .config

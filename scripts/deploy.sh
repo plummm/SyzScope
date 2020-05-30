@@ -143,11 +143,15 @@ cd ..
 
 #Building kernel
 echo "[+] Building kernel"
-if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
+OLD_INDEX=`ls -l linux | cut -d'-' -f 3`
+if [ "$OLD_INDEX" != "$INDEX" ]; then
   if [ -d "./linux" ]; then
-    rm -rf "./linux"
+      rm -rf "./linux"
   fi
   ln -s $PROJECT_PATH/tools/$1-$INDEX ./linux
+  rm .stamp/BUILD_KERNEL
+fi
+if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   cd linux
   git stash
   make clean CC=$GCC

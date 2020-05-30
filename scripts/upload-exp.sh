@@ -8,7 +8,7 @@ set -ex
 echo "running upload-exp.sh"
 
 if [ $# -ne 9 ]; then
-  echo "Usage ./upload-exp.sh case_path syz_repro_url ssh_port image_path syz_commit type, c_repro i386 fixed"
+  echo "Usage ./upload-exp.sh case_path syz_repro_url ssh_port image_path syz_commit type c_repro i386 fixed"
   exit 1
 fi
 
