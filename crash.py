@@ -361,8 +361,7 @@ class CrashChecker:
                 if extract_report:
                     self.case_logger.info(line)
                     if record_flag == 0 and utilities.regx_match(call_trace_regx, line):
-                        p.kill()
-                        return ['crash without kasan']
+                        res.append(crash)
                     if utilities.regx_match(boundary_regx, line) or \
                        utilities.regx_match(message_drop_regx, line) or \
                        utilities.regx_match(panic_regx, line):
