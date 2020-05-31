@@ -367,7 +367,7 @@ class CrashChecker:
                        utilities.regx_match(panic_regx, line):
                         record_flag ^= 1
                         if record_flag == 0 and kasan_flag == 1:
-                            self.logger.info("Crash reproduceable")
+                            self.logger.info("OOB/UAF write triggered")
                             res.append(crash)
                             crash = []
                             p.kill()

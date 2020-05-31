@@ -149,7 +149,9 @@ if [ "$OLD_INDEX" != "$INDEX" ]; then
       rm -rf "./linux"
   fi
   ln -s $PROJECT_PATH/tools/$1-$INDEX ./linux
-  rm .stamp/BUILD_KERNEL
+  if [ -d ".stamp/BUILD_KERNEL" ]; then
+      rm .stamp/BUILD_KERNEL
+  fi
 fi
 if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   cd linux
