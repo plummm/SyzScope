@@ -155,6 +155,10 @@ if [ "$OLD_INDEX" != "$INDEX" ]; then
 fi
 if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   cd linux
+  if [ -f "THIS_KERNEL_HAS_BEEN_USED" ]; then
+    echo "This kernel is using by other thread"
+    exit 1
+  fi
   git stash
   make clean CC=$GCC
   git stash --all || set_git_config
