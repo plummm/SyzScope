@@ -9,7 +9,7 @@ echo "running patch_applying_check.sh"
 
 function jump_to_the_patch() {
     git stash
-    make clean CC=$GCC
+    make clean
     git stash --all
     git checkout $PATCH
     git format-patch -1 $PATCH --stdout > fixed.patch
@@ -31,6 +31,7 @@ COMMIT=$2
 CONFIG=$3
 PATCH=$4
 GCC=`pwd`/tools/gcc/bin/gcc
+export CC=$GCC
 
 cd $LINUX
 cd ..
@@ -40,7 +41,7 @@ cd linux
 CURRENT_HEAD=`git rev-parse HEAD`
 git stash
 if [ "$CURRENT_HEAD" != "$COMMIT" ]; then
-    make clean CC=$GCC
+    make clean
     git stash --all
     git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1
     git checkout $COMMIT
@@ -49,6 +50,6 @@ git format-patch -1 $PATCH --stdout > fixed.patch
 patch -p1 -N -i fixed.patch || jump_to_the_patch
 patch -p1 -R < fixed.patch
 curl $CONFIG > .config
-make olddefconfig CC=$GCC
-make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_exit make.log
+make olddefconfig
+make -j16 > make.log 2>&1 || copy_log_then_exit make.log
 exit 0

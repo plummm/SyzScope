@@ -49,10 +49,11 @@ class CrashChecker:
 
     def run(self, syz_repro, syz_commit, log=None, linux_commit=None, config=None, c_repro=None, i386=None):
         self.case_logger.info("=============================crash.run=============================")
-        exitcode = self.deploy_linux(linux_commit, config, 0)
-        if exitcode == 1:
-            self.logger.info("Error occur at deploy_linux.sh")
-            return [False, None]
+        if log != None:
+            exitcode = self.deploy_linux(linux_commit, config, 0)
+            if exitcode == 1:
+                self.logger.info("Error occur at deploy_linux.sh")
+                return [False, None]
         ori_crash_report = self.read_crash(syz_repro, syz_commit, log, 0, c_repro, i386)
         if ori_crash_report == []:
             self.logger.info("No crash trigger by original poc")

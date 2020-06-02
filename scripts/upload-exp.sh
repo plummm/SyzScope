@@ -23,7 +23,7 @@ I386=$8
 FIXED=$9
 EXITCODE=3
 GCC=`pwd`/tools/gcc/bin/gcc
-
+export CC=$GCC
 M32=""
 ARCH="amd64"
 if [ "$I386" != "None" ]; then

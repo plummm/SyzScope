@@ -75,6 +75,7 @@ PROJECT_PATH="$(pwd)"
 CASE_PATH=$PROJECT_PATH/work/$CATALOG/$HASH
 PATCHES_PATH=$PROJECT_PATH/patches
 GCC=$PROJECT_PATH/tools/gcc/bin/gcc
+export CC=$GCC
 
 if [ ! -d "tools/$1-$INDEX" ]; then
   echo "No linux repositories detected"
@@ -149,8 +150,8 @@ if [ "$OLD_INDEX" != "$INDEX" ]; then
       rm -rf "./linux"
   fi
   ln -s $PROJECT_PATH/tools/$1-$INDEX ./linux
-  if [ -d ".stamp/BUILD_KERNEL" ]; then
-      rm .stamp/BUILD_KERNEL
+  if [ -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
+      rm $CASE_PATH/.stamp/BUILD_KERNEL
   fi
 fi
 if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
@@ -160,7 +161,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
     exit 1
   fi
   git stash
-  make clean CC=$GCC
+  make clean
   git stash --all || set_git_config
   git pull https://github.com/torvalds/linux.git master > pull.log || copy_log_then_exit pull.log
   git checkout $COMMIT
@@ -168,7 +169,8 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   #patch -p1 -i kasan.patch
   #Add a rejection detector in future
   curl $CONFIG > .config
-  make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_exit make.log
+  make olddefconfig
+  make -j16 > make.log 2>&1 || copy_log_then_exit make.log
   touch THIS_KERNEL_HAS_BEEN_USED
   touch $CASE_PATH/.stamp/BUILD_KERNEL
 fi
