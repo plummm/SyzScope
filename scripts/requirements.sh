@@ -49,3 +49,6 @@ if [ ! -f "$TOOLS_PATH/.stamp/MAKE_GCC" ]; then
   touch $TOOLS_PATH/.stamp/MAKE_GCC
   cd ..
 fi
+
+echo "[+] Clean unfinished jobs"
+rm tools/linux-*/THIS_KERNEL_HAS_BEEN_USED
