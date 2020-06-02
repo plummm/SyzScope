@@ -473,7 +473,7 @@ class Deployer:
         if not need_fuzzing:
             case = path
             if case['syz_repro'] != None:
-                r = utilities.request_get(case['syz_repro']):
+                r = utilities.request_get(case['syz_repro'])
                 with open(os.path.join(output, "repro.prog"), "w") as f:
                     f.write(r.text)
             if case['c_repro'] != None:
