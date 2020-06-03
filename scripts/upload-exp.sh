@@ -23,7 +23,7 @@ I386=$8
 FIXED=$9
 EXITCODE=3
 GCC=`pwd`/tools/gcc/bin/gcc
-export CC=$GCC
+
 M32=""
 ARCH="amd64"
 if [ "$I386" != "None" ]; then
@@ -64,11 +64,11 @@ if [ "$FIXED" == "0" ]; then
         go get -u -d github.com/google/syzkaller/prog
     fi
     cd $GOPATH/src/github.com/google/syzkaller || exit 1
-    make clean
+    make clean CC=$GCC
     git stash --all
     git checkout $SYZKALLER
     git rev-list HEAD | grep $(git rev-parse dfd609eca1871f01757d6b04b19fc273c87c14e5) || EXITCODE=2
-    make TARGETARCH=$ARCH TARGETVMARCH=amd64 execprog executor
+    make TARGETARCH=$ARCH TARGETVMARCH=amd64 CC=$GCC execprog executor
 else
     cd $CASE_PATH/gopath/src/github.com/google/syzkaller
 fi

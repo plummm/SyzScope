@@ -75,7 +75,6 @@ PROJECT_PATH="$(pwd)"
 CASE_PATH=$PROJECT_PATH/work/$CATALOG/$HASH
 PATCHES_PATH=$PROJECT_PATH/patches
 GCC=$PROJECT_PATH/tools/gcc/bin/gcc
-export CC=$GCC
 
 if [ ! -d "tools/$1-$INDEX" ]; then
   echo "No linux repositories detected"
@@ -111,7 +110,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then
   go get -u -d github.com/google/syzkaller/prog
   #fi
   cd $GOPATH/src/github.com/google/syzkaller || exit 1
-  make clean
+  make clean CC=$GCC
   git stash --all || set_git_config
   git checkout 9b1f3e665308ee2ddd5b3f35a078219b5c509cdb
   #git checkout -
@@ -120,7 +119,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then
   patch -p1 -i syzkaller.patch
   #rm -r executor
   #cp -r $PROJECT_PATH/tools/syzkaller/executor ./executor
-  make TARGETARCH=$ARCH TARGETVMARCH=amd64
+  make TARGETARCH=$ARCH TARGETVMARCH=amd64 CC=$GCC
   if [ ! -d "workdir" ]; then
     mkdir workdir
   fi
@@ -161,7 +160,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
     exit 1
   fi
   git stash
-  make clean
+  make clean CC=$GCC
   git stash --all || set_git_config
   git pull https://github.com/torvalds/linux.git master > pull.log || copy_log_then_exit pull.log
   git checkout $COMMIT
@@ -169,8 +168,8 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   #patch -p1 -i kasan.patch
   #Add a rejection detector in future
   curl $CONFIG > .config
-  make olddefconfig
-  make -j16 > make.log 2>&1 || copy_log_then_exit make.log
+  make olddefconfig CC=$GCC
+  make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_exit make.log
   touch THIS_KERNEL_HAS_BEEN_USED
   touch $CASE_PATH/.stamp/BUILD_KERNEL
 fi

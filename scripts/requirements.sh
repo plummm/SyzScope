@@ -40,7 +40,7 @@ fi
 
 echo "[+] Building gcc"
 if [ ! -f "$TOOLS_PATH/.stamp/MAKE_GCC" ]; then
-  wget https://storage.googleapis.com/syzkaller/gcc-7.tar.gz
+  wget https://storage.googleapis.com/syzkaller/gcc-7.tar.gz > /dev/null
   tar xzf gcc-7.tar.gz
   rm gcc-7.tar.gz
 
@@ -53,4 +53,4 @@ if [ ! -f "$TOOLS_PATH/.stamp/MAKE_GCC" ]; then
 fi
 
 echo "[+] Clean unfinished jobs"
-rm tools/linux-*/THIS_KERNEL_HAS_BEEN_USED
+rm tools/linux-*/THIS_KERNEL_HAS_BEEN_USED || echo "All set"
