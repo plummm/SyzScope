@@ -42,7 +42,23 @@ echo "[+] Building gcc"
 if [ ! -f "$TOOLS_PATH/.stamp/MAKE_GCC" ]; then
   wget https://storage.googleapis.com/syzkaller/gcc-7.tar.gz > /dev/null
   tar xzf gcc-7.tar.gz
+  mv gcc gcc-7
   rm gcc-7.tar.gz
+
+  wget https://storage.googleapis.com/syzkaller/gcc-8.0.1-20180301.tar.gz > /dev/null
+  tar xzf gcc-8.0.1-20180301.tar.gz
+  mv gcc gcc-8.0.1-20180301
+  rm gcc-8.0.1-20180301.tar.gz
+
+  wget https://storage.googleapis.com/syzkaller/gcc-8.0.1-20180412.tar.gz > /dev/null
+  tar xzf gcc-8.0.1-20180412.tar.gz
+  mv gcc gcc-8.0.1-20180412
+  rm gcc-8.0.1-20180412.tar.gz
+
+  wget https://storage.googleapis.com/syzkaller/gcc-9.0.0-20181231.tar.gz > /dev/null
+  tar xzf gcc-9.0.0-20181231.tar.gz
+  mv gcc gcc-9.0.0-20181231
+  rm gcc-9.0.0-20181231.tar.gz
 
   #This is for gcc-9
   #if [ ! -f "/usr/lib/x86_64-linux-gnu/libmpfr.so.4" ]; then
