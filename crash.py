@@ -382,7 +382,7 @@ class CrashChecker:
         return res
 
     def make_commands(self, text, support_enable_features, i386):
-        command = "./syz-execprog -executor=./syz-executor "
+        command = "/syz-execprog -executor=/syz-executor "
         enabled = "-enable="
         normal_pm = {"arch":"amd64", "threaded":"false", "collide":"false", "sandbox":"none", "fault_call":"-1", "fault_nth":"0", "os":"linux"}
         for line in text:
