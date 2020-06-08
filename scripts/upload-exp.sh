@@ -46,14 +46,14 @@ scp -F /dev/null -o UserKnownHostsFile=/dev/null \
     -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
     -i $IMAGE_PATH/stretch.img.key -P $PORT ./testcase root@localhost:/root
 
-if [ "$C_REPRO" != "None" ]; then
-    curl $C_REPRO > poc.c
-    $GCC -pthread $M32 -static -o poc poc.c || echo "Error occur when compiling poc"
+#if [ "$C_REPRO" != "None" ]; then
+#    curl $C_REPRO > poc.c
+#    gcc -pthread $M32 -static -o poc poc.c || echo "Error occur when compiling poc"
 
-    scp -F /dev/null -o UserKnownHostsFile=/dev/null \
-    -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-    -i $IMAGE_PATH/stretch.img.key -P $PORT ./poc root@localhost:/root
-fi
+#    scp -F /dev/null -o UserKnownHostsFile=/dev/null \
+#    -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+#    -i $IMAGE_PATH/stretch.img.key -P $PORT ./poc root@localhost:/root
+#fi
 
 if [ "$FIXED" == "0" ]; then
     if [ ! -d "$CASE_PATH/poc/gopath" ]; then
@@ -66,7 +66,7 @@ if [ "$FIXED" == "0" ]; then
     cd $GOPATH/src/github.com/google/syzkaller || exit 1
     make clean
     git stash --all
-    git checkout $SYZKALLER
+    git checkout -f $SYZKALLER
     git rev-list HEAD | grep $(git rev-parse dfd609eca1871f01757d6b04b19fc273c87c14e5) || EXITCODE=2
     make TARGETARCH=$ARCH TARGETVMARCH=amd64 execprog executor
 else

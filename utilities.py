@@ -14,6 +14,16 @@ URL=2
 
 syzbot_bug_base_url = "bug?id="
 syzbot_host_url = "https://syzkaller.appspot.com/"
+kasan_regx = r'KASAN: ([a-z\\-]+) Write in ([a-zA-Z0-9_]+).*'
+free_regx = r'KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
+
+def get_hash_from_log(path):
+    with open(path, "r") as f:
+        for line in f:
+            m = re.search(r'\[\d*\] https:\/\/syzkaller.appspot.com\/bug\?id=([a-z0-9]*)\n', line)
+            if m != None and len(m.groups()) != 0:
+                return m.groups()[0]  
+    return None
 
 def urlsOfCases(folder, type=FOLDER):
     res = []
@@ -31,12 +41,10 @@ def urlsOfCases(folder, type=FOLDER):
     for path in paths:
         for file in os.listdir(path):
             if file == "log":
-                with open(os.path.join(path, file), "r") as f:
-                    for line in f:
-                        m = re.search(r'\[\d*\] https:\/\/syzkaller.appspot.com\/bug\?id=([a-z0-9]*)\n', line)
-                        if m != None and len(m.groups()) != 0:
-                            res.append(m.groups()[0])  
-                            break
+                os.path.join(path, file)
+                r = get_hash_from_log(path)
+                if r != None:
+                    res.append(r)
     
     return res
 
@@ -303,7 +311,59 @@ def check_keyword_on_patch(hash):
         return True
     return False
 
+def set_gcc_version(time):
+    t1 = datetime.datetime(2018, 3, 1)
+    t2 = datetime.datetime(2018, 4, 12)
+    t3 = datetime.datetime(2018, 12, 31)
+    if time < t1:
+        return "gcc-7"
+    if time >= t1 and time < t2:
+        #gcc-8.0.1-20180301 seems corrput (Compiler lacks asm-goto support)
+        #return "gcc-8.0.1-20180301"
+        return "gcc-8.0.1-20180412"
+    if time >= t2 and time < t3:
+        return "gcc-8.0.1-20180412"
+    if time >= t3:
+        return "gcc-9.0.0-20181231"
+    return ""
+
+def extract_existed_crash(path):
+    crash_path = os.path.join(path, "crashes")
+    res = []
+
+    if os.path.isdir(crash_path):
+        for case in os.listdir(crash_path):
+            description_file = "{}/{}/description".format(crash_path, case)
+            if os.path.isfile(description_file):
+                with open(description_file, "r") as f:
+                    line = f.readline()
+                    if regx_match(kasan_regx, line):
+                        res.append(os.path.join(crash_path, case))
+                        continue
+                    if regx_match(free_regx, line):
+                        res.append(os.path.join(crash_path, case))
+                        continue
+    return res
+
+#Cases with OOB/UAF write, some cases may failed to generate reproducer but it still hopeful
+def retrieve_cases_with_critical_write():
+    res = []
+    dirOfCases = "{}/work/completed".format(os.getcwd())
+    paths = []
+
+    for dirs in os.listdir(dirOfCases):
+        path = os.path.join(dirOfCases,dirs)
+        paths.append(path)
+    
+    for path in paths:
+        if len(extract_existed_crash(path)) > 0:
+            r = get_hash_from_log(os.path.join(path, 'log'))
+            if r != None:
+                res.append(r)
+    
+    return res
+
 if __name__ == '__main__':
-    for each in urlsOfCases('completed'):
+    for each in retrieve_cases_with_critical_write():
         print(each)
     

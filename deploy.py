@@ -65,6 +65,7 @@ class Deployer:
         self.crash_checker = None
         self.image_switching_date = datetime.datetime(2020, 3, 15)
         self.arch = None
+        self.gcc = None
         if replay == None:
             self.replay = False
             self.catalog = 'incomplete'
@@ -108,27 +109,30 @@ class Deployer:
         if self.replay:
             self.init_replay_crash(hash[:7])    
         if self.force or not self.__check_stamp(stamp_finish_fuzzing, hash[:7]):
+            self.gcc = utilities.set_gcc_version(time_parser.parse(case["time"]))
             write_without_mutating = False
             self.__create_dir_for_case()
             if self.force:
                 self.__clean_stamp(stamp_finish_fuzzing, hash[:7])
                 self.__clean_stamp(stamp_build_kernel, hash[:7])
                 self.__clean_stamp(stamp_build_syzkaller, hash[:7])
-            self.crash_checker = CrashChecker(
-                self.project_path,
-                self.current_case_path,
-                3777+self.index,
-                self.logger,
-                self.debug)
             self.case_logger = self.__init_case_logger("{}-log".format(hash))
             self.case_info_logger = self.__init_case_logger("{}-info".format(hash))
             url = syzbotCrawler.syzbot_host_url + syzbotCrawler.syzbot_bug_base_url + hash
             self.case_info_logger.info(url)
             r = self.__run_delopy_script(hash[:7], case)
-            if r != 0:
+            if r == 1:
                 self.logger.error("Error occur in deploy.sh")
                 self.__save_error(hash)
                 return
+            self.case_info_logger.info("gcc: "+self.gcc)
+            self.crash_checker = CrashChecker(
+                self.project_path,
+                self.current_case_path,
+                3777+self.index,
+                self.logger,
+                self.debug,
+                gcc=self.gcc)
             i386 = None
             if utilities.regx_match(r'386', case["manager"]):
                 i386 = True

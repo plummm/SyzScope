@@ -9,55 +9,57 @@ echo "running deploy_linux.sh"
 
 function clean_and_jump() {
   git stash --all
-  git checkout $COMMIT
+  git checkout -f $COMMIT
 }
 
 function copy_log_then_exit() {
   LOG=$1
-  cp $LOG $CASE_PATH
+  cp $LOG $CASE_PATH/$LOG-deploy_linux
   exit 1
 }
 
-if [ $# -lt 3 ] || [ $# -eq 4 ] || [ $# -gt 5 ]; then
-  echo "Usage ./deploy_linux fixed linux_path project_path [linux_commit, config_url]"
+if [ $# -lt 4 ] || [ $# -eq 5 ] || [ $# -gt 6 ]; then
+  echo "Usage ./deploy_linux gcc_version fixed linux_path project_path [linux_commit, config_url]"
   exit 1
 fi
 
-FIXED=$1
-LINUX=$2
-PATCH=$3/patches/kasan.patch
-GCC=$3/tools/gcc/bin/gcc
+GCC_VERSION=$1
+FIXED=$2
+LINUX=$3
+PATCH=$4/patches/kasan.patch
+GCC=$4/tools/$GCC_VERSION/bin/gcc
 
-if [ $# -eq 5 ]; then
-  COMMIT=$4
-  CONFIG=$5
+if [ $# -eq 6 ]; then
+  COMMIT=$5
+  CONFIG=$6
 fi
 
 cd $LINUX
 cd ..
 CASE_PATH=`pwd`
 cd linux
-if [ $# -eq 3 ]; then
+if [ $# -eq 4 ]; then
   #patch -p1 -N -R < $PATCH
   echo "no more patch"
 fi
-if [ $# -eq 5 ]; then
+if [ $# -eq 6 ]; then
+  git stash
+  git clean -d -f
   if [ "$FIXED" != "1" ]; then
     CURRENT_HEAD=`git rev-parse HEAD`
-    git stash
     if [ "$CURRENT_HEAD" != "$COMMIT" ]; then
       #make clean CC=$GCC
       #git stash --all
       git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1
-      git checkout $COMMIT
+      git checkout -f $COMMIT
     fi
     curl $CONFIG > .config
   else
     git format-patch -1 $COMMIT --stdout > fixed.patch
     patch -p1 -N -i fixed.patch || exit 1
     curl $CONFIG > .config
-    make olddefconfig
   fi
 fi
-make -j16 > make.log 2>&1 || copy_log_then_exit make.log
+make olddefconfig CC=$GCC
+make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_exit make.log
 exit 0

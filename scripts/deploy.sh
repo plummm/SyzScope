@@ -1,7 +1,7 @@
 #!/bin/bash
 # Xiaochen Zou 2020, University of California-Riverside
 #
-# Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image arch
+# Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image arch gcc_version
 
 set -ex
 
@@ -9,9 +9,42 @@ echo "running deploy.sh"
 
 LATEST="9b1f3e6"
 
+function copy_log_then_switch_gcc-8.0.1-20180301() {
+  LOG=$1
+  cp $LOG $CASE_PATH/$LOG-gcc-7
+  git stash
+  git clean -d -f
+  curl $CONFIG > .config
+  GCC=$PROJECT_PATH/tools/gcc-8.0.1-20180301/bin/gcc
+  make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_switch_gcc-8.0.1-20180412 make.log
+  exit 2
+}
+
+function copy_log_then_switch_gcc-8.0.1-20180412() {
+  LOG=$1
+  cp $LOG $CASE_PATH/$LOG-gcc-8.0.1-20180301
+  git stash
+  git clean -d -f
+  curl $CONFIG > .config
+  GCC=$PROJECT_PATH/tools/gcc-8.0.1-20180412/bin/gcc
+  make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_switch_gcc-9.0.0-20181231 make.log
+  exit 3
+}
+
+function copy_log_then_switch_gcc-9.0.0-20181231() {
+  LOG=$1
+  cp $LOG $CASE_PATH/$LOG-gcc-8.0.1-20180412
+  git stash
+  git clean -d -f
+  curl $CONFIG > .config
+  GCC=$PROJECT_PATH/tools/gcc-9.0.0-20181231/bin/gcc
+  make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_exit make.log
+  exit 4
+}
+
 function copy_log_then_exit() {
   LOG=$1
-  cp $LOG $CASE_PATH
+  cp $LOG $CASE_PATH/$LOG-gcc-9.0.0-20181231
   exit 1
 }
 
@@ -41,7 +74,7 @@ function build_golang() {
 }
 
 function back_to_newest_version() {
-  git checkout $LATEST
+  git checkout -f $LATEST
   cp $PATCHES_PATH/syzkaller-9b1f3e6.patch ./syzkaller.patch
 }
 
@@ -57,8 +90,8 @@ function retrieve_proper_patch() {
   git rev-list 9b1f3e6 | grep $(git rev-parse HEAD) || cp $PATCHES_PATH/syzkaller-9b1f3e6.patch ./syzkaller.patch
 }
 
-if [ $# -ne 10 ]; then
-  echo "Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image arch"
+if [ $# -ne 11 ]; then
+  echo "Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image arch gcc_version"
   exit 1
 fi
 
@@ -71,10 +104,11 @@ INDEX=$7
 CATALOG=$8
 IMAGE=$9
 ARCH=${10}
+GCC_VERSION=${11}
 PROJECT_PATH="$(pwd)"
 CASE_PATH=$PROJECT_PATH/work/$CATALOG/$HASH
 PATCHES_PATH=$PROJECT_PATH/patches
-GCC=$PROJECT_PATH/tools/gcc/bin/gcc
+GCC=$PROJECT_PATH/tools/$GCC_VERSION/bin/gcc
 
 if [ ! -d "tools/$1-$INDEX" ]; then
   echo "No linux repositories detected"
@@ -112,7 +146,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then
   cd $GOPATH/src/github.com/google/syzkaller || exit 1
   make clean
   git stash --all || set_git_config
-  git checkout 9b1f3e665308ee2ddd5b3f35a078219b5c509cdb
+  git checkout -f 9b1f3e665308ee2ddd5b3f35a078219b5c509cdb
   #git checkout -
   #retrieve_proper_patch
   cp $PATCHES_PATH/syzkaller-9b1f3e6.patch ./syzkaller.patch
@@ -160,16 +194,17 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
     exit 1
   fi
   git stash
+  git clean -d -f
   #make clean CC=$GCC
   #git stash --all || set_git_config
   git pull https://github.com/torvalds/linux.git master > pull.log || copy_log_then_exit pull.log
-  git checkout $COMMIT
+  git checkout -f $COMMIT
   #cp $PATCHES_PATH/kasan.patch ./
   #patch -p1 -i kasan.patch
   #Add a rejection detector in future
   curl $CONFIG > .config
   make olddefconfig
-  make -j16 > make.log 2>&1 || copy_log_then_exit make.log
+  make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_exit make.log
   touch THIS_KERNEL_HAS_BEEN_USED
   touch $CASE_PATH/.stamp/BUILD_KERNEL
 fi

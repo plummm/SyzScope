@@ -9,6 +9,7 @@ import pathlib
 
 from subprocess import call, Popen, PIPE, STDOUT
 from syzbotCrawler import Crawler
+from dateutil import parser as time_parser
 
 startup_regx = r'Debian GNU\/Linux \d+ syzkaller ttyS\d+'
 boundary_regx = r'======================================================'
@@ -18,15 +19,18 @@ panic_regx = r'Kernel panic'
 kasan_regx = r'BUG: KASAN: ([a-z\\-]+) in ([a-zA-Z0-9_]+).*'
 free_regx = r'BUG: KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
 reboot_regx = r'reboot: machine restart'
+port_error_regx = r'Could not set up host forwarding rule'
 magic_regx = r'\?!\?MAGIC\?!\?read->(\w*) size->(\d*)'
+write_regx = r'Write of size (\d+) at addr (\w*)'
 default_port = 3777
 project_path = ""
 NONCRASH = 0
 CONFIRM = 1
 SUSPICIOUS = 2
+thread_fn = None
 
 class CrashChecker:
-    def __init__(self, project_path, case_path, ssh_port, logger, debug, linux_index=-1):
+    def __init__(self, project_path, case_path, ssh_port, logger, debug, linux_index=-1, gcc="gcc-7"):
         os.makedirs("{}/poc".format(case_path), exist_ok=True)
         self.kasan_regx = r'KASAN: ([a-z\\-]+) Write in ([a-zA-Z0-9_]+).*'
         self.free_regx = r'KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
@@ -39,6 +43,7 @@ class CrashChecker:
         self.ssh_port = ssh_port
         self.kasan_func_list = self.read_kasan_funcs()
         self.debug = debug
+        self.gcc = gcc
         if linux_index > -1:
             self.rearrange_linux(linux_index)
         
@@ -141,7 +146,7 @@ class CrashChecker:
     
     def patch_applying_check(self, linux_commit, config, patch_commit):
         utilities.chmodX("scripts/patch_applying_check.sh")
-        p = Popen(["scripts/patch_applying_check.sh", self.linux_path, linux_commit, config, patch_commit],
+        p = Popen(["scripts/patch_applying_check.sh", self.linux_path, linux_commit, config, patch_commit, self.gcc],
                 stdout=PIPE,
                 stderr=STDOUT)
         with p.stdout:
@@ -201,6 +206,10 @@ class CrashChecker:
             res = self.read_from_log(log)
         else:
             res = self.trigger_ori_crash(syz_repro, syz_commit, c_repro, i386, fixed)
+        if len(res) == 1 and isinstance(res[0], str):
+            self.case_logger.error(res[0])
+            self.logger.error(res[0])
+            return []
         self.save_crash_log(res)
         return res
     
@@ -266,12 +275,12 @@ class CrashChecker:
         p = None
         if commit == None and config == None:
             #self.logger.info("run: scripts/deploy_linux.sh {} {}".format(self.linux_path, patch_path))
-            p = Popen(["scripts/deploy_linux.sh", str(fixed), self.linux_path, self.project_path],
+            p = Popen(["scripts/deploy_linux.sh", self.gcc, str(fixed), self.linux_path, self.project_path],
                 stdout=PIPE,
                 stderr=STDOUT)
         else:
             #self.logger.info("run: scripts/deploy_linux.sh {} {} {} {}".format(self.linux_path, patch_path, commit, config))
-            p = Popen(["scripts/deploy_linux.sh", str(fixed), self.linux_path, self.project_path, commit, config],
+            p = Popen(["scripts/deploy_linux.sh", self.gcc, str(fixed), self.linux_path, self.project_path, commit, config],
                 stdout=PIPE,
                 stderr=STDOUT)
         with p.stdout:
@@ -303,6 +312,7 @@ class CrashChecker:
             extract_report = False
             record_flag = 0
             kasan_flag = 0
+            write_flag = 0
             crash = []
             for line in iter(p.stdout.readline, b''):
                 try:
@@ -310,8 +320,8 @@ class CrashChecker:
                 except:
                     self.logger.error('bytes array \'{}\' cannot be converted to utf-8'.format(line))
                     continue
-                if utilities.regx_match(reboot_regx, line):
-                    self.case_logger.info("Booting qemu failed")
+                if utilities.regx_match(reboot_regx, line) or utilities.regx_match(port_error_regx, line):
+                    self.case_logger.error("Booting qemu failed")
                 if self.debug:
                     print(line)
                 if utilities.regx_match(startup_regx, line):
@@ -368,7 +378,7 @@ class CrashChecker:
                        utilities.regx_match(panic_regx, line):
                         record_flag ^= 1
                         if record_flag == 0 and kasan_flag == 1:
-                            self.logger.info("OOB/UAF write triggered")
+                            self.logger.info("OOB/UAF triggered")
                             res.append(crash)
                             crash = []
                             p.kill()
@@ -377,8 +387,12 @@ class CrashChecker:
                     if utilities.regx_match(kasan_regx, line) or \
                        utilities.regx_match(free_regx, line):
                         kasan_flag ^= 1
+                    if utilities.regx_match(write_regx, line):
+                        write_flag ^= 1
                     if record_flag and kasan_flag:
                         crash.append(line)
+        if not extract_report:
+            res = ['Error occur at booting qemu']
         return res
 
     def make_commands(self, text, support_enable_features, i386):
@@ -572,6 +586,69 @@ def link_correct_linux_repro(case_path, index):
     src = "{}/tools/linux-{}".format(project_path, index)
     os.symlink(src, dst)
 
+def reproduce_with_ori_poc(index):
+    while(1):
+        lock.acquire(blocking=True)
+        l = list(crawler.cases.keys())
+        if len(l) == 0:
+            lock.release()
+            break
+        hash = l[0]
+        case = crawler.cases.pop(hash)
+        lock.release()
+
+        print("Thread {}: running case {} [{}/{}]".format(index, hash, len(l)-1, total))
+        case_path = "{}/work/{}/{}".format(project_path, path, hash[:7])
+        if not os.path.isdir(case_path):
+            print("Thread {}: running case {}: {} does not exist".format(index, hash[:7], case_path))
+            continue
+        link_correct_linux_repro(case_path, index)
+
+        hdlr = logging.FileHandler('./replay.out')
+        logger = logging.getLogger('crash-{}'.format(hash))
+        formatter = logging.Formatter('%(asctime)s Thread {}: {}: %(message)s'.format(index, hash[:7]))
+        hdlr.setFormatter(formatter)
+        logger.addHandler(hdlr) 
+        logger.setLevel(logging.INFO)
+
+        syz_repro = case["syz_repro"]
+        syz_commit = case["syzkaller"]
+        commit = case["commit"]
+        config = case["config"]
+        c_repro = case["c_repro"]
+        i386 = None
+        if utilities.regx_match(r'386', case["manager"]):
+            i386 = True
+        log = case["log"]
+        logger.info("Running case: {}".format(hash))
+        offset = index
+        linux_index = -1
+        if args.linux != "-1":
+            offset = int(args.linux)
+            linux_index = int(args.linux)
+        gcc = utilities.set_gcc_version(time_parser.parse(case["time"]))
+        checker = CrashChecker(project_path, case_path, default_port+offset, logger, args.debug, linux_index, gcc)
+        if checker.deploy_linux(commit,config,0) == 1:
+            print("Thread {}: running case {}: Error occur in deploy_linux.sh".format(index, hash[:7]))
+            continue
+        report = checker.read_crash(case["syz_repro"], case["syzkaller"], None, 0, case["c_repro"], i386)
+        if report != []:
+            for each in report:
+                for line in each:
+                    if utilities.regx_match(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line) or\
+                    utilities.regx_match(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line):
+                        m = re.search(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line)
+                        if m != None and len(m.groups()) > 0:
+                            title = m.groups()[0]
+                        m = re.search(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line)
+                        if m != None and len(m.groups()) > 0:
+                            title = m.groups()[0]
+                    if utilities.regx_match(r'Write of size (\d+) at addr (\w*)', line):
+                        write_without_mutating = True
+                        print("Thread {}: running case {}: OOB/UAF Write without mutating".format(index, hash[:7]))
+                        print("Thread {}: running case {}: Detect read before write".format(index, hash[:7]))
+                        break
+
 def reproduce_one_case(index):
     while(1):
         lock.acquire(blocking=True)
@@ -612,7 +689,8 @@ def reproduce_one_case(index):
         if args.linux != "-1":
             offset = int(args.linux)
             linux_index = int(args.linux)
-        checker = CrashChecker(project_path, case_path, default_port+offset, logger, args.debug, linux_index)
+        gcc = utilities.set_gcc_version(time_parser.parse(case["time"]))
+        checker = CrashChecker(project_path, case_path, default_port+offset, logger, args.debug, linux_index, gcc)
         checker.case_logger.info("=============================A reproducing process starts=============================")
         if not args.fixed_only:
             if args.reproduce:
@@ -659,6 +737,8 @@ def args_parse():
                         help='Reproduce on fixed kernel')
     parser.add_argument('--unfixed-only', action='store_true',
                         help='Reproduce on unfixed kernel')
+    parser.add_argument('--test-original-poc', action='store_true',
+                        help='Reproduce with original PoC')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug mode')
     args = parser.parse_args()
@@ -702,7 +782,11 @@ if __name__ == '__main__':
     total = len(l)
     default_port = int(args.port)
     parallel_max = int(args.parallel_max)
+    if args.test_original_poc:
+        thread_fn = reproduce_with_ori_poc
+    else:
+        thread_fn = reproduce_one_case
     for i in range(min(len(crawler.cases), parallel_max)):
-        x = threading.Thread(target=reproduce_one_case, args=(i,))
+        x = threading.Thread(target=thread_fn, args=(i,))
         x.start()
         

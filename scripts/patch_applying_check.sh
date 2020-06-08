@@ -9,20 +9,21 @@ echo "running patch_applying_check.sh"
 
 function jump_to_the_patch() {
     git stash
+    git clean -d -f
     #make clean CC=$GCC
     #git stash --all
-    git checkout $PATCH
+    git checkout -f $PATCH
     git format-patch -1 $PATCH --stdout > fixed.patch
 }
 
 function copy_log_then_exit() {
   LOG=$1
-  cp $LOG $CASE_PATH
+  cp $LOG $CASE_PATH/$LOG-patch_applying_check
   exit 1
 }
 
-if [ $# -ne 4 ]; then
-  echo "Usage ./patch_applying_check.sh linux_path linux_commit config_url patch_commit"
+if [ $# -ne 5 ]; then
+  echo "Usage ./patch_applying_check.sh linux_path linux_commit config_url patch_commit gcc_version"
   exit 1
 fi
 
@@ -30,7 +31,8 @@ LINUX=$1
 COMMIT=$2
 CONFIG=$3
 PATCH=$4
-GCC=`pwd`/tools/gcc/bin/gcc
+GCCVERSION=$5
+GCC=`pwd`/tools/$GCCVERSION/bin/gcc
 
 cd $LINUX
 cd ..
@@ -40,15 +42,16 @@ cd linux
 CURRENT_HEAD=`git rev-parse HEAD`
 git stash
 if [ "$CURRENT_HEAD" != "$COMMIT" ]; then
+    git clean -d -f
     #make clean CC=$GCC
     #git stash --all
     git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1
-    git checkout $COMMIT
+    git checkout -f $COMMIT
 fi
 git format-patch -1 $PATCH --stdout > fixed.patch
 patch -p1 -N -i fixed.patch || jump_to_the_patch
 patch -p1 -R < fixed.patch
 curl $CONFIG > .config
-make olddefconfig
-make -j16 > make.log 2>&1 || copy_log_then_exit make.log
+make olddefconfig CC=$GCC
+make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_exit make.log
 exit 0
