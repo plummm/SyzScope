@@ -915,7 +915,7 @@ index bf6d66e9..407a3e83 100644
  	return
  }
 diff --git a/syz-fuzzer/fuzzer.go b/syz-fuzzer/fuzzer.go
-index b6e8be4b..f141ea48 100644
+index b6e8be4b..3ec5dd0c 100644
 --- a/syz-fuzzer/fuzzer.go
 +++ b/syz-fuzzer/fuzzer.go
 @@ -102,6 +102,8 @@ const (
@@ -980,7 +980,7 @@ index b6e8be4b..f141ea48 100644
  			log.Logf(0, "alive, executed %v", execTotal)
  			lastPrint = time.Now()
  		}
-+		if !flagPoC && time.Since(lastEnqueue) > 4*time.Minute && time.Since(lastEnqueue) < 5*time.Minute && prog.ExecutePoCOnly && prog.ExecutePoCOnly && len(fuzzer.workQueue.triageCandidate)+len(fuzzer.workQueue.candidate)+len(fuzzer.workQueue.triage)+len(fuzzer.workQueue.smash)+len(fuzzer.workQueue.grow) == 0 {
++		if !flagPoC && time.Since(lastEnqueue) > 4*time.Minute && time.Since(lastEnqueue) < 5*time.Minute && prog.ExecutePoCOnly && len(fuzzer.workQueue.triageCandidate)+len(fuzzer.workQueue.candidate)+len(fuzzer.workQueue.triage)+len(fuzzer.workQueue.smash)+len(fuzzer.workQueue.grow) == 0 {
 +			log.Logf(0, "set fuzzer free")
 +			fuzzer.sendSignal("set fuzzer free")
 +			//prog.ExecutePoCOnly = false
@@ -1026,7 +1026,7 @@ index b6e8be4b..f141ea48 100644
 +	}
 +}
 diff --git a/syz-fuzzer/proc.go b/syz-fuzzer/proc.go
-index d815a58b..e397d721 100644
+index d815a58b..9be359d4 100644
 --- a/syz-fuzzer/proc.go
 +++ b/syz-fuzzer/proc.go
 @@ -9,10 +9,12 @@ import (
@@ -1128,10 +1128,10 @@ index d815a58b..e397d721 100644
 +			//sign := pq.Prog.Signal.Deserialize()
 +			//fuzzer.addInputToCorpus(p, sign, sig)
 +			flags := ProgNormal
-+			prog.NOfCalls = pq.NOfCalls
-+			prog.PocProg = string(pq.PocProg)
++			//prog.NOfCalls = pq.NOfCalls
++			//prog.PocProg = string(pq.PocProg)
 +			if strings.Compare(string(pq.Prog), string(p.Serialize())) != 0 {
-+				prog.PocProg = string(p.Serialize())
++				//prog.PocProg = string(p.Serialize())
 +				log.Logf(0, "Prog is not minimized\n")
 +			}
 +			proc.fuzzer.workQueue.enqueue(&WorkGrow{
