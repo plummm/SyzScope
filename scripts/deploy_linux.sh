@@ -44,14 +44,13 @@ if [ $# -eq 4 ]; then
 fi
 if [ $# -eq 6 ]; then
   git stash
-  git clean -d -f
+  git clean -d -f -e THIS_KERNEL_HAS_BEEN_USED
   if [ "$FIXED" != "1" ]; then
     CURRENT_HEAD=`git rev-parse HEAD`
     if [ "$CURRENT_HEAD" != "$COMMIT" ]; then
       #make clean CC=$GCC
       #git stash --all
-      git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1
-      git checkout -f $COMMIT
+      git checkout -f $COMMIT || (git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1 && git checkout -f $COMMIT)
     fi
     curl $CONFIG > .config
   else

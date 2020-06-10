@@ -30,7 +30,7 @@ SUSPICIOUS = 2
 thread_fn = None
 
 class CrashChecker:
-    def __init__(self, project_path, case_path, ssh_port, logger, debug, linux_index=-1, gcc="gcc-7"):
+    def __init__(self, project_path, case_path, ssh_port, logger, debug, gcc="gcc-7"):
         os.makedirs("{}/poc".format(case_path), exist_ok=True)
         self.kasan_regx = r'KASAN: ([a-z\\-]+) Write in ([a-zA-Z0-9_]+).*'
         self.free_regx = r'KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
@@ -44,13 +44,6 @@ class CrashChecker:
         self.kasan_func_list = self.read_kasan_funcs()
         self.debug = debug
         self.gcc = gcc
-        if linux_index > -1:
-            self.rearrange_linux(linux_index)
-        
-    def rearrange_linux(self, linux_index):
-        os.remove(self.linux_path)
-        src = "{}/tools/linux-{}".format(self.project_path, linux_index)
-        os.symlink(src, self.linux_path)
 
     def run(self, syz_repro, syz_commit, log=None, linux_commit=None, config=None, c_repro=None, i386=None):
         self.case_logger.info("=============================crash.run=============================")
@@ -185,6 +178,14 @@ class CrashChecker:
 
     def extract_existed_crash(self, path):
         crash_path = os.path.join(path, "crashes")
+        #extrace the latest crashes
+        if os.path.isdir(crash_path):
+            for i in range(0,99):
+                crash_path_tmp = os.path.join(path, "crashes-{}".format(i))
+                if os.path.isdir(crash_path_tmp):
+                    crash_path = crash_path_tmp
+                else:
+                    break
         res = []
 
         if os.path.isdir(crash_path):
@@ -371,25 +372,30 @@ class CrashChecker:
                     extract_report = True
                 if extract_report:
                     self.case_logger.info(line)
-                    if record_flag == 0 and utilities.regx_match(call_trace_regx, line):
-                        res.append(crash)
+                    if utilities.regx_match(call_trace_regx, line):
+                        record_flag = 1
                     if utilities.regx_match(boundary_regx, line) or \
                        utilities.regx_match(message_drop_regx, line) or \
                        utilities.regx_match(panic_regx, line):
                         record_flag ^= 1
-                        if record_flag == 0 and kasan_flag == 1:
-                            self.logger.info("OOB/UAF triggered")
+                        if record_flag == 0:
                             res.append(crash)
                             crash = []
-                            p.kill()
-                            break
+                            if kasan_flag == 1 and write_flag == 1:
+                                self.logger.info("OOB/UAF write triggered")
+                                p.kill()
+                                break
                         continue
                     if utilities.regx_match(kasan_regx, line) or \
                        utilities.regx_match(free_regx, line):
-                        kasan_flag ^= 1
+                        kasan_flag == 1
                     if utilities.regx_match(write_regx, line):
-                        write_flag ^= 1
-                    if record_flag and kasan_flag:
+                        write_flag == 1
+                    if record_flag:
+                        crash.append(line)
+                    if kasan_flag:
+                        #Which is impossible, maybe
+                        self.logger.error("kasan_flag enabled without record_flag")
                         crash.append(line)
         if not extract_report:
             res = ['Error occur at booting qemu']
@@ -602,14 +608,19 @@ def reproduce_with_ori_poc(index):
         if not os.path.isdir(case_path):
             print("Thread {}: running case {}: {} does not exist".format(index, hash[:7], case_path))
             continue
+        if args.linux != "-1":
+            offset = int(args.linux)
+            index = int(args.linux)
         link_correct_linux_repro(case_path, index)
 
-        hdlr = logging.FileHandler('./replay.out')
-        logger = logging.getLogger('crash-{}'.format(hash))
-        formatter = logging.Formatter('%(asctime)s Thread {}: {}: %(message)s'.format(index, hash[:7]))
-        hdlr.setFormatter(formatter)
-        logger.addHandler(hdlr) 
-        logger.setLevel(logging.INFO)
+        #hdlr = logging.FileHandler('./replay.out')
+        #logger = logging.getLogger('crash-{}'.format(hash))
+        #formatter = logging.Formatter('%(asctime)s Thread {}: {}: %(message)s'.format(index, hash[:7]))
+        #hdlr.setFormatter(formatter)
+        #logger.addHandler(hdlr) 
+        #logger.setLevel(logging.INFO)
+
+        logging.basicConfig(format='%(asctime)s Thread {}: {}: %(message)s'.format(index, hash[:7]))
 
         syz_repro = case["syz_repro"]
         syz_commit = case["syzkaller"]
@@ -620,14 +631,10 @@ def reproduce_with_ori_poc(index):
         if utilities.regx_match(r'386', case["manager"]):
             i386 = True
         log = case["log"]
-        logger.info("Running case: {}".format(hash))
+        logging.info("Running case: {}".format(hash))
         offset = index
-        linux_index = -1
-        if args.linux != "-1":
-            offset = int(args.linux)
-            linux_index = int(args.linux)
         gcc = utilities.set_gcc_version(time_parser.parse(case["time"]))
-        checker = CrashChecker(project_path, case_path, default_port+offset, logger, args.debug, linux_index, gcc)
+        checker = CrashChecker(project_path, case_path, default_port+offset, logging, args.debug, gcc=gcc)
         if checker.deploy_linux(commit,config,0) == 1:
             print("Thread {}: running case {}: Error occur in deploy_linux.sh".format(index, hash[:7]))
             continue
@@ -665,6 +672,9 @@ def reproduce_one_case(index):
         if not os.path.isdir(case_path):
             print("{} does not exist".format(case_path))
             continue
+        if args.linux != "-1":
+            offset = int(args.linux)
+            index = int(args.linux)
         link_correct_linux_repro(case_path, index)
 
         hdlr = logging.FileHandler('./replay.out')
@@ -685,12 +695,8 @@ def reproduce_one_case(index):
         log = case["log"]
         logger.info("Running case: {}".format(hash))
         offset = index
-        linux_index = -1
-        if args.linux != "-1":
-            offset = int(args.linux)
-            linux_index = int(args.linux)
         gcc = utilities.set_gcc_version(time_parser.parse(case["time"]))
-        checker = CrashChecker(project_path, case_path, default_port+offset, logger, args.debug, linux_index, gcc)
+        checker = CrashChecker(project_path, case_path, default_port+offset, logger, args.debug, gcc=gcc)
         checker.case_logger.info("=============================A reproducing process starts=============================")
         if not args.fixed_only:
             if args.reproduce:

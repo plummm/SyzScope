@@ -81,7 +81,7 @@ def deploy_one_case(index):
         print("Thread {}: run case {} [{}/{}] left".format(index, hash, len(l)-1, total))
         deployer[index].deploy(hash, case)
         remove_using_flag(index)
-    print("Thread {} exit->".format(index, hash))
+    print("Thread {} exit->".format(index))
 
 def remove_using_flag(index):
     project_path = os.getcwd()

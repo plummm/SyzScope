@@ -14,7 +14,8 @@ URL=2
 
 syzbot_bug_base_url = "bug?id="
 syzbot_host_url = "https://syzkaller.appspot.com/"
-kasan_regx = r'KASAN: ([a-z\\-]+) Write in ([a-zA-Z0-9_]+).*'
+kasan_write_regx = r'KASAN: ([a-z\\-]+) Write in ([a-zA-Z0-9_]+).*'
+kasan_read_regx = r'KASAN: ([a-z\\-]+) Read in ([a-zA-Z0-9_]+).*'
 free_regx = r'KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
 
 def get_hash_from_log(path):
@@ -327,8 +328,16 @@ def set_gcc_version(time):
         return "gcc-9.0.0-20181231"
     return ""
 
-def extract_existed_crash(path):
+def extract_existed_crash(path, regx):
     crash_path = os.path.join(path, "crashes")
+    #extrace the latest crashes
+    if os.path.isdir(crash_path):
+        for i in range(0,99):
+            crash_path_tmp = os.path.join(path, "crashes-{}".format(i))
+            if os.path.isdir(crash_path_tmp):
+                crash_path = crash_path_tmp
+            else:
+                break
     res = []
 
     if os.path.isdir(crash_path):
@@ -337,16 +346,14 @@ def extract_existed_crash(path):
             if os.path.isfile(description_file):
                 with open(description_file, "r") as f:
                     line = f.readline()
-                    if regx_match(kasan_regx, line):
-                        res.append(os.path.join(crash_path, case))
-                        continue
-                    if regx_match(free_regx, line):
-                        res.append(os.path.join(crash_path, case))
-                        continue
+                    for each in regx:
+                        if regx_match(each, line):
+                            res.append(os.path.join(crash_path, case))
+                            continue
     return res
 
 #Cases with OOB/UAF write, some cases may failed to generate reproducer but it still hopeful
-def retrieve_cases_with_critical_write():
+def retrieve_cases_match_regx(regx):
     res = []
     dirOfCases = "{}/work/completed".format(os.getcwd())
     paths = []
@@ -356,7 +363,7 @@ def retrieve_cases_with_critical_write():
         paths.append(path)
     
     for path in paths:
-        if len(extract_existed_crash(path)) > 0:
+        if len(extract_existed_crash(path, regx)) > 0:
             r = get_hash_from_log(os.path.join(path, 'log'))
             if r != None:
                 res.append(r)
@@ -364,6 +371,6 @@ def retrieve_cases_with_critical_write():
     return res
 
 if __name__ == '__main__':
-    for each in retrieve_cases_with_critical_write():
+    for each in retrieve_cases_match_regx([kasan_write_regx, free_regx]):
         print(each)
     

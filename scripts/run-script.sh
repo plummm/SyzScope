@@ -25,7 +25,13 @@ set -ex
 #    ./poc
 #fi
 
-${COMMAND}
+for i in {1..10}
+do
+    ${COMMAND}
+    
+    #Sometimes the testcase is not required to repeat, but we still give a shot
+    sleep 5
+done
 EOF
 
 scp -F /dev/null -o UserKnownHostsFile=/dev/null \

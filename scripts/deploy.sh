@@ -13,7 +13,7 @@ function copy_log_then_switch_gcc-8.0.1-20180301() {
   LOG=$1
   cp $LOG $CASE_PATH/$LOG-gcc-7
   git stash
-  git clean -d -f
+  git clean -d -f -e THIS_KERNEL_HAS_BEEN_USED
   curl $CONFIG > .config
   GCC=$PROJECT_PATH/tools/gcc-8.0.1-20180301/bin/gcc
   make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_switch_gcc-8.0.1-20180412 make.log
@@ -24,7 +24,7 @@ function copy_log_then_switch_gcc-8.0.1-20180412() {
   LOG=$1
   cp $LOG $CASE_PATH/$LOG-gcc-8.0.1-20180301
   git stash
-  git clean -d -f
+  git clean -d -f -e THIS_KERNEL_HAS_BEEN_USED
   curl $CONFIG > .config
   GCC=$PROJECT_PATH/tools/gcc-8.0.1-20180412/bin/gcc
   make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_switch_gcc-9.0.0-20181231 make.log
@@ -35,7 +35,7 @@ function copy_log_then_switch_gcc-9.0.0-20181231() {
   LOG=$1
   cp $LOG $CASE_PATH/$LOG-gcc-8.0.1-20180412
   git stash
-  git clean -d -f
+  git clean -d -f -e THIS_KERNEL_HAS_BEEN_USED
   curl $CONFIG > .config
   GCC=$PROJECT_PATH/tools/gcc-9.0.0-20181231/bin/gcc
   make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_exit make.log
@@ -194,16 +194,15 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
     exit 1
   fi
   git stash
-  git clean -d -f
+  git clean -d -f -e THIS_KERNEL_HAS_BEEN_USED
   #make clean CC=$GCC
   #git stash --all || set_git_config
-  git pull https://github.com/torvalds/linux.git master > pull.log || copy_log_then_exit pull.log
-  git checkout -f $COMMIT
+  git checkout -f $COMMIT || (git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1 && git checkout -f $COMMIT)
   #cp $PATCHES_PATH/kasan.patch ./
   #patch -p1 -i kasan.patch
   #Add a rejection detector in future
   curl $CONFIG > .config
-  make olddefconfig
+  make olddefconfig CC=$GCC
   make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_exit make.log
   touch THIS_KERNEL_HAS_BEEN_USED
   touch $CASE_PATH/.stamp/BUILD_KERNEL

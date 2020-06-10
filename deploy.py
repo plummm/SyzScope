@@ -159,13 +159,14 @@ class Deployer:
                                 self.logger.info("Write to confirmed success")
                                 self.__write_to_sucess(hash)
                                 self.__write_to_confirmed_sucess(hash)
-                                self.__save_case(hash, 0, case, need_fuzzing, title)
+                                self.__save_case(hash, 0, case, need_fuzzing, title=title)
                                 break
                 self.__create_stamp(stamp_reproduce_ori_poc)
             if not write_without_mutating:
                 path = None
                 need_fuzzing = True
-                self.__write_config(case["syz_repro"], hash[:7])
+                req = requests.request(method='GET', url=case["syz_repro"])
+                self.__write_config(req.content, hash[:7])
                 exitcode = self.run_syzkaller(hash)
                 self.__save_case(hash, exitcode, case, need_fuzzing)
         else:
@@ -230,7 +231,7 @@ class Deployer:
         log = case["log"]
         path = None
         if not self.__check_confirmed(hash):
-            self.logger.info("Compare with original PoC")
+            """self.logger.info("Compare with original PoC")
             res = self.crash_checker.run(syz_repro, syz_commit, log, commit, config, c_repro, i386)
             if res[0]:
                 n = self.crash_checker.diff_testcase(res[1], syz_repro)
@@ -244,7 +245,7 @@ class Deployer:
                 path = res[1]
             else:
                 self.crash_checker.logger.info("Call trace match failed")
-            
+            """
             res = self.repro_on_fixed_kernel(hash, case)
             """
             if res != []:
@@ -302,7 +303,7 @@ class Deployer:
         chmodX("scripts/deploy.sh")
         index = str(self.index)
         self.logger.info("run: scripts/deploy.sh".format(self.index))
-        p = Popen(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase, index, self.catalog, image, self.arch],
+        p = Popen(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase, index, self.catalog, image, self.arch, self.gcc],
                 stdout=PIPE,
                 stderr=STDOUT
                 )
@@ -312,10 +313,8 @@ class Deployer:
         self.logger.info("script/deploy.sh is done with exitcode {}".format(exitcode))
         return exitcode
 
-    def __write_config(self, testcase_url, hash):
+    def __write_config(self, testcase, hash):
         dependent_syscalls = []
-        req = requests.request(method='GET', url=testcase_url)
-        testcase = req.content
         syscalls = self.__extract_syscalls(testcase.decode("utf-8"))
         if syscalls == []:
             self.logger.info("No syscalls found in testcase: {}".format(self.index, testcase))
@@ -451,7 +450,7 @@ class Deployer:
                 res.append(syscall)
         return res
 
-    def __save_case(self, hash, exitcode, case, need_fuzzing, title=None):
+    def __save_case(self, hash, exitcode, case, need_fuzzing, title=None, secondary_fuzzing=False):
         if exitcode !=0:
             self.__save_error(hash)
         else:
@@ -469,7 +468,23 @@ class Deployer:
                     self.__copy_new_capability(case, need_fuzzing, title)
                     self.__move_to_succeed()
             else:
-                self.__move_to_completed()
+                #if found OOB/UAF read, do fuzzing again bases on it
+                crash_path = utilities.retrieve_cases_match_regx(self.current_case_path, [utilities.kasan_read_regx])
+                if len(crash_path) == 0 or secondary_fuzzing:
+                    self.__move_to_completed()
+                else:
+                    for each in crash_path:
+                        testcase_path = os.path.join(crash_path, "repro.prog")
+                        if os.path.isfile(testcase_path):
+                            #Using patch to eliminate cases wuth different root cases
+                            if len(self.repro_on_fixed_kernel(hash, case))>0:
+                                dst = "{}/gopath/src/github.com/google/syzkaller/workdir/testcase-{}".format(self.current_case_path, hash[:7])
+                                shutil.copy(testcase_path, dst)
+                                with open(testcase_path, 'r') as f:
+                                    raw_text = f.readlines()
+                                    self.__write_config("".join(raw_text),hash)
+                                    exitcode = self.run_syzkaller(hash)
+                                    self.__save_case(hash, exitcode, case, need_fuzzing, secondary_fuzzing=True)
     
     def __copy_new_capability(self, path, need_fuzzing, title):
         output = os.path.join(self.current_case_path, "output")
