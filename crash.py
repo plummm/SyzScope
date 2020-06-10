@@ -374,19 +374,19 @@ class CrashChecker:
                     extract_report = True
                 if extract_report:
                     self.case_logger.info(line)
-                    if utilities.regx_match(call_trace_regx, line):
+                    if utilities.regx_match(call_trace_regx, line) or \
+                       utilities.regx_match(message_drop_regx, line):
                         record_flag = 1
                     if utilities.regx_match(boundary_regx, line) or \
-                       utilities.regx_match(message_drop_regx, line) or \
                        utilities.regx_match(panic_regx, line):
-                        record_flag ^= 1
-                        if record_flag == 0:
+                        if record_flag == 1:
                             res.append(crash)
                             crash = []
                             if kasan_flag == 1 and write_flag == 1:
                                 self.logger.info("OOB/UAF write triggered")
                                 p.kill()
                                 break
+                        record_flag = 1
                         continue
                     if utilities.regx_match(kasan_regx, line) or \
                        utilities.regx_match(free_regx, line):
@@ -394,8 +394,6 @@ class CrashChecker:
                     if utilities.regx_match(write_regx, line):
                         write_flag = 1
                     if record_flag or kasan_flag:
-                        if kasan_flag and not record_flag:
-                            self.logger.error("kasan_flag enabled without record_flag")
                         crash.append(line)
         if not extract_report:
             res = ['Error occur at booting qemu']
