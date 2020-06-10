@@ -469,7 +469,7 @@ class Deployer:
                     self.__move_to_succeed()
             else:
                 #if found OOB/UAF read, do fuzzing again bases on it
-                crash_path = utilities.retrieve_cases_match_regx(self.current_case_path, [utilities.kasan_read_regx])
+                crash_path = utilities.extract_existed_crash(self.current_case_path, [utilities.kasan_read_regx])
                 if len(crash_path) == 0 or secondary_fuzzing:
                     self.__move_to_completed()
                 else:

@@ -56,10 +56,11 @@ scp -F /dev/null -o UserKnownHostsFile=/dev/null \
 #fi
 
 if [ "$FIXED" == "0" ]; then
-    if [ ! -d "$CASE_PATH/gopath" ]; then
-        mkdir $CASE_PATH/gopath
+    #Only for reproduce original PoC
+    if [ ! -d "$CASE_PATH/poc/gopath" ]; then
+        mkdir $CASE_PATH/poc/gopath
     fi
-    export GOPATH=$CASE_PATH/gopath
+    export GOPATH=$CASE_PATH/poc/gopath
     if [ ! -d "$GOPATH/src/github.com/google/syzkaller" ]; then
         go get -u -d github.com/google/syzkaller/prog
     fi
@@ -70,7 +71,7 @@ if [ "$FIXED" == "0" ]; then
     git rev-list HEAD | grep $(git rev-parse dfd609eca1871f01757d6b04b19fc273c87c14e5) || EXITCODE=2
     make TARGETARCH=$ARCH TARGETVMARCH=amd64 execprog executor
 else
-    cd $GOPATH/src/github.com/google/syzkaller
+    cd $CASE_PATH/gopath/src/github.com/google/syzkaller
 fi
 scp -F /dev/null -o UserKnownHostsFile=/dev/null \
         -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \

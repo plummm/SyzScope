@@ -1,4 +1,4 @@
-import os, re, stat
+import os, re, stat, sys
 import logging
 import argparse
 import utilities
@@ -93,8 +93,10 @@ class CrashChecker:
 
     
     def repro_on_fixed_kernel(self, syz_commit, linux_commit=None, config=None, c_repro=None, i386=None, patch_commit=None):
-        self.case_logger.info("=============================crash.repro_on_fixed_kernel=============================")
         crashes_path = self.extract_existed_crash(self.case_path)
+        if len(crashes_path) == 0:
+            return None
+        self.case_logger.info("=============================crash.repro_on_fixed_kernel=============================")
         res = []
         reproduceable = {}
 
@@ -108,7 +110,7 @@ class CrashChecker:
             key = os.path.basename(path)
             path_repro = os.path.join(path, "repro.prog")
             self.case_logger.info("Go for {}".format(path_repro))
-            ori_crash_report = self.read_crash(path_repro, syz_commit, None, 0, c_repro, i386)
+            ori_crash_report = self.read_crash(path_repro, syz_commit, None, 1, c_repro, i386)
             if ori_crash_report != []:
                 reproduceable[key] = CONFIRM
             else:
@@ -388,9 +390,9 @@ class CrashChecker:
                         continue
                     if utilities.regx_match(kasan_regx, line) or \
                        utilities.regx_match(free_regx, line):
-                        kasan_flag == 1
+                        kasan_flag = 1
                     if utilities.regx_match(write_regx, line):
-                        write_flag == 1
+                        write_flag = 1
                     if record_flag:
                         crash.append(line)
                     if kasan_flag:
@@ -622,7 +624,9 @@ def reproduce_with_ori_poc(index):
         #logger.addHandler(hdlr) 
         #logger.setLevel(logging.INFO)
 
-        logging.basicConfig(format='%(asctime)s Thread {}: {}: %(message)s'.format(index, hash[:7]))
+        formatter = logging.Formatter('%(asctime)s Thread {}: {}: %(message)s'.format(index, hash[:7]))
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
 
         syz_repro = case["syz_repro"]
         syz_commit = case["syzkaller"]
@@ -633,10 +637,10 @@ def reproduce_with_ori_poc(index):
         if utilities.regx_match(r'386', case["manager"]):
             i386 = True
         log = case["log"]
-        logging.info("Running case: {}".format(hash))
+        logger.info("Running case: {}".format(hash))
         offset = index
         gcc = utilities.set_gcc_version(time_parser.parse(case["time"]))
-        checker = CrashChecker(project_path, case_path, default_port+offset, logging, args.debug, gcc=gcc)
+        checker = CrashChecker(project_path, case_path, default_port+offset, logger, args.debug, gcc=gcc)
         if checker.deploy_linux(commit,config,0) == 1:
             print("Thread {}: running case {}: Error occur in deploy_linux.sh".format(index, hash[:7]))
             continue
@@ -679,12 +683,16 @@ def reproduce_one_case(index):
             index = int(args.linux)
         link_correct_linux_repro(case_path, index)
 
-        hdlr = logging.FileHandler('./replay.out')
-        logger = logging.getLogger('crash-{}'.format(hash))
+        #hdlr = logging.FileHandler('./replay.out')
+        #logger = logging.getLogger('crash-{}'.format(hash))
+        #formatter = logging.Formatter('%(asctime)s Thread {}: {}: %(message)s'.format(index, hash[:7]))
+        #hdlr.setFormatter(formatter)
+        #logger.addHandler(hdlr) 
+        #logger.setLevel(logging.INFO)
+
         formatter = logging.Formatter('%(asctime)s Thread {}: {}: %(message)s'.format(index, hash[:7]))
-        hdlr.setFormatter(formatter)
-        logger.addHandler(hdlr) 
-        logger.setLevel(logging.INFO)
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
 
         syz_repro = case["syz_repro"]
         syz_commit = case["syzkaller"]
@@ -757,8 +765,13 @@ if __name__ == '__main__':
     args = args_parse()
     crawler = Crawler()
 
+    logger = logging.getLogger("main")
+    handler = logging.StreamHandler(sys.stdout)
+    logger.setLevel(logging.INFO)
+
     if args.debug:
         args.parallel_max="1"
+        logger.setLevel(logging.DEBUG)
 
     ignore = []
     if args.ignore != None:

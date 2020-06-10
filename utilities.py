@@ -352,9 +352,8 @@ def extract_existed_crash(path, regx):
     return res
 
 #Cases with OOB/UAF write, some cases may failed to generate reproducer but it still hopeful
-def retrieve_cases_match_regx(regx):
+def retrieve_cases_match_regx(dirOfCases, regx):
     res = []
-    dirOfCases = "{}/work/completed".format(os.getcwd())
     paths = []
 
     for dirs in os.listdir(dirOfCases):
