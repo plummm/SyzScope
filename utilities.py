@@ -42,8 +42,7 @@ def urlsOfCases(folder, type=FOLDER):
     for path in paths:
         for file in os.listdir(path):
             if file == "log":
-                os.path.join(path, file)
-                r = get_hash_from_log(path)
+                r = get_hash_from_log(os.path.join(path, file))
                 if r != None:
                     res.append(r)
     

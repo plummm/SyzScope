@@ -587,8 +587,10 @@ class CrashChecker:
 
 def link_correct_linux_repro(case_path, index):
     dst = os.path.join(case_path, "linux")
-    if os.path.isdir(dst):
+    try:
         os.remove(dst)
+    except:
+        pass
     src = "{}/tools/linux-{}".format(project_path, index)
     os.symlink(src, dst)
 
