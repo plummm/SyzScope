@@ -393,11 +393,9 @@ class CrashChecker:
                         kasan_flag = 1
                     if utilities.regx_match(write_regx, line):
                         write_flag = 1
-                    if record_flag:
-                        crash.append(line)
-                    if kasan_flag:
-                        #Which is impossible, maybe
-                        self.logger.error("kasan_flag enabled without record_flag")
+                    if record_flag or kasan_flag:
+                        if kasan_flag and not record_flag:
+                            self.logger.error("kasan_flag enabled without record_flag")
                         crash.append(line)
         if not extract_report:
             res = ['Error occur at booting qemu']
