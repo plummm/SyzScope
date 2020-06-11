@@ -22,7 +22,7 @@ C_REPRO=$7
 I386=$8
 FIXED=$9
 GCCVERSION=${10}
-EXITCODE=3
+#EXITCODE=73
 GCC=`pwd`/tools/$GCCVERSION/bin/gcc
 
 M32=""
@@ -66,15 +66,15 @@ if [ "$FIXED" == "0" ]; then
         go get -u -d github.com/google/syzkaller/prog
     fi
     cd $GOPATH/src/github.com/google/syzkaller || exit 1
-    make clean CC=$GCC
+    make clean
     git stash --all
     git checkout -f $SYZKALLER
-    git rev-list HEAD | grep $(git rev-parse dfd609eca1871f01757d6b04b19fc273c87c14e5) || EXITCODE=2
-    make TARGETARCH=$ARCH TARGETVMARCH=amd64 execprog executor CC=$GCC
+    git rev-list HEAD | grep $(git rev-parse dfd609eca1871f01757d6b04b19fc273c87c14e5) || #EXITCODE=72
+    make TARGETARCH=$ARCH TARGETVMARCH=amd64 execprog executor
 else
     cd $CASE_PATH/gopath/src/github.com/google/syzkaller
 fi
 scp -F /dev/null -o UserKnownHostsFile=/dev/null \
         -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
         -i $IMAGE_PATH/stretch.img.key -P $PORT bin/linux_amd64/syz-execprog bin/linux_$ARCH/syz-executor root@localhost:/
-exit $EXITCODE
+exit 0

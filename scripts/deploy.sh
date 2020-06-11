@@ -111,7 +111,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then
   go get -u -d github.com/google/syzkaller/prog
   #fi
   cd $GOPATH/src/github.com/google/syzkaller || exit 1
-  make clean CC=$GCC
+  make clean
   git stash --all || set_git_config
   git checkout -f 9b1f3e665308ee2ddd5b3f35a078219b5c509cdb
   #git checkout -
@@ -120,7 +120,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then
   patch -p1 -i syzkaller.patch
   #rm -r executor
   #cp -r $PROJECT_PATH/tools/syzkaller/executor ./executor
-  make TARGETARCH=$ARCH TARGETVMARCH=amd64 CC=$GCC
+  make TARGETARCH=$ARCH TARGETVMARCH=amd64
   if [ ! -d "workdir" ]; then
     mkdir workdir
   fi

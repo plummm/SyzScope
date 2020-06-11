@@ -191,14 +191,13 @@ class Deployer:
                 self.__log_subprocess_output(p.stdout, logging.INFO)
             exitcode = p.wait()
 
-            if not self.__success_check(hash[:7]):
-                p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash[:7]), "--debug"],
-                  stdout=PIPE,
-                  stderr=STDOUT
-                  )
-                with p.stdout:
-                    self.__log_subprocess_output(p.stdout, logging.INFO)
-                exitcode = p.wait()
+            p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash[:7]), "--debug"],
+                stdout=PIPE,
+                stderr=STDOUT
+                )
+            with p.stdout:
+                self.__log_subprocess_output(p.stdout, logging.INFO)
+            exitcode = p.wait()
         else:
             p = Popen([syzkaller, "--config={}/workdir/{}-poc.cfg".format(self.syzkaller_path, hash[:7]), "--poc"],
                 stdout = PIPE,
@@ -208,14 +207,13 @@ class Deployer:
                 self.__log_subprocess_output(p.stdout, logging.INFO)
             exitcode = p.wait()
 
-            if not self.__success_check(hash[:7]):
-                p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash[:7])],
-                    stdout = PIPE,
-                    stderr = STDOUT
-                    )
-                with p.stdout:
-                    self.__log_subprocess_output(p.stdout, logging.INFO)
-                exitcode = p.wait()
+            p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash[:7])],
+                stdout = PIPE,
+                stderr = STDOUT
+                )
+            with p.stdout:
+                self.__log_subprocess_output(p.stdout, logging.INFO)
+            exitcode = p.wait()
         self.logger.info("syzkaller is done with exitcode {}".format(exitcode))
         return exitcode
     

@@ -323,7 +323,6 @@ class CrashChecker:
                 except:
                     self.logger.error('bytes array \'{}\' cannot be converted to utf-8'.format(line))
                     continue
-                self.case_logger.info(line)
                 if utilities.regx_match(reboot_regx, line) or utilities.regx_match(port_error_regx, line):
                     self.case_logger.error("Booting qemu failed")
                 if self.debug:
@@ -340,7 +339,7 @@ class CrashChecker:
                     with p2.stdout:
                         self.__log_subprocess_output(p2.stdout, logging.INFO)
                     exitcode = p2.wait()
-                    if exitcode == 1:
+                    if exitcode != 0:
                         p.kill()
                         break
                     if repro_type == utilities.URL:
@@ -374,7 +373,7 @@ class CrashChecker:
                     stderr=STDOUT)
                     extract_report = True
                 if extract_report:
-                    #self.case_logger.info(line)
+                    self.case_logger.info(line)
                     if utilities.regx_match(call_trace_regx, line) or \
                        utilities.regx_match(message_drop_regx, line):
                         record_flag = 1
