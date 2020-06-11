@@ -7,8 +7,8 @@
 set -ex
 echo "running upload-exp.sh"
 
-if [ $# -ne 9 ]; then
-  echo "Usage ./upload-exp.sh case_path syz_repro_url ssh_port image_path syz_commit type c_repro i386 fixed"
+if [ $# -ne 10 ]; then
+  echo "Usage ./upload-exp.sh case_path syz_repro_url ssh_port image_path syz_commit type c_repro i386 fixed gcc_version"
   exit 1
 fi
 
@@ -21,8 +21,9 @@ TYPE=$6
 C_REPRO=$7
 I386=$8
 FIXED=$9
+GCCVERSION=${10}
 EXITCODE=3
-GCC=`pwd`/tools/gcc/bin/gcc
+GCC=`pwd`/tools/$GCCVERSION/bin/gcc
 
 M32=""
 ARCH="amd64"
@@ -65,11 +66,11 @@ if [ "$FIXED" == "0" ]; then
         go get -u -d github.com/google/syzkaller/prog
     fi
     cd $GOPATH/src/github.com/google/syzkaller || exit 1
-    make clean
+    make clean CC=$GCC
     git stash --all
     git checkout -f $SYZKALLER
     git rev-list HEAD | grep $(git rev-parse dfd609eca1871f01757d6b04b19fc273c87c14e5) || EXITCODE=2
-    make TARGETARCH=$ARCH TARGETVMARCH=amd64 execprog executor
+    make TARGETARCH=$ARCH TARGETVMARCH=amd64 execprog executor CC=$GCC
 else
     cd $CASE_PATH/gopath/src/github.com/google/syzkaller
 fi

@@ -323,6 +323,7 @@ class CrashChecker:
                 except:
                     self.logger.error('bytes array \'{}\' cannot be converted to utf-8'.format(line))
                     continue
+                self.case_logger.info(line)
                 if utilities.regx_match(reboot_regx, line) or utilities.regx_match(port_error_regx, line):
                     self.case_logger.error("Booting qemu failed")
                 if self.debug:
@@ -333,7 +334,7 @@ class CrashChecker:
                         repro_type = utilities.URL
                     utilities.chmodX("scripts/upload-exp.sh")
                     p2 = Popen(["scripts/upload-exp.sh", self.case_path, syz_repro,
-                        str(self.ssh_port), self.image_path, syz_commit, str(repro_type), str(c_repro), str(i386), str(fixed)],
+                        str(self.ssh_port), self.image_path, syz_commit, str(repro_type), str(c_repro), str(i386), str(fixed), self.gcc],
                     stdout=PIPE,
                     stderr=STDOUT)
                     with p2.stdout:
@@ -373,7 +374,7 @@ class CrashChecker:
                     stderr=STDOUT)
                     extract_report = True
                 if extract_report:
-                    self.case_logger.info(line)
+                    #self.case_logger.info(line)
                     if utilities.regx_match(call_trace_regx, line) or \
                        utilities.regx_match(message_drop_regx, line):
                         record_flag = 1

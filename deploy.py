@@ -121,7 +121,7 @@ class Deployer:
             url = syzbotCrawler.syzbot_host_url + syzbotCrawler.syzbot_bug_base_url + hash
             self.case_info_logger.info(url)
             r = self.__run_delopy_script(hash[:7], case)
-            if r == 1:
+            if r != 0:
                 self.logger.error("Error occur in deploy.sh")
                 self.__save_error(hash)
                 return

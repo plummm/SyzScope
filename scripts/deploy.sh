@@ -9,39 +9,6 @@ echo "running deploy.sh"
 
 LATEST="9b1f3e6"
 
-function copy_log_then_switch_gcc-8.0.1-20180301() {
-  LOG=$1
-  cp $LOG $CASE_PATH/$LOG-gcc-7
-  git stash
-  git clean -d -f -e THIS_KERNEL_HAS_BEEN_USED
-  curl $CONFIG > .config
-  GCC=$PROJECT_PATH/tools/gcc-8.0.1-20180301/bin/gcc
-  make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_switch_gcc-8.0.1-20180412 make.log
-  exit 2
-}
-
-function copy_log_then_switch_gcc-8.0.1-20180412() {
-  LOG=$1
-  cp $LOG $CASE_PATH/$LOG-gcc-8.0.1-20180301
-  git stash
-  git clean -d -f -e THIS_KERNEL_HAS_BEEN_USED
-  curl $CONFIG > .config
-  GCC=$PROJECT_PATH/tools/gcc-8.0.1-20180412/bin/gcc
-  make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_switch_gcc-9.0.0-20181231 make.log
-  exit 3
-}
-
-function copy_log_then_switch_gcc-9.0.0-20181231() {
-  LOG=$1
-  cp $LOG $CASE_PATH/$LOG-gcc-8.0.1-20180412
-  git stash
-  git clean -d -f -e THIS_KERNEL_HAS_BEEN_USED
-  curl $CONFIG > .config
-  GCC=$PROJECT_PATH/tools/gcc-9.0.0-20181231/bin/gcc
-  make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_exit make.log
-  exit 4
-}
-
 function copy_log_then_exit() {
   LOG=$1
   cp $LOG $CASE_PATH/$LOG-gcc-9.0.0-20181231
@@ -144,7 +111,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then
   go get -u -d github.com/google/syzkaller/prog
   #fi
   cd $GOPATH/src/github.com/google/syzkaller || exit 1
-  make clean
+  make clean CC=$GCC
   git stash --all || set_git_config
   git checkout -f 9b1f3e665308ee2ddd5b3f35a078219b5c509cdb
   #git checkout -
@@ -153,7 +120,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then
   patch -p1 -i syzkaller.patch
   #rm -r executor
   #cp -r $PROJECT_PATH/tools/syzkaller/executor ./executor
-  make TARGETARCH=$ARCH TARGETVMARCH=amd64
+  make TARGETARCH=$ARCH TARGETVMARCH=amd64 CC=$GCC
   if [ ! -d "workdir" ]; then
     mkdir workdir
   fi
