@@ -69,7 +69,7 @@ if [ "$FIXED" == "0" ]; then
     make clean
     git stash --all
     git checkout -f $SYZKALLER
-    git rev-list HEAD | grep $(git rev-parse dfd609eca1871f01757d6b04b19fc273c87c14e5) || #EXITCODE=72
+    #git rev-list HEAD | grep $(git rev-parse dfd609eca1871f01757d6b04b19fc273c87c14e5)
     make TARGETARCH=$ARCH TARGETVMARCH=amd64 execprog executor
 else
     cd $CASE_PATH/gopath/src/github.com/google/syzkaller

@@ -108,7 +108,9 @@ class Deployer:
 
         if self.replay:
             self.init_replay_crash(hash[:7])    
-        if self.force or not self.__check_stamp(stamp_finish_fuzzing, hash[:7]):
+        if self.force or \
+            (not self.__check_stamp(stamp_finish_fuzzing, hash[:7], 'succeed')  and\
+            not self.__check_stamp(stamp_finish_fuzzing, hash[:7], 'completed')):
             self.gcc = utilities.set_gcc_version(time_parser.parse(case["time"]))
             write_without_mutating = False
             self.__create_dir_for_case()
@@ -139,7 +141,7 @@ class Deployer:
             need_fuzzing = False
             title = None
             self.logger.info("Try to triger the OOB/UAF by running original poc")
-            if not self.__check_stamp(stamp_reproduce_ori_poc, hash[:7]):
+            if not self.__check_stamp(stamp_reproduce_ori_poc, hash[:7], 'incompleted'):
                 report = self.crash_checker.read_crash(case["syz_repro"], case["syzkaller"], None, 0, case["c_repro"], i386)
                 if report != []:
                     for each in report:
@@ -472,7 +474,7 @@ class Deployer:
                     self.__move_to_completed()
                 else:
                     for each in crash_path:
-                        testcase_path = os.path.join(crash_path, "repro.prog")
+                        testcase_path = os.path.join(each, "repro.prog")
                         if os.path.isfile(testcase_path):
                             #Using patch to eliminate cases wuth different root cases
                             if len(self.repro_on_fixed_kernel(hash, case))>0:
@@ -590,10 +592,9 @@ class Deployer:
         stamp_path = "{}/.stamp/{}".format(self.current_case_path, name)
         call(['touch',stamp_path])
     
-    def __check_stamp(self, name, hash):
-        stamp_path1 = "{}/work/completed/{}/.stamp/{}".format(self.project_path, hash, name)
-        stamp_path2 = "{}/work/succeed/{}/.stamp/{}".format(self.project_path, hash, name)
-        return os.path.isfile(stamp_path1) or os.path.isfile(stamp_path2)
+    def __check_stamp(self, name, hash, folder):
+        stamp_path1 = "{}/work/{}/{}/.stamp/{}".format(self.project_path, folder, hash, name)
+        return os.path.isfile(stamp_path1)
     
     def __clean_stamp(self, name, hash):
         stamp_path = "{}/.stamp/{}".format(self.current_case_path, name)

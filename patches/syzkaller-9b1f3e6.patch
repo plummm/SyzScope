@@ -1226,7 +1226,7 @@ index 62648336..e31b664a 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index 2a0b7dd4..8ffebf22 100644
+index 2a0b7dd4..6b5bd129 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
 @@ -6,6 +6,7 @@ package main
@@ -1313,7 +1313,7 @@ index 2a0b7dd4..8ffebf22 100644
  			if shutdown != nil && res.crash != nil {
  				needRepro := mgr.saveCrash(res.crash)
 -				if needRepro {
-+				if needRepro && succeed <= 5 {
++				if needRepro && succeed <= 5 && !strings.Contains(res.crash.Title, "no output from test machine") {
  					log.Logf(1, "loop: add pending repro for '%v'", res.crash.Title)
  					pendingRepro[res.crash] = true
  				}
