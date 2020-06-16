@@ -255,7 +255,7 @@ class Deployer:
             return path
         return None
     
-    def repro_on_fixed_kernel(self, hash, case):
+    def repro_on_fixed_kernel(self, hash, case, crashes_path=None):
         syz_repro = case["syz_repro"]
         syz_commit = case["syzkaller"]
         commit = case["commit"]
@@ -267,7 +267,7 @@ class Deployer:
             i386 = True
         commit = utilities.get_patch_commit(hash)
         if commit != None:
-            res = self.crash_checker.repro_on_fixed_kernel(syz_commit, case["commit"], config, c_repro, i386, commit)
+            res = self.crash_checker.repro_on_fixed_kernel(syz_commit, case["commit"], config, c_repro, i386, commit, crashes_path=crashes_path)
         return res
 
     def __check_confirmed(self, hash):
@@ -477,10 +477,11 @@ class Deployer:
                         testcase_path = os.path.join(each, "repro.prog")
                         if os.path.isfile(testcase_path):
                             #Using patch to eliminate cases wuth different root cases
-                            if len(self.repro_on_fixed_kernel(hash, case))>0:
+                            if len(self.repro_on_fixed_kernel(hash, case, [testcase_path]))>0:
                                 dst = "{}/gopath/src/github.com/google/syzkaller/workdir/testcase-{}".format(self.current_case_path, hash[:7])
                                 shutil.copy(testcase_path, dst)
                                 with open(testcase_path, 'r') as f:
+                                    self.logger.info("OOB/UAF Read detected, rerun syzkaller base on new testcase {}".format(testcase_path))
                                     raw_text = f.readlines()
                                     self.__write_config("".join(raw_text),hash)
                                     exitcode = self.run_syzkaller(hash)
