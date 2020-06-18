@@ -43,9 +43,9 @@ if [ $# -eq 4 ]; then
   echo "no more patch"
 fi
 if [ $# -eq 6 ]; then
-  git stash
-  git clean -d -f -e THIS_KERNEL_HAS_BEEN_USED
   if [ "$FIXED" != "1" ]; then
+    git stash
+    git clean -d -f -e THIS_KERNEL_HAS_BEEN_USED
     CURRENT_HEAD=`git rev-parse HEAD`
     if [ "$CURRENT_HEAD" != "$COMMIT" ]; then
       #make clean CC=$GCC

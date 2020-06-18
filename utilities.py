@@ -54,6 +54,12 @@ def regx_match(regx, line):
         return True
     return False
 
+def regx_get(regx, line, index):
+    m = re.search(regx, line)
+    if m != None and len(m.groups()) > index:
+        return m.groups()[index]
+    return None
+
 def chmodX(path):
     st = os.stat(path)
     os.chmod(path, st.st_mode | stat.S_IEXEC)
@@ -368,7 +374,72 @@ def retrieve_cases_match_regx(dirOfCases, regx):
     
     return res
 
+def save_cases_as_json(key, max_num):
+    crawler = Crawler(keyword=key, max_retrieve=max_num)
+    cases = crawler.gather_cases()
+    with open('cases_{}.json'.format("-".join(key)), 'w') as f:
+        for each in cases:
+            json.dump(each, f)
+            f.write('\n')
+
+def load_cases_from_json(path):
+    res = []
+    with open(path, 'r') as f:
+        text = f.readlines()
+        for line in text:
+            line = line.strip()
+            crash = json.loads(line)
+            res.append(crash)
+    return res
+
+def cmp_case_with_last_day(case):
+    days = regx_get('(\d+)d',case['Last'],0)
+    if days != None:
+        return int(days)
+    return -1
+
 if __name__ == '__main__':
-    for each in retrieve_cases_match_regx([kasan_write_regx, free_regx]):
-        print(each)
+    crashes = load_cases_from_json('./cases_.json')
+    sorted_cases = sorted(crashes, key=cmp_case_with_last_day)
+    """f = open('cases_sorted', 'w')
+    for each in sorted_cases:
+        text = "{} {} {}".format(each['Last'],each['Title'],each['Patch'])
+        f.write(text+'\n')
+    """
+    # libraries
+    import numpy as np
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    sns.set_style("whitegrid")
+    
+    # Color palette
+    blue, = sns.color_palette("muted", 1)
+    
+    # Create data
+    x_data = [0]
+    y_data = []
+    last = 0
+    count = {}
+    count[0]=0
+    for each in sorted_cases:
+        days = regx_get('(\d+)d',each['Last'],0)
+        if days != None:
+            if days not in count:
+                count[days] = 1
+            else:
+                count[days] += 1
+            if days != last:
+                x_data.append(days)
+                y_data.append(count[last])
+                last = days
+    y_data.append(count[last])
+    
+    x = np.array(x_data)
+    y = np.array(y_data)
+    # Make the plot
+    fig, ax = plt.subplots()
+    ax.plot(x, y)
+    #ax.fill_between(x, 0, y, alpha=.3)
+    ax.set(xlim=(0, len(x) - 1), ylim=(0, None), xticks=x)
+
     

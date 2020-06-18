@@ -361,6 +361,8 @@ class CrashChecker:
                     p3 = Popen(["scripts/run-script.sh", command, str(self.ssh_port), self.image_path, self.case_path],
                     stdout=PIPE,
                     stderr=STDOUT)
+                    with p3.stdout:
+                        self.__log_subprocess_output(p3.stdout, logging.INFO)
                     exitcode = p3.wait()
                     if exitcode == 1:
                         self.case_logger.error("Usually, there is no reproducer in the crash")

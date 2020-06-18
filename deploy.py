@@ -477,7 +477,7 @@ class Deployer:
                         testcase_path = os.path.join(each, "repro.prog")
                         if os.path.isfile(testcase_path):
                             #Using patch to eliminate cases wuth different root cases
-                            if len(self.repro_on_fixed_kernel(hash, case, [testcase_path]))>0:
+                            if len(self.repro_on_fixed_kernel(hash, case, [each]))>0:
                                 dst = "{}/gopath/src/github.com/google/syzkaller/workdir/testcase-{}".format(self.current_case_path, hash[:7])
                                 shutil.copy(testcase_path, dst)
                                 with open(testcase_path, 'r') as f:

@@ -16,7 +16,10 @@ class Crawler:
                  keyword=[''],
                  max_retrieve=10, debug=False):
         self.url = url
-        self.keyword = keyword
+        if type(keyword) == list:
+            self.keyword = keyword
+        else:
+            print("keyword must be a list")
         self.max_retrieve = max_retrieve
         self.cases = {}
         self.patches = {}
@@ -40,8 +43,13 @@ class Crawler:
 
     def run(self):
         cases_hash = self.gather_cases()
-        for hash in cases_hash:
-            self.retreive_case(hash)
+        for each in cases_hash:
+            if 'Patch' in each:
+                patch_url = each['Patch']
+                if patch_url in self.patches:
+                    continue
+                self.patches[patch_url] = True
+            self.retreive_case(each['Hash'])
 
     def run_one_case(self, hash):
         self.logger.info("retreive one case: %s",hash)
@@ -83,6 +91,7 @@ class Crawler:
             self.logger.error("error occur in gather_cases")
             return
         count = 0
+        res = []
         for table in tables:
             self.logger.info("table caption {}".format(table.caption.text))
             for case in table.tbody.contents:
@@ -92,12 +101,19 @@ class Crawler:
                         continue
                     for keyword in self.keyword:
                         if keyword in title.text or keyword=='':
+                            crash = {}
                             commit_list = case.find('td', {"class": "commit_list"})
+                            crash['Title'] = title.text
+                            stats = case.find_all('td', {"class": "stat"})
+                            crash['Repro'] = stats[0].text
+                            crash['Bisected'] = stats[1].text
+                            crash['Count'] = stats[2].text
+                            crash['Last'] = stats[3].text
+                            crash['Reported'] = stats[4].text
                             try:
                                 patch_url = commit_list.contents[1].contents[1].attrs['href']
-                                if patch_url in self.patches:
-                                    break
-                                self.patches[patch_url] = True
+                                crash['Closed'] = stats[5].text
+                                crash['Patch'] = patch_url
                             except:
                                 # patch only works on fixed cases
                                 pass
@@ -106,10 +122,12 @@ class Crawler:
                             hash = href[8:]
                             self.logger.debug("[{}] Fetch {}".format(count, hash))
                             self.cases[hash] = {}
+                            crash['Hash'] = hash
+                            res.append(crash)
                             count += 1
+                            break
                     if count == self.max_retrieve:
                         break
-        res = [x for x in self.cases]
         return res
 
     def request_detail(self, hash, index=1):
@@ -184,5 +202,4 @@ class Crawler:
         return tables
 
 if __name__ == '__main__':
-    crawler = Crawler()
-    print(crawler.get_title_of_case("511d0a90ad65cf4ba840e4d1c2762326321bf62f"))
+    pass
