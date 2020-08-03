@@ -49,12 +49,13 @@ class Crawler:
                 if patch_url in self.patches:
                     continue
                 self.patches[patch_url] = True
-            self.retreive_case(each['Hash'])
+            if self.retreive_case(each['Hash']) != -1:
+                self.cases[each['Hash']]['title'] = each['Title']
 
     def run_one_case(self, hash):
         self.logger.info("retreive one case: %s",hash)
-        self.cases[hash] = {}
         self.retreive_case(hash)
+        self.cases[hash]['title'] = self.get_title_of_case(hash)
     
     def get_title_of_case(self, hash=None, text=None):
         if hash==None and text==None:
@@ -70,6 +71,7 @@ class Crawler:
         return title
 
     def retreive_case(self, hash):
+        self.cases[hash] = {}
         detail = self.request_detail(hash)
         if len(detail) < num_of_elements:
             self.logger.error("Failed to get detail of a case {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
@@ -93,7 +95,7 @@ class Crawler:
         count = 0
         res = []
         for table in tables:
-            self.logger.info("table caption {}".format(table.caption.text))
+            #self.logger.info("table caption {}".format(table.caption.text))
             for case in table.tbody.contents:
                 if type(case) == element.Tag:
                     title = case.find('td', {"class": "title"})
@@ -121,7 +123,6 @@ class Crawler:
                             href = title.next.attrs['href']
                             hash = href[8:]
                             self.logger.debug("[{}] Fetch {}".format(count, hash))
-                            self.cases[hash] = {}
                             crash['Hash'] = hash
                             res.append(crash)
                             count += 1

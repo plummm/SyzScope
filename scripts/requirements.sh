@@ -60,6 +60,12 @@ if [ ! -f "$TOOLS_PATH/.stamp/MAKE_GCC" ]; then
   mv gcc gcc-9.0.0-20181231
   rm gcc-9.0.0-20181231.tar.gz
 
+  wget https://storage.googleapis.com/syzkaller/gcc-10.1.0-syz.tar.xz > /dev/null
+  tar xf gcc-10.1.0-syz.tar.xz
+  mv gcc-10 gcc-10.1.0-20200507
+  rm gcc-10.1.0-syz.tar.xz
+
+
   #This is for gcc-9
   #if [ ! -f "/usr/lib/x86_64-linux-gnu/libmpfr.so.4" ]; then
   #  sudo ln -s /usr/lib/x86_64-linux-gnu/libmpfr.so.6 /usr/lib/x86_64-linux-gnu/libmpfr.so.4

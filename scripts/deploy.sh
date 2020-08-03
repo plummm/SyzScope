@@ -1,7 +1,7 @@
 #!/bin/bash
 # Xiaochen Zou 2020, University of California-Riverside
 #
-# Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image arch gcc_version
+# Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image arch gcc_version kasan_patch
 
 set -ex
 
@@ -57,8 +57,8 @@ function retrieve_proper_patch() {
   git rev-list 9b1f3e6 | grep $(git rev-parse HEAD) || cp $PATCHES_PATH/syzkaller-9b1f3e6.patch ./syzkaller.patch
 }
 
-if [ $# -ne 11 ]; then
-  echo "Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image arch gcc_version"
+if [ $# -ne 12 ]; then
+  echo "Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image arch gcc_version kasan_patch"
   exit 1
 fi
 
@@ -72,6 +72,7 @@ CATALOG=$8
 IMAGE=$9
 ARCH=${10}
 GCC_VERSION=${11}
+KASAN_PATCH=${12}
 PROJECT_PATH="$(pwd)"
 CASE_PATH=$PROJECT_PATH/work/$CATALOG/$HASH
 PATCHES_PATH=$PROJECT_PATH/patches
@@ -108,7 +109,10 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then
   if [ -d "$GOPATH/src/github.com/google/syzkaller" ]; then
     rm -rf $GOPATH/src/github.com/google/syzkaller
   fi
-  go get -u -d github.com/google/syzkaller/prog
+  mkdir -p $GOPATH/src/github.com/google/ || echo "Dir exists"
+  cd $GOPATH/src/github.com/google/
+  git clone https://github.com/google/syzkaller.git
+  #go get -u -d github.com/google/syzkaller/prog
   #fi
   cd $GOPATH/src/github.com/google/syzkaller || exit 1
   make clean
@@ -165,8 +169,10 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   #make clean CC=$GCC
   #git stash --all || set_git_config
   git checkout -f $COMMIT || (git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1 && git checkout -f $COMMIT)
-  #cp $PATCHES_PATH/kasan.patch ./
-  #patch -p1 -i kasan.patch
+  if [ "$KASAN_PATCH" == "1" ]; then
+    cp $PATCHES_PATH/kasan.patch ./
+    patch -p1 -i kasan.patch
+  fi
   #Add a rejection detector in future
   curl $CONFIG > .config
   make olddefconfig CC=$GCC

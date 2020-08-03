@@ -40,11 +40,6 @@ syz_config_template="""
         }},
         "enable_syscalls" : [
             {3}
-        ],
-        "ignores": [
-            "WARNING",
-            "INFO",
-            "no output"
         ]
 }}"""
 
@@ -122,7 +117,10 @@ class Deployer:
             self.case_info_logger = self.__init_case_logger("{}-info".format(hash))
             url = syzbotCrawler.syzbot_host_url + syzbotCrawler.syzbot_bug_base_url + hash
             self.case_info_logger.info(url)
-            r = self.__run_delopy_script(hash[:7], case)
+            need_patch = 0
+            if self.__need_kasan_patch(case['title']):
+                need_patch = 1
+            r = self.__run_delopy_script(hash[:7], case, need_patch)
             if r != 0:
                 self.logger.error("Error occur in deploy.sh")
                 self.__save_error(hash)
@@ -131,9 +129,10 @@ class Deployer:
             self.crash_checker = CrashChecker(
                 self.project_path,
                 self.current_case_path,
-                3777+self.index,
+                3777,
                 self.logger,
                 self.debug,
+                self.index,
                 gcc=self.gcc)
             i386 = None
             if utilities.regx_match(r'386', case["manager"]):
@@ -142,7 +141,7 @@ class Deployer:
             title = None
             self.logger.info("Try to triger the OOB/UAF by running original poc")
             if not self.__check_stamp(stamp_reproduce_ori_poc, hash[:7], 'incompleted'):
-                report = self.crash_checker.read_crash(case["syz_repro"], case["syzkaller"], None, 0, case["c_repro"], i386)
+                report, trigger = self.crash_checker.read_crash(case["syz_repro"], case["syzkaller"], None, 0, case["c_repro"], i386)
                 if report != []:
                     for each in report:
                         for line in each:
@@ -168,7 +167,7 @@ class Deployer:
                 path = None
                 need_fuzzing = True
                 req = requests.request(method='GET', url=case["syz_repro"])
-                self.__write_config(req.content, hash[:7])
+                self.__write_config(req.content.decode("utf-8"), hash[:7])
                 exitcode = self.run_syzkaller(hash)
                 self.__save_case(hash, exitcode, case, need_fuzzing)
         else:
@@ -185,7 +184,7 @@ class Deployer:
         # First round, we only enable limited syscalls.
         # If failed to trigger a write crash, we enable more syscalls to run it again
         if self.logger.level == logging.DEBUG:
-            p = Popen([syzkaller, "--config={}/workdir/{}-poc.cfg".format(self.syzkaller_path, hash[:7]), "--debug", "--poc"],
+            p = Popen([syzkaller, "--config={}/workdir/{}-poc.cfg".format(self.syzkaller_path, hash[:7]), "-debug", "-poc"],
                   stdout=PIPE,
                   stderr=STDOUT
                   )
@@ -193,7 +192,7 @@ class Deployer:
                 self.__log_subprocess_output(p.stdout, logging.INFO)
             exitcode = p.wait()
 
-            p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash[:7]), "--debug"],
+            p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash[:7]), "-debug"],
                 stdout=PIPE,
                 stderr=STDOUT
                 )
@@ -201,7 +200,7 @@ class Deployer:
                 self.__log_subprocess_output(p.stdout, logging.INFO)
             exitcode = p.wait()
         else:
-            p = Popen([syzkaller, "--config={}/workdir/{}-poc.cfg".format(self.syzkaller_path, hash[:7]), "--poc"],
+            p = Popen([syzkaller, "--config={}/workdir/{}-poc.cfg".format(self.syzkaller_path, hash[:7]), "-poc"],
                 stdout = PIPE,
                 stderr = STDOUT
                 )
@@ -229,7 +228,7 @@ class Deployer:
         if utilities.regx_match(r'386', case["manager"]):
             i386 = True
         log = case["log"]
-        path = None
+        res = []
         if not self.__check_confirmed(hash):
             """self.logger.info("Compare with original PoC")
             res = self.crash_checker.run(syz_repro, syz_commit, log, commit, config, c_repro, i386)
@@ -252,8 +251,8 @@ class Deployer:
                 self.logger.info("Write to confirmedSuccess")
                 self.__write_to_confirmed_sucess(hash)
             """
-            return path
-        return None
+            return res
+        return []
     
     def repro_on_fixed_kernel(self, hash, case, crashes_path=None):
         syz_repro = case["syz_repro"]
@@ -287,7 +286,7 @@ class Deployer:
         self.logger.info("run: scripts/linux-clone.sh {} {}".format(self.index, self.linux_path, index))
         call(["scripts/linux-clone.sh", self.linux_path, index])
 
-    def __run_delopy_script(self, hash, case):
+    def __run_delopy_script(self, hash, case, kasan_patch=0):
         commit = case["commit"]
         syzkaller = case["syzkaller"]
         config = case["config"]
@@ -303,7 +302,7 @@ class Deployer:
         chmodX("scripts/deploy.sh")
         index = str(self.index)
         self.logger.info("run: scripts/deploy.sh".format(self.index))
-        p = Popen(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase, index, self.catalog, image, self.arch, self.gcc],
+        p = Popen(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase, index, self.catalog, image, self.arch, self.gcc, str(kasan_patch)],
                 stdout=PIPE,
                 stderr=STDOUT
                 )
@@ -315,7 +314,7 @@ class Deployer:
 
     def __write_config(self, testcase, hash):
         dependent_syscalls = []
-        syscalls = self.__extract_syscalls(testcase.decode("utf-8"))
+        syscalls = self.__extract_syscalls(testcase)
         if syscalls == []:
             self.logger.info("No syscalls found in testcase: {}".format(self.index, testcase))
             return -1
@@ -458,9 +457,10 @@ class Deployer:
             self.__create_stamp(stamp_finish_fuzzing)
             if self.__success_check(hash[:7]):
                 if need_fuzzing:
-                    path = self.confirmSuccess(hash, case)
-                    if path != None:
-                        self.__copy_new_capability(path, need_fuzzing, title)
+                    paths = self.confirmSuccess(hash, case)
+                    if len(paths) > 0:
+                        for each in paths:
+                            self.__copy_new_capability(each, need_fuzzing, title)
                         self.__move_to_succeed()
                     else:
                         self.__move_to_completed()
@@ -473,6 +473,7 @@ class Deployer:
                 if len(crash_path) == 0 or secondary_fuzzing:
                     self.__move_to_completed()
                 else:
+                    need_patch = 0
                     for each in crash_path:
                         testcase_path = os.path.join(each, "repro.prog")
                         if os.path.isfile(testcase_path):
@@ -484,8 +485,14 @@ class Deployer:
                                     self.logger.info("OOB/UAF Read detected, rerun syzkaller base on new testcase {}".format(testcase_path))
                                     raw_text = f.readlines()
                                     self.__write_config("".join(raw_text),hash)
+                                    if need_patch == 0:
+                                        need_patch = 1
+                                        self.__run_delopy_script(hash[:7], case, need_patch)
                                     exitcode = self.run_syzkaller(hash)
                                     self.__save_case(hash, exitcode, case, need_fuzzing, secondary_fuzzing=True)
+                                    return
+                    self.__move_to_completed()
+
     
     def __copy_new_capability(self, path, need_fuzzing, title):
         output = os.path.join(self.current_case_path, "output")
@@ -510,11 +517,8 @@ class Deployer:
                 self.logger.error("Error: crash path is None")
                 return
             src_files = os.listdir(path)
-            for file_name in src_files:
-                full_file_name = os.path.join(path, file_name)
-                if os.path.isfile(full_file_name):
-                    shutil.copy(full_file_name, output)
-
+            base = os.path.basename(path)
+            shutil.copytree(path, os.path.join(output, base))
 
     def __save_error(self, hash):
         self.logger.info("case {} encounter an error. See log for details.".format(hash))
@@ -664,3 +668,6 @@ class Deployer:
                 if line == hash:
                     return True
         return False
+    
+    def __need_kasan_patch(self, title):
+        return utilities.regx_match(r'slab-out-of-bounds Read', title)

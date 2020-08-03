@@ -646,10 +646,10 @@ index 62acba58..db20d551 100644
  	for _, c := range p.Calls {
 diff --git a/prog/mutation_custom.go b/prog/mutation_custom.go
 new file mode 100644
-index 00000000..66cba158
+index 00000000..6c125a01
 --- /dev/null
 +++ b/prog/mutation_custom.go
-@@ -0,0 +1,238 @@
+@@ -0,0 +1,240 @@
 +package prog
 +
 +import (
@@ -754,6 +754,7 @@ index 00000000..66cba158
 +		return false
 +	}
 +	idx := r.biasedRand(len(p.Calls)+1-NOfCalls, 5) + NOfCalls
++
 +	if NOfCalls == len(p.Calls) {
 +		idx = len(p.Calls)
 +	}
@@ -883,6 +884,7 @@ index 00000000..66cba158
 +	if len(sProg) < len(PocProg) {
 +		return false
 +	}
++
 +	if strings.Compare(PocProg, sProg[:len(PocProg)]) == 0 {
 +		return true
 +	}
@@ -915,7 +917,7 @@ index bf6d66e9..407a3e83 100644
  	return
  }
 diff --git a/syz-fuzzer/fuzzer.go b/syz-fuzzer/fuzzer.go
-index b6e8be4b..3ec5dd0c 100644
+index b6e8be4b..9fef8907 100644
 --- a/syz-fuzzer/fuzzer.go
 +++ b/syz-fuzzer/fuzzer.go
 @@ -102,6 +102,8 @@ const (
@@ -946,29 +948,21 @@ index b6e8be4b..3ec5dd0c 100644
  	for pid := 0; pid < *flagProcs; pid++ {
  		proc, err := newProc(fuzzer, pid)
  		if err != nil {
-@@ -259,7 +262,14 @@ func main() {
+@@ -259,6 +262,13 @@ func main() {
  		go proc.loop()
  	}
  
--	fuzzer.pollLoop()
 +	MutatingLoop, err1 := newProc(fuzzer, *flagProcs)
 +	if err1 != nil {
 +		log.Fatalf("failed to create proc: %v", err)
 +	}
 +	fuzzer.procs = append(fuzzer.procs, MutatingLoop)
 +	go MutatingLoop.checkMutatingQueueLoop()
-+
-+	fuzzer.pollLoop(*flagPoC)
++	prog.ExecutePoCOnly = *flagPoC
+ 	fuzzer.pollLoop()
  }
  
- // Returns gateCallback for leak checking if enabled.
-@@ -310,11 +320,12 @@ func (fuzzer *Fuzzer) blacklistDataRaceFrames(frames []string) {
- 	log.Logf(0, "%s", output)
- }
- 
--func (fuzzer *Fuzzer) pollLoop() {
-+func (fuzzer *Fuzzer) pollLoop(flagPoC bool) {
- 	var execTotal uint64
+@@ -315,6 +325,7 @@ func (fuzzer *Fuzzer) pollLoop() {
  	var lastPoll time.Time
  	var lastPrint time.Time
  	ticker := time.NewTicker(3 * time.Second).C
@@ -980,27 +974,26 @@ index b6e8be4b..3ec5dd0c 100644
  			log.Logf(0, "alive, executed %v", execTotal)
  			lastPrint = time.Now()
  		}
-+		if !flagPoC && time.Since(lastEnqueue) > 4*time.Minute && time.Since(lastEnqueue) < 5*time.Minute && prog.ExecutePoCOnly && len(fuzzer.workQueue.triageCandidate)+len(fuzzer.workQueue.candidate)+len(fuzzer.workQueue.triage)+len(fuzzer.workQueue.smash)+len(fuzzer.workQueue.grow) == 0 {
-+			log.Logf(0, "set fuzzer free")
-+			fuzzer.sendSignal("set fuzzer free")
++		if time.Since(lastEnqueue) > 4*time.Minute && time.Since(lastEnqueue) < 5*time.Minute && prog.ExecutePoCOnly && len(fuzzer.workQueue.triageCandidate)+len(fuzzer.workQueue.candidate)+len(fuzzer.workQueue.triage)+len(fuzzer.workQueue.smash)+len(fuzzer.workQueue.grow) == 0 {
++			//log.Logf(0, "set fuzzer free")
++			//fuzzer.sendSignal("set fuzzer free")
 +			//prog.ExecutePoCOnly = false
 +		}
  		if poll || time.Since(lastPoll) > 10*time.Second {
  			needCandidates := fuzzer.workQueue.wantCandidates()
  			if poll && !needCandidates {
-@@ -367,8 +383,10 @@ func (fuzzer *Fuzzer) poll(needCandidates bool, stats map[string]uint64) bool {
+@@ -367,9 +383,11 @@ func (fuzzer *Fuzzer) poll(needCandidates bool, stats map[string]uint64) bool {
  	for _, inp := range r.NewInputs {
  		fuzzer.addInputFromAnotherFuzzer(inp)
  	}
--	for _, candidate := range r.Candidates {
--		fuzzer.addCandidateInput(candidate)
-+	if !prog.ExecutePoCOnly {
-+		for _, candidate := range r.Candidates {
-+			fuzzer.addCandidateInput(candidate)
-+		}
++	//if !prog.ExecutePoCOnly {
+ 	for _, candidate := range r.Candidates {
+ 		fuzzer.addCandidateInput(candidate)
  	}
++	//}
  	if needCandidates && len(r.Candidates) == 0 && atomic.LoadUint32(&fuzzer.triagedCandidates) == 0 {
  		atomic.StoreUint32(&fuzzer.triagedCandidates, 1)
+ 	}
 @@ -541,3 +559,23 @@ func parseOutputType(str string) OutputType {
  		return OutputNone
  	}
@@ -1026,15 +1019,10 @@ index b6e8be4b..3ec5dd0c 100644
 +	}
 +}
 diff --git a/syz-fuzzer/proc.go b/syz-fuzzer/proc.go
-index d815a58b..9be359d4 100644
+index d815a58b..9151ad87 100644
 --- a/syz-fuzzer/proc.go
 +++ b/syz-fuzzer/proc.go
-@@ -9,10 +9,12 @@ import (
- 	"math/rand"
- 	"os"
- 	"runtime/debug"
-+	"strings"
- 	"sync/atomic"
+@@ -13,6 +13,7 @@ import (
  	"syscall"
  	"time"
  
@@ -1042,7 +1030,7 @@ index d815a58b..9be359d4 100644
  	"github.com/google/syzkaller/pkg/cover"
  	"github.com/google/syzkaller/pkg/hash"
  	"github.com/google/syzkaller/pkg/ipc"
-@@ -76,12 +78,17 @@ func (proc *Proc) loop() {
+@@ -76,12 +77,17 @@ func (proc *Proc) loop() {
  				proc.execute(proc.execOpts, item.p, item.flags, StatCandidate)
  			case *WorkSmash:
  				proc.smashInput(item)
@@ -1054,13 +1042,13 @@ index d815a58b..9be359d4 100644
  			continue
  		}
  
-+		if prog.ExecutePoCOnly {
-+			continue
-+		}
++		//if prog.ExecutePoCOnly {
++		continue
++		//}
  		ct := proc.fuzzer.choiceTable
  		fuzzerSnapshot := proc.fuzzer.snapshot()
  		if len(fuzzerSnapshot.corpus) == 0 || i%generatePeriod == 0 {
-@@ -177,6 +184,18 @@ func (proc *Proc) triageInput(item *WorkTriage) {
+@@ -177,6 +183,18 @@ func (proc *Proc) triageInput(item *WorkTriage) {
  	}
  }
  
@@ -1079,7 +1067,7 @@ index d815a58b..9be359d4 100644
  func reexecutionSuccess(info *ipc.ProgInfo, oldInfo *ipc.CallInfo, call int) bool {
  	if info == nil || len(info.Calls) == 0 {
  		return false
-@@ -208,7 +227,7 @@ func (proc *Proc) smashInput(item *WorkSmash) {
+@@ -208,7 +226,7 @@ func (proc *Proc) smashInput(item *WorkSmash) {
  		proc.executeHintSeed(item.p, item.call)
  	}
  	fuzzerSnapshot := proc.fuzzer.snapshot()
@@ -1088,7 +1076,7 @@ index d815a58b..9be359d4 100644
  		p := item.p.Clone()
  		p.Mutate(proc.rnd, prog.RecommendedCalls, proc.fuzzer.choiceTable, fuzzerSnapshot.corpus)
  		log.Logf(1, "#%v: smash mutated", proc.pid)
-@@ -250,7 +269,10 @@ func (proc *Proc) executeHintSeed(p *prog.Prog, call int) {
+@@ -250,7 +268,10 @@ func (proc *Proc) executeHintSeed(p *prog.Prog, call int) {
  func (proc *Proc) execute(execOpts *ipc.ExecOpts, p *prog.Prog, flags ProgTypes, stat Stat) *ipc.ProgInfo {
  	info := proc.executeRaw(execOpts, p, stat)
  	calls, extra := proc.fuzzer.checkNewSignal(p, info)
@@ -1100,7 +1088,7 @@ index d815a58b..9be359d4 100644
  		proc.enqueueCallTriage(p, flags, callIndex, info.Calls[callIndex])
  	}
  	if extra {
-@@ -343,3 +365,41 @@ func (proc *Proc) logProgram(opts *ipc.ExecOpts, p *prog.Prog) {
+@@ -343,3 +364,41 @@ func (proc *Proc) logProgram(opts *ipc.ExecOpts, p *prog.Prog) {
  		log.Fatalf("unknown output type: %v", proc.fuzzer.outputType)
  	}
  }
@@ -1128,12 +1116,12 @@ index d815a58b..9be359d4 100644
 +			//sign := pq.Prog.Signal.Deserialize()
 +			//fuzzer.addInputToCorpus(p, sign, sig)
 +			flags := ProgNormal
-+			//prog.NOfCalls = pq.NOfCalls
-+			//prog.PocProg = string(pq.PocProg)
-+			if strings.Compare(string(pq.Prog), string(p.Serialize())) != 0 {
-+				//prog.PocProg = string(p.Serialize())
-+				log.Logf(0, "Prog is not minimized\n")
-+			}
++			prog.NOfCalls = pq.NOfCalls
++			prog.PocProg = string(pq.PocProg)
++			//if strings.Compare(string(pq.Prog), string(p.Serialize())) != 0 {
++			//prog.PocProg = string(p.Serialize())
++			//	log.Logf(0, "Prog is not minimized\n")
++			//}
 +			proc.fuzzer.workQueue.enqueue(&WorkGrow{
 +				p:     p,
 +				flags: flags,
@@ -1226,7 +1214,7 @@ index 62648336..e31b664a 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index 2a0b7dd4..6b5bd129 100644
+index 2a0b7dd4..10b21284 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
 @@ -6,6 +6,7 @@ package main
@@ -1308,22 +1296,27 @@ index 2a0b7dd4..6b5bd129 100644
  			if res.err != nil && shutdown != nil {
  				log.Logf(0, "%v", res.err)
  			}
-@@ -396,7 +418,7 @@ func (mgr *Manager) vmLoop() {
+@@ -396,9 +418,11 @@ func (mgr *Manager) vmLoop() {
  			// which we detect as "lost connection". Don't save that as crash.
  			if shutdown != nil && res.crash != nil {
  				needRepro := mgr.saveCrash(res.crash)
 -				if needRepro {
-+				if needRepro && succeed <= 5 && !strings.Contains(res.crash.Title, "no output from test machine") {
- 					log.Logf(1, "loop: add pending repro for '%v'", res.crash.Title)
- 					pendingRepro[res.crash] = true
+-					log.Logf(1, "loop: add pending repro for '%v'", res.crash.Title)
+-					pendingRepro[res.crash] = true
++				if isCriticalCrash(res.crash.Report.Title) {
++					if needRepro && succeed <= 5 && res.crash.Report.Title != vm.NoOutputCrash && res.crash.Report.Title != "lost connection to test machine" {
++						log.Logf(1, "loop: add pending repro for '%v'", res.crash.Title)
++						pendingRepro[res.crash] = true
++					}
  				}
-@@ -423,6 +445,15 @@ func (mgr *Manager) vmLoop() {
+ 			}
+ 		case res := <-reproDone:
+@@ -423,6 +447,14 @@ func (mgr *Manager) vmLoop() {
  				}
  			} else {
  				mgr.saveRepro(res.res, res.stats, res.hub)
 +				log.Logf(0, "SaveRepro %s", res.res.Report.Title)
-+				if strings.Contains(res.res.Report.Title, "out-of-bounds Write") ||
-+					strings.Contains(res.res.Report.Title, "use-after-free Write") {
++				if isCriticalCrash(res.res.Report.Title) {
 +					succeed++
 +					if succeed == 1 {
 +						log.Logf(0, "Save to success file")
@@ -1333,7 +1326,7 @@ index 2a0b7dd4..6b5bd129 100644
  			}
  		case <-shutdown:
  			log.Logf(1, "loop: shutting down...")
-@@ -528,7 +559,7 @@ func (mgr *Manager) loadCorpus() {
+@@ -528,7 +560,7 @@ func (mgr *Manager) loadCorpus() {
  	mgr.phase = phaseLoadedCorpus
  }
  
@@ -1342,7 +1335,7 @@ index 2a0b7dd4..6b5bd129 100644
  	mgr.checkUsedFiles()
  	inst, err := mgr.vmPool.Create(index)
  	if err != nil {
-@@ -569,14 +600,17 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
+@@ -569,14 +601,18 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
  	defer atomic.AddUint32(&mgr.numFuzzing, ^uint32(0))
  	cmd := instance.FuzzerCmd(fuzzerBin, executorCmd, fmt.Sprintf("vm-%v", index),
  		mgr.cfg.TargetOS, mgr.cfg.TargetArch, fwdAddr, mgr.cfg.Sandbox, procs, fuzzerV,
@@ -1352,6 +1345,7 @@ index 2a0b7dd4..6b5bd129 100644
  	if err != nil {
  		return nil, fmt.Errorf("failed to run fuzzer: %v", err)
  	}
++	prog.ExecutePoCOnly = *flagPoC
  
 -	rep := inst.MonitorExecution(outc, errc, mgr.reporter, vm.ExitTimeout)
 +	rep := inst.MonitorExecution(outc, errc, mgr.reporter, vm.ExitTimeout, managerStart, timeLimit)
@@ -1362,7 +1356,7 @@ index 2a0b7dd4..6b5bd129 100644
  		// This is the only "OK" outcome.
  		log.Logf(0, "vm-%v: running for %v, restarting", index, time.Since(start))
  		return nil, nil
-@@ -845,6 +879,12 @@ func (mgr *Manager) saveRepro(res *repro.Result, stats *repro.Stats, hub bool) {
+@@ -845,6 +881,12 @@ func (mgr *Manager) saveRepro(res *repro.Result, stats *repro.Stats, hub bool) {
  	if len(cprogText) > 0 {
  		osutil.WriteFile(filepath.Join(dir, "repro.cprog"), cprogText)
  	}
@@ -1375,8 +1369,17 @@ index 2a0b7dd4..6b5bd129 100644
  	saveReproStats(filepath.Join(dir, "repro.stats"), stats)
  }
  
+@@ -1187,3 +1229,8 @@ func publicWebAddr(addr string) string {
+ 	}
+ 	return "http://" + addr
+ }
++
++func isCriticalCrash(title string) bool {
++	return strings.Contains(title, "out-of-bounds Write") ||
++		strings.Contains(title, "use-after-free Write")
++}
 diff --git a/syz-manager/rpc.go b/syz-manager/rpc.go
-index 91e31dbd..ddbdb8e2 100644
+index 91e31dbd..e43c55fd 100644
 --- a/syz-manager/rpc.go
 +++ b/syz-manager/rpc.go
 @@ -10,6 +10,7 @@ import (
@@ -1395,7 +1398,7 @@ index 91e31dbd..ddbdb8e2 100644
  }
  
  func startRPCServer(mgr *Manager) (int, error) {
-@@ -309,3 +311,43 @@ func (serv *RPCServer) Poll(a *rpctype.PollArgs, r *rpctype.PollRes) error {
+@@ -309,3 +311,44 @@ func (serv *RPCServer) Poll(a *rpctype.PollArgs, r *rpctype.PollRes) error {
  		a.Name, len(r.Candidates), len(r.NewInputs), len(r.MaxSignal.Elems))
  	return nil
  }
@@ -1433,18 +1436,19 @@ index 91e31dbd..ddbdb8e2 100644
 +}
 +
 +func (serv *RPCServer) GetCallsFromFuzzer(a *rpctype.GetCallsFromFuzzerArgs, r *int) error {
-+	err := serv.mgr.parseCustomizedTestcase(*a)
++	go serv.mgr.parseCustomizedTestcase(*a)
++	/*err := serv.mgr.parseCustomizedTestcase(*a)
 +	if err != nil {
 +		log.Logf(0, "%v", err)
-+	}
++	}*/
 +	return nil
 +}
 diff --git a/syz-manager/utilities.go b/syz-manager/utilities.go
 new file mode 100644
-index 00000000..bad071f8
+index 00000000..770d012c
 --- /dev/null
 +++ b/syz-manager/utilities.go
-@@ -0,0 +1,64 @@
+@@ -0,0 +1,72 @@
 +package main
 +
 +import (
@@ -1499,10 +1503,18 @@ index 00000000..bad071f8
 +			prog.NOfCalls = len(p.Calls)
 +			prog.PocProg = string(testcase)
 +			courier.AppendTestcase(testcase, testcase, prog.NOfCalls)
-+			for i := 0; i < 500; i++ {
++			for i := 1; i < 500; i++ {
 +				p := p.Clone()
 +				p.Mutate(rnd, prog.RecommendedCalls, choiceTable, corpus)
 +				courier.AppendTestcase(p.Serialize(), []byte(prog.PocProg), prog.NOfCalls)
++			}
++			if !prog.ExecutePoCOnly {
++				for {
++					p := p.Clone()
++					p.Mutate(rnd, prog.RecommendedCalls, choiceTable, corpus)
++					courier.AppendTestcase(p.Serialize(), []byte(prog.PocProg), prog.NOfCalls)
++					time.Sleep(1 * time.Second)
++				}
 +			}
 +			return nil
 +		}

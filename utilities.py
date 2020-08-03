@@ -98,8 +98,9 @@ def get_patch_commit(hash):
         req = request_get(url)
         soup = BeautifulSoup(req.text, "html.parser")
         try:
-            fix = soup.body.span.contents[1]
-            url = fix.attrs['href']
+            fix = soup.find('span', {'class': 'mono'})
+            #fix = soup.body.span.contents[1]
+            url = fix.contents[1].attrs['href']
             m = re.search(r'id=(\w*)', url)
             if m != None and m.groups() != None:
                 res = m.groups()[0]
@@ -321,6 +322,7 @@ def set_gcc_version(time):
     t1 = datetime.datetime(2018, 3, 1)
     t2 = datetime.datetime(2018, 4, 12)
     t3 = datetime.datetime(2018, 12, 31)
+    t4 = datetime.datetime(2020, 5, 7)
     if time < t1:
         return "gcc-7"
     if time >= t1 and time < t2:
@@ -331,6 +333,8 @@ def set_gcc_version(time):
         return "gcc-8.0.1-20180412"
     if time >= t3:
         return "gcc-9.0.0-20181231"
+    if time >= t4:
+        return "gcc-10.1.0-20200507"
     return ""
 
 def extract_existed_crash(path, regx):
@@ -399,13 +403,17 @@ def cmp_case_with_last_day(case):
     return -1
 
 if __name__ == '__main__':
+    hashs = urlsOfCases('succeed')
+    [race, non_race] = get_types_of_cases(hashs)
+    print('non_race')
+    for e in non_race:
+        print(e)
+    print('race')
+    for e in race:
+        print(e)
+    """
     crashes = load_cases_from_json('./cases_.json')
     sorted_cases = sorted(crashes, key=cmp_case_with_last_day)
-    """f = open('cases_sorted', 'w')
-    for each in sorted_cases:
-        text = "{} {} {}".format(each['Last'],each['Title'],each['Patch'])
-        f.write(text+'\n')
-    """
     # libraries
     import numpy as np
     import seaborn as sns
@@ -441,5 +449,6 @@ if __name__ == '__main__':
     ax.plot(x, y)
     #ax.fill_between(x, 0, y, alpha=.3)
     ax.set(xlim=(0, len(x) - 1), ylim=(0, None), xticks=x)
+    """
 
     
