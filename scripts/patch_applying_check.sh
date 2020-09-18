@@ -51,6 +51,7 @@ git format-patch -1 $PATCH --stdout > fixed.patch
 patch -p1 -N -i fixed.patch || jump_to_the_patch
 patch -p1 -R < fixed.patch
 curl $CONFIG > .config
+sed -i "s/CONFIG_BUG_ON_DATA_CORRUPTION=y/# CONFIG_BUG_ON_DATA_CORRUPTION is not set/g" .config
 make olddefconfig CC=$GCC
 make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_exit make.log
 exit 0

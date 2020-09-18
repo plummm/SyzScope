@@ -12,7 +12,7 @@ def args_parse():
                                                  'eg. python main.py -i 7fd1cbe3e1d2b3f0366d5026854ee5754d451405\n'
                                                  'eg. python main.py -k "slab-out-of-bounds Read" "slab-out-of-bounds Write"')
     parser.add_argument('-i', '--input', nargs='?', action='store',
-                        help='Directly run a case by it\'s hash. -u, -m ,and -k will be ignored if -i is enabled.')
+                        help='The input should be a valid hash or a file contains multiple hashs. -u, -m ,and -k will be ignored if -i is enabled.')
     parser.add_argument('-u', '--url', nargs='?', action='store',
                         default="https://syzkaller.appspot.com/upstream/fixed",
                         help='Indicate an URL for automatically crawling and running.\n'
@@ -43,10 +43,16 @@ def args_parse():
                         '(default value is 53777)')
     parser.add_argument('--ignore', nargs='?', action='store',
                         help='A file contains cases hashs which are ignored. One line for each hash.')
+    parser.add_argument('--alert', nargs='*', action='store',
+                        default=[''],
+                        help='Set alert for specific crash description')
     parser.add_argument('-t', '--time', nargs='?',
                         default='8',
                         help='Time for each running(in hour)\n'
                         '(default value is 8 hour)')
+    parser.add_argument('-ff', '--force-fuzz',
+                        action='store_true',
+                        help='Force to do fuzzing even detect write without mutating')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug mode')
 
@@ -58,6 +64,7 @@ def print_args_info(args):
     print("[*] url: {}".format(args.url))
     print("[*] max: {}".format(args.max))
     print("[*] key: {}".format(args.key))
+    print("[*] alert: {}".format(args.alert))
 
 def check_kvm():
     st = os.stat("scripts/check_kvm.sh")
@@ -137,6 +144,6 @@ if __name__ == '__main__':
     l = list(crawler.cases.keys())
     total = len(l)
     for i in range(0,min(parallel_max,len(crawler.cases))):
-        deployer.append(Deployer(i, args.debug, args.force, int(args.syzkaller_port), args.replay, int(args.linux), int(args.time)))
+        deployer.append(Deployer(i, args.debug, args.force, int(args.syzkaller_port), args.replay, int(args.linux), int(args.time), args.force_fuzz, args.alert))
         x = threading.Thread(target=deploy_one_case, args=(i,))
         x.start()

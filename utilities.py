@@ -26,9 +26,8 @@ def get_hash_from_log(path):
                 return m.groups()[0]  
     return None
 
-def urlsOfCases(folder, type=FOLDER):
+def urlsOfCases(dirOfCases, type=FOLDER):
     res = []
-    dirOfCases = "{}/work/{}".format(os.getcwd(), folder)
     paths = []
 
     if type == FOLDER:
@@ -403,14 +402,9 @@ def cmp_case_with_last_day(case):
     return -1
 
 if __name__ == '__main__':
-    hashs = urlsOfCases('succeed')
-    [race, non_race] = get_types_of_cases(hashs)
-    print('non_race')
-    for e in non_race:
-        print(e)
-    print('race')
-    for e in race:
-        print(e)
+    res = urlsOfCases("UAF_OOB_READ_BACKUP2/completed/")
+    for each in res:
+        print(each)
     """
     crashes = load_cases_from_json('./cases_.json')
     sorted_cases = sorted(crashes, key=cmp_case_with_last_day)

@@ -115,7 +115,7 @@ class CrashChecker:
             key = os.path.basename(path)
             path_repro = os.path.join(path, "repro.prog")
             self.case_logger.info("Go for {}".format(path_repro))
-            ori_crash_report, trigger = self.read_crash(path_repro, syz_commit, None, 1, c_repro, i386)
+            ori_crash_report, trigger = self.read_crash(path_repro, syz_commit, None, 0, c_repro, i386)
             if ori_crash_report != []:
                 if trigger:
                     reproduceable[key] = CONFIRM
@@ -323,7 +323,18 @@ class CrashChecker:
     def trigger_ori_crash(self, syz_repro, syz_commit, c_repro, i386, th_index,fixed=0):
         res = []
         trgger_high_risk_bug = False
-        qemu_log = open("{}/poc/qemu-{}.log".format(self.case_path, th_index), "a")
+        repro_type = utilities.CASE
+        if utilities.regx_match(r'https:\/\/syzkaller\.appspot\.com\/', syz_repro):
+            repro_type = utilities.URL
+        c_hash = ""
+        if repro_type == utilities.CASE:
+            try:
+                c_hash = syz_repro.split('/')[-2]
+            except:
+                self.logger.info("Failed to parse repro {}".format(syz_repro))
+        else:
+            c_hash = syz_commit + "-ori"
+        qemu_log = open("{}/poc/qemu-{}-{}.log".format(self.case_path, c_hash, th_index), "a")
         qemu_log.write("QEMU-{} launched. Fixed={}\n".format(th_index, fixed))
         p = Popen(["qemu-system-x86_64", "-m", "2G", "-smp", "2", 
                     "-net", "nic,model=e1000", "-net", "user,host=10.0.2.10,hostfwd=tcp::{}-:22".format(self.ssh_port+th_index),
@@ -361,9 +372,6 @@ class CrashChecker:
                 if self.debug:
                     print(line)
                 if utilities.regx_match(startup_regx, line):
-                    repro_type = utilities.CASE
-                    if utilities.regx_match(r'https:\/\/syzkaller\.appspot\.com\/', syz_repro):
-                        repro_type = utilities.URL
                     utilities.chmodX("scripts/upload-exp.sh")
                     p2 = Popen(["scripts/upload-exp.sh", self.case_path, syz_repro,
                         str(self.ssh_port+th_index), self.image_path, syz_commit, str(repro_type), str(c_repro), str(i386), str(fixed), self.gcc],
@@ -772,7 +780,7 @@ def reproduce_one_case(index):
         gcc = utilities.set_gcc_version(time_parser.parse(case["time"]))
         checker = CrashChecker(project_path, case_path, default_port, logger, args.debug, offset, gcc=gcc)
         checker.case_logger.info("=============================A reproducing process starts=============================")
-        if not args.fixed_only:
+        if args.identify_by_trace:
             if args.reproduce:
                 res = checker.run(syz_repro, syz_commit, None, commit, config, c_repro, i386)
             else:
@@ -782,7 +790,7 @@ def reproduce_one_case(index):
                 n = checker.diff_testcase(res[1], syz_repro)
                 checker.logger.info("difference of characters of two testcase: {}".format(n))
                 checker.logger.info("successful crash: {}".format(res[1]))
-        if not args.unfixed_only:
+        if args.identify_by_patch:
             commit = utilities.get_patch_commit(hash)
             if commit != None:
                 checker.repro_on_fixed_kernel(syz_commit, case["commit"], config, c_repro, i386, commit)
@@ -813,9 +821,9 @@ def args_parse():
                         default='3777',
                         help='The default port that is used by reproducing\n'
                         '(default value is 3777)')
-    parser.add_argument('--fixed-only', action='store_true',
+    parser.add_argument('--identify-by-trace', '-ibt', action='store_true',
                         help='Reproduce on fixed kernel')
-    parser.add_argument('--unfixed-only', action='store_true',
+    parser.add_argument('--identify-by-patch', '-ibp', action='store_true',
                         help='Reproduce on unfixed kernel')
     parser.add_argument('--test-original-poc', action='store_true',
                         help='Reproduce with original PoC')

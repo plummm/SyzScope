@@ -175,6 +175,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   fi
   #Add a rejection detector in future
   curl $CONFIG > .config
+  sed -i "s/CONFIG_BUG_ON_DATA_CORRUPTION=y/# CONFIG_BUG_ON_DATA_CORRUPTION is not set/g" .config
   make olddefconfig CC=$GCC
   make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_exit make.log
   touch THIS_KERNEL_HAS_BEEN_USED

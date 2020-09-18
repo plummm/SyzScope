@@ -44,7 +44,7 @@ syz_config_template="""
 }}"""
 
 class Deployer:
-    def __init__(self, index, debug=False, force=False, port=default_port, replay='incomplete', linux_index=-1, time=8):
+    def __init__(self, index, debug=False, force=False, port=default_port, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[]):
         self.linux_path = "linux"
         self.project_path = ""
         self.syzkaller_path = ""
@@ -61,6 +61,8 @@ class Deployer:
         self.image_switching_date = datetime.datetime(2020, 3, 15)
         self.arch = None
         self.gcc = None
+        self.force_fuzz = force_fuzz
+        self.alert = alert
         if replay == None:
             self.replay = False
             self.catalog = 'incomplete'
@@ -160,16 +162,17 @@ class Deployer:
                                 self.logger.info("Write to confirmed success")
                                 self.__write_to_sucess(hash)
                                 self.__write_to_confirmed_sucess(hash)
-                                self.__save_case(hash, 0, case, need_fuzzing, title=title)
                                 break
                 self.__create_stamp(stamp_reproduce_ori_poc)
-            if not write_without_mutating:
+            if self.force_fuzz or not write_without_mutating:
                 path = None
                 need_fuzzing = True
                 req = requests.request(method='GET', url=case["syz_repro"])
                 self.__write_config(req.content.decode("utf-8"), hash[:7])
                 exitcode = self.run_syzkaller(hash)
                 self.__save_case(hash, exitcode, case, need_fuzzing)
+            if write_without_mutating:
+                self.__save_case(hash, 0, case, False, title=title)
         else:
             self.logger.info("{} has finished".format(hash[:7]))
         return self.index
@@ -518,7 +521,17 @@ class Deployer:
                 return
             src_files = os.listdir(path)
             base = os.path.basename(path)
+            for files in src_files:
+                if files == "description":
+                    with open(os.path.join(path, files), "r") as f:
+                        line = f.readline()
+                        for alert_key in self.alert:
+                            if len(alert_key) > 0 and utilities.regx_match(alert_key, line):
+                                self.__trigger_alert(base, alert_key)
             shutil.copytree(path, os.path.join(output, base))
+    
+    def __trigger_alert(self, name, alert_key):
+        self.logger.info("An alert for {} was trigger by crash {}".format(alert_key, name))
 
     def __save_error(self, hash):
         self.logger.info("case {} encounter an error. See log for details.".format(hash))

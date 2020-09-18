@@ -59,6 +59,9 @@ if [ $# -eq 6 ]; then
     curl $CONFIG > .config
   fi
 fi
+
+# Panic on data corruption may stop the fuzzing session
+sed -i "s/CONFIG_BUG_ON_DATA_CORRUPTION=y/# CONFIG_BUG_ON_DATA_CORRUPTION is not set/g" .config
 make olddefconfig CC=$GCC
 make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_exit make.log
 exit 0
