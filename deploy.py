@@ -12,7 +12,6 @@ from crash import CrashChecker, kasan_regx, free_regx
 from utilities import chmodX
 from dateutil import parser as time_parser
 
-default_port = 53777
 stamp_finish_fuzzing = "FINISH_FUZZING"
 stamp_build_syzkaller = "BUILD_SYZKALLER"
 stamp_build_kernel = "BUILD_KERNEL"
@@ -44,7 +43,7 @@ syz_config_template="""
 }}"""
 
 class Deployer:
-    def __init__(self, index, debug=False, force=False, port=default_port, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[]):
+    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[]):
         self.linux_path = "linux"
         self.project_path = ""
         self.syzkaller_path = ""
@@ -69,7 +68,7 @@ class Deployer:
         else:
             self.replay = True
             self.catalog = replay
-        default_port = port
+        self.default_port = port
         if linux_index != -1:
             self.index = linux_index
         self.init_logger(debug)
@@ -142,7 +141,7 @@ class Deployer:
             need_fuzzing = False
             title = None
             self.logger.info("Try to triger the OOB/UAF by running original poc")
-            if not self.__check_stamp(stamp_reproduce_ori_poc, hash[:7], 'incompleted'):
+            if not self.__check_stamp(stamp_reproduce_ori_poc, hash[:7], 'incomplete'):
                 report, trigger = self.crash_checker.read_crash(case["syz_repro"], case["syzkaller"], None, 0, case["c_repro"], i386)
                 if report != []:
                     for each in report:
@@ -219,7 +218,100 @@ class Deployer:
                 self.__log_subprocess_output(p.stdout, logging.INFO)
             exitcode = p.wait()
         self.logger.info("syzkaller is done with exitcode {}".format(exitcode))
+        if exitcode == 3:
+            #Failed to parse the testcase
+            if self.correctTemplate() and self.compileTemplate():
+                self.run_syzkaller(hash)
         return exitcode
+    
+    def compileTemplate(self):
+        chmodX("scripts/syz-compile.sh")
+        self.logger.info("run: scripts/syz-compile.sh")
+        p = Popen(["scripts/syz-compile.sh", self.current_case_path ,self.arch],
+                stdout=PIPE,
+                stderr=STDOUT
+                )
+        with p.stdout:
+            self.__log_subprocess_output(p.stdout, logging.INFO)
+        exitcode = p.wait()
+        self.logger.info("script/syz-compile.sh is done with exitcode {}".format(exitcode))
+        return exitcode == 0
+    
+    def correctTemplate(self):
+        find_it = False
+        search_path="sys/linux"
+        extension=".txt"
+        pattern = ''
+        try:
+            f = open('CorrectTemplate', 'r')
+            pattern = f.readline()
+        except:
+            return find_it
+        
+        i = pattern.find('[')
+        if i != -1:
+            pattern = "type " + pattern[:i]
+        else:
+            pattern = pattern + " {"
+        data = []
+        ori_syzkaller_path = os.path.join(self.current_case_path, "poc/gopath/src/github.com/google/syzkaller")
+        dirs = os.path.join(ori_syzkaller_path, search_path)
+        if not os.path.isdir(dirs):
+            self.logger.info("{} do not exist".format(self.index, dirs))
+            return find_it
+        for file in os.listdir(dirs):
+            if file.endswith(extension):
+                find_it = False
+                f = open(os.path.join(dirs, file), "r")
+                text = f.readlines()
+                f.close()
+                for line in text:
+                    if line.find(pattern) != -1:
+                        data.append(line)
+                        find_it = True
+                        continue
+
+                    if find_it:
+                        if line == "\n":
+                            break
+                        data.append(line)
+                if find_it:
+                    break
+        
+        dirs = os.path.join(self.syzkaller_path, search_path)
+        if not os.path.isdir(dirs):
+            self.logger.info("{} do not exist".format(self.index, dirs))
+            return False
+        for file in os.listdir(dirs):
+            if file.endswith(extension):
+                find_it = False
+                start = 0
+                end = 0
+                f = open(os.path.join(dirs, file), "r")
+                text = f.readlines()
+                f.close()
+                for i in range(0, len(text)):
+                    line = text[i]
+                    if line.find(pattern) != -1:
+                        start = i
+                        find_it = True
+                        continue
+                    
+                    if find_it:
+                        end = i
+                        if line == "\n":
+                            break
+                if find_it:
+                    f = open(os.path.join(dirs, file), "w")
+                    new_data = []
+                    new_data.extend(text[:start])
+                    new_data.extend(data)
+                    new_data.extend(text[end:])
+                    f.writelines(new_data)
+                    f.close()
+                    break
+        return find_it
+
     
     def confirmSuccess(self, hash, case):
         syz_repro = case["syz_repro"]
@@ -329,7 +421,7 @@ class Deployer:
         new_syscalls.extend(dependent_syscalls)
         new_syscalls = utilities.unique(new_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(new_syscalls) + "\""
-        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash, default_port+self.index, self.current_case_path, self.time_limit, self.arch)
+        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash, self.default_port+self.index, self.current_case_path, self.time_limit, self.arch)
         f = open(os.path.join(self.syzkaller_path, "workdir/{}-poc.cfg".format(hash)), "w")
         f.writelines(syz_config)
         f.close()
@@ -344,7 +436,7 @@ class Deployer:
         new_syscalls.extend(raw_syscalls)
         new_syscalls = utilities.unique(new_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(new_syscalls) + "\""
-        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash, default_port+self.index, self.current_case_path, self.time_limit, self.arch)
+        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash, self.default_port+self.index, self.current_case_path, self.time_limit, self.arch)
         f = open(os.path.join(self.syzkaller_path, "workdir/{}.cfg".format(hash)), "w")
         f.writelines(syz_config)
         f.close()
