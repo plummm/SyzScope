@@ -76,4 +76,4 @@ fi
 
 #BUG: If multiple instances are running, may clean up others' flag
 echo "[+] Clean unfinished jobs"
-rm linux-*/THIS_KERNEL_HAS_BEEN_USED || echo "All set"
+rm linux-*/THIS_KERNEL_IS_BEING_USED || echo "All set"

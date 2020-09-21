@@ -99,6 +99,7 @@ export PATH=$GOROOT/bin:$PATH
 echo "[+] Downloading golang"
 go version || build_golang
 
+cd $CASE_PATH || exit 1
 if [ ! -d ".stamp" ]; then
   mkdir .stamp
 fi
@@ -160,12 +161,12 @@ if [ "$OLD_INDEX" != "$INDEX" ]; then
 fi
 if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   cd linux
-  if [ -f "THIS_KERNEL_HAS_BEEN_USED" ]; then
+  if [ -f "THIS_KERNEL_IS_BEING_USED" ]; then
     echo "This kernel is using by other thread"
     exit 1
   fi
   git stash
-  git clean -d -f -e THIS_KERNEL_HAS_BEEN_USED
+  git clean -d -f -e THIS_KERNEL_IS_BEING_USED
   #make clean CC=$GCC
   #git stash --all || set_git_config
   git checkout -f $COMMIT || (git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1 && git checkout -f $COMMIT)
@@ -178,7 +179,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   sed -i "s/CONFIG_BUG_ON_DATA_CORRUPTION=y/# CONFIG_BUG_ON_DATA_CORRUPTION is not set/g" .config
   make olddefconfig CC=$GCC
   make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_exit make.log
-  touch THIS_KERNEL_HAS_BEEN_USED
+  touch THIS_KERNEL_IS_BEING_USED
   touch $CASE_PATH/.stamp/BUILD_KERNEL
 fi
 

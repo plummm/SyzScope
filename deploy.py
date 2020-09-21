@@ -243,7 +243,8 @@ class Deployer:
         extension=".txt"
         pattern = ''
         try:
-            f = open('CorrectTemplate', 'r')
+            path = os.path.join(self.syzkaller_path, 'CorrectTemplate')
+            f = open(path, 'r')
             pattern = f.readline()
         except:
             return find_it
