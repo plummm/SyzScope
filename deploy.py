@@ -221,7 +221,7 @@ class Deployer:
         if exitcode == 3:
             #Failed to parse the testcase
             if self.correctTemplate() and self.compileTemplate():
-                self.run_syzkaller(hash)
+                exitcode = self.run_syzkaller(hash)
         return exitcode
     
     def compileTemplate(self):
