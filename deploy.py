@@ -43,7 +43,7 @@ syz_config_template="""
 }}"""
 
 class Deployer:
-    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[]):
+    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False):
         self.linux_path = "linux"
         self.project_path = ""
         self.syzkaller_path = ""
@@ -62,6 +62,7 @@ class Deployer:
         self.gcc = None
         self.force_fuzz = force_fuzz
         self.alert = alert
+        self.static_analysis = static_analysis
         if replay == None:
             self.replay = False
             self.catalog = 'incomplete'
@@ -86,45 +87,53 @@ class Deployer:
         else:
             self.logger.setLevel(logging.INFO)
     
-    def init_replay_crash(self, hash):
+    def init_replay_crash(self, hash_val):
         chmodX("scripts/init-replay.sh")
-        self.logger.info("run: scripts/init-replay.sh {} {}".format(self.catalog, hash))
-        call(["scripts/init-replay.sh", self.catalog, hash])
+        self.logger.info("run: scripts/init-replay.sh {} {}".format(self.catalog, hash_val))
+        call(["scripts/init-replay.sh", self.catalog, hash_val])
 
-    def deploy(self, hash, case):
+    def deploy(self, hash_val, case):
         self.project_path = os.getcwd()
-        self.current_case_path = "{}/work/{}/{}".format(self.project_path, self.catalog, hash[:7])
+        self.current_case_path = "{}/work/{}/{}".format(self.project_path, self.catalog, hash_val[:7])
         self.image_path = "{}/img".format(self.current_case_path)
         self.syzkaller_path = "{}/gopath/src/github.com/google/syzkaller".format(self.current_case_path)
         self.kernel_path = "{}/linux".format(self.current_case_path)
         self.arch = "amd64"
         if utilities.regx_match(r'386', case["manager"]):
             self.arch = "386"
-        self.logger.info(hash)
+        self.logger.info(hash_val)
 
         if self.replay:
-            self.init_replay_crash(hash[:7])    
+            self.init_replay_crash(hash_val[:7])    
         if self.force or \
-            (not self.__check_stamp(stamp_finish_fuzzing, hash[:7], 'succeed')  and\
-            not self.__check_stamp(stamp_finish_fuzzing, hash[:7], 'completed')):
+            (not self.__check_stamp(stamp_finish_fuzzing, hash_val[:7], 'succeed')  and\
+            not self.__check_stamp(stamp_finish_fuzzing, hash_val[:7], 'completed')):
             self.gcc = utilities.set_gcc_version(time_parser.parse(case["time"]))
             write_without_mutating = False
             self.__create_dir_for_case()
             if self.force:
-                self.__clean_stamp(stamp_finish_fuzzing, hash[:7])
-                self.__clean_stamp(stamp_build_kernel, hash[:7])
-                self.__clean_stamp(stamp_build_syzkaller, hash[:7])
-            self.case_logger = self.__init_case_logger("{}-log".format(hash))
-            self.case_info_logger = self.__init_case_logger("{}-info".format(hash))
-            url = syzbotCrawler.syzbot_host_url + syzbotCrawler.syzbot_bug_base_url + hash
+                self.__clean_stamp(stamp_finish_fuzzing, hash_val[:7])
+                self.__clean_stamp(stamp_build_kernel, hash_val[:7])
+                self.__clean_stamp(stamp_build_syzkaller, hash_val[:7])
+            self.case_logger = self.__init_case_logger("{}-log".format(hash_val))
+            self.case_info_logger = self.__init_case_logger("{}-info".format(hash_val))
+            url = syzbotCrawler.syzbot_host_url + syzbotCrawler.syzbot_bug_base_url + hash_val
             self.case_info_logger.info(url)
+
+            if (self.static_analysis):
+                r = utilities.request_get(case['report'])
+                vul_site, func_site, func, offset = self.KasanVulnChecker(r.text)
+                r = self.prepare_static_analysis(case, vul_site, func_site)
+                if r != 0:
+                    self.logger.error("Error occur in deploy-bc.sh")
+                self.run_static_analysis(vul_site, func_site, func, offset)
             need_patch = 0
             if self.__need_kasan_patch(case['title']):
                 need_patch = 1
-            r = self.__run_delopy_script(hash[:7], case, need_patch)
+            r = self.__run_delopy_script(hash_val[:7], case, need_patch)
             if r != 0:
                 self.logger.error("Error occur in deploy.sh")
-                self.__save_error(hash)
+                self.__save_error(hash_val)
                 return
             self.case_info_logger.info("gcc: "+self.gcc)
             self.crash_checker = CrashChecker(
@@ -141,52 +150,119 @@ class Deployer:
             need_fuzzing = False
             title = None
             self.logger.info("Try to triger the OOB/UAF by running original poc")
-            if not self.__check_stamp(stamp_reproduce_ori_poc, hash[:7], 'incomplete'):
+            if not self.__check_stamp(stamp_reproduce_ori_poc, hash_val[:7], 'incomplete'):
                 report, trigger = self.crash_checker.read_crash(case["syz_repro"], case["syzkaller"], None, 0, case["c_repro"], i386)
-                if report != []:
-                    for each in report:
-                        for line in each:
-                            if utilities.regx_match(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line) or\
-                            utilities.regx_match(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line):
-                                m = re.search(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line)
-                                if m != None and len(m.groups()) > 0:
-                                    title = m.groups()[0]
-                                m = re.search(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line)
-                                if m != None and len(m.groups()) > 0:
-                                    title = m.groups()[0]
-                            if utilities.regx_match(r'Write of size (\d+) at addr (\w*)', line):
-                                write_without_mutating = True
-                                self.crash_checker.logger.info("OOB/UAF Write without mutating")
-                                self.crash_checker.logger.info("Detect read before write")
-                                self.logger.info("Write to confirmed success")
-                                self.__write_to_sucess(hash)
-                                self.__write_to_confirmed_sucess(hash)
-                                break
+                write_without_mutating = self.KasanWriteChecker(report, hash_val)
                 self.__create_stamp(stamp_reproduce_ori_poc)
             if self.force_fuzz or not write_without_mutating:
                 path = None
                 need_fuzzing = True
                 req = requests.request(method='GET', url=case["syz_repro"])
-                self.__write_config(req.content.decode("utf-8"), hash[:7])
-                exitcode = self.run_syzkaller(hash)
-                self.__save_case(hash, exitcode, case, need_fuzzing)
+                self.__write_config(req.content.decode("utf-8"), hash_val[:7])
+                exitcode = self.run_syzkaller(hash_val)
+                self.__save_case(hash_val, exitcode, case, need_fuzzing)
             if write_without_mutating:
-                self.__save_case(hash, 0, case, False, title=title)
+                self.__save_case(hash_val, 0, case, False, title=title)
         else:
-            self.logger.info("{} has finished".format(hash[:7]))
+            self.logger.info("{} has finished".format(hash_val[:7]))
         return self.index
+    
+    def prepare_static_analysis(self, case, vul_site, func_site):
+        bc_path = ''
+        commit = case["commit"]
+        config = case["config"]
+        vul_file, tmp = vul_site.split(':')
+        func_file, tmp = func_site.split(':')
+        if os.path.splitext(vul_file)[1] == '.h':
+            bc_path = os.path.dirname(func_file)
+        else:
+            dir_list1 = vul_file.split('/')
+            dir_list2 = func_file.split('/')
+            for i in range(0, min(len(dir_list1), len(dir_list2)) - 1):
+                if dir_list1[i] == dir_list2[i]:
+                    bc_path += dir_list1[i] + '/'
+
+        chmodX("scripts/deploy-bc.sh")
+        index = str(self.index)
+        self.logger.info("run: scripts/deploy-bc.sh".format(self.index))
+        p = Popen(["scripts/deploy-bc.sh", self.linux_path, index, self.current_case_path, commit, config, bc_path],
+                stdout=PIPE,
+                stderr=STDOUT
+                )
+        with p.stdout:
+            self.__log_subprocess_output(p.stdout, logging.INFO)
+        exitcode = p.wait()
+        self.logger.info("script/deploy-bc.sh is done with exitcode {}".format(exitcode))
+        return exitcode
+    
+    def KasanWriteChecker(self, report, hash_val):
+        ret = False
+        if report != []:
+            for each in report:
+                for line in each:
+                    if utilities.regx_match(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line) or\
+                    utilities.regx_match(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line):
+                        m = re.search(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line)
+                        if m != None and len(m.groups()) > 0:
+                            title = m.groups()[0]
+                        m = re.search(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line)
+                        if m != None and len(m.groups()) > 0:
+                            title = m.groups()[0]
+                    if utilities.regx_match(utilities.kasan_write_addr_regx, line):
+                        ret = True
+                        self.crash_checker.logger.info("OOB/UAF Write without mutating")
+                        self.crash_checker.logger.info("Detect read before write")
+                        self.logger.info("Write to confirmed success")
+                        self.__write_to_sucess(hash_val)
+                        self.__write_to_confirmed_sucess(hash_val)
+                        break
+        return ret
+    
+    def KasanVulnChecker(self, report):
+        vul_site = ''
+        func_site = ''
+        offset = -1
+        report_list = report.split('\n')
+        trace = utilities.extrace_call_trace(report_list)
+        for each in trace:
+            if vul_site == '':
+                vul_site = utilities.extract_debug_info(each)
+            if utilities.isInline(each):
+                continue
+            func = utilities.extract_func_name(each)
+            func_site = utilities.extract_debug_info(each)
+            break
+        
+        offset = utilities.extract_vul_obj_offset(report_list)
+        return vul_site, func_site, func, offset
 
     def clone_linux(self):
         self.__run_linux_clone_script()
+    
+    def run_static_analysis(self, vul_site, func_site, func, offset):
+        vul_file, vul_line = vul_site.split(':')
+        func_file, func_line = func_site.split(':')
+        cmd = ["opt", "-load", "{}/llvm_passes/build/generateInput/libgenerateInput.so".format(self.project_path), 
+                "-generateInput", "-disable-output", "{}/llvm_linux/built-in.o.bc".format(self.project_path),
+                "-VulFile={}".format(vul_file), "-VulLine={}".format(vul_line), 
+                "-FuncFile={}".format(func_file), "-FuncLine={}".format(func_line),
+                "-Func={}".format(func), "-Offset={}".format(offset)]
+        p = Popen(cmd,
+                  stdout=PIPE,
+                  stderr=STDOUT
+                  )
+        with p.stdout:
+            self.__log_subprocess_output(p.stdout, logging.INFO)
+        exitcode = p.wait()
 
-    def run_syzkaller(self, hash):
+    def run_syzkaller(self, hash_val):
         self.logger.info("run syzkaller".format(self.index))
         syzkaller = os.path.join(self.syzkaller_path, "bin/syz-manager")
         exitcode = 0
         # First round, we only enable limited syscalls.
         # If failed to trigger a write crash, we enable more syscalls to run it again
         if self.logger.level == logging.DEBUG:
-            p = Popen([syzkaller, "--config={}/workdir/{}-poc.cfg".format(self.syzkaller_path, hash[:7]), "-debug", "-poc"],
+            p = Popen([syzkaller, "--config={}/workdir/{}-poc.cfg".format(self.syzkaller_path, hash_val[:7]), "-debug", "-poc"],
                   stdout=PIPE,
                   stderr=STDOUT
                   )
@@ -194,7 +270,7 @@ class Deployer:
                 self.__log_subprocess_output(p.stdout, logging.INFO)
             exitcode = p.wait()
 
-            p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash[:7]), "-debug"],
+            p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash_val[:7]), "-debug"],
                 stdout=PIPE,
                 stderr=STDOUT
                 )
@@ -202,7 +278,7 @@ class Deployer:
                 self.__log_subprocess_output(p.stdout, logging.INFO)
             exitcode = p.wait()
         else:
-            p = Popen([syzkaller, "--config={}/workdir/{}-poc.cfg".format(self.syzkaller_path, hash[:7]), "-poc"],
+            p = Popen([syzkaller, "--config={}/workdir/{}-poc.cfg".format(self.syzkaller_path, hash_val[:7]), "-poc"],
                 stdout = PIPE,
                 stderr = STDOUT
                 )
@@ -210,7 +286,7 @@ class Deployer:
                 self.__log_subprocess_output(p.stdout, logging.INFO)
             exitcode = p.wait()
 
-            p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash[:7])],
+            p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash_val[:7])],
                 stdout = PIPE,
                 stderr = STDOUT
                 )
@@ -221,7 +297,7 @@ class Deployer:
         if exitcode == 3:
             #Failed to parse the testcase
             if self.correctTemplate() and self.compileTemplate():
-                exitcode = self.run_syzkaller(hash)
+                exitcode = self.run_syzkaller(hash_val)
         return exitcode
     
     def compileTemplate(self):
@@ -239,31 +315,51 @@ class Deployer:
     
     def correctTemplate(self):
         find_it = False
-        search_path="sys/linux"
-        extension=".txt"
+        pattern_type = utilities.SYSCALL
+        text = ''
         pattern = ''
         try:
             path = os.path.join(self.syzkaller_path, 'CorrectTemplate')
             f = open(path, 'r')
-            pattern = f.readline()
+            text = f.readline()
+            if len(text) == 0:
+                self.logger.info("Error: CorrectTemplate is empty")
+                return find_it
         except:
             return find_it
         
-        i = pattern.find('[')
-        if i != -1:
-            pattern = "type " + pattern[:i]
-        else:
-            pattern = pattern + " {"
+        if text.find('syscall:') != -1:
+            pattern = text.split(':')[1]
+            pattern_type = utilities.SYSCALL
+            pattern = pattern + "("
+        if text.find('arg:') != -1:
+            pattern = text.split(':')[1]
+            pattern_type = utilities.ARG
+            i = pattern.find('[')
+            if i != -1:
+                pattern = "type " + pattern[:i]
+            else:
+                pattern = pattern + " {"
+        
+        find_it = self.replaceTemplate(pattern, pattern_type)
+        return find_it
+
+    def replaceTemplate(self, pattern, pattern_type):
+        find_it = False
+        search_path="sys/linux"
+        extension=".txt"
         data = []
+        target_file = ''
+
         ori_syzkaller_path = os.path.join(self.current_case_path, "poc/gopath/src/github.com/google/syzkaller")
         dirs = os.path.join(ori_syzkaller_path, search_path)
         if not os.path.isdir(dirs):
             self.logger.info("{} do not exist".format(self.index, dirs))
             return find_it
-        for file in os.listdir(dirs):
-            if file.endswith(extension):
+        for file_name in os.listdir(dirs):
+            if file_name.endswith(extension):
                 find_it = False
-                f = open(os.path.join(dirs, file), "r")
+                f = open(os.path.join(dirs, file_name), "r")
                 text = f.readlines()
                 f.close()
                 for line in text:
@@ -273,22 +369,23 @@ class Deployer:
                         continue
 
                     if find_it:
-                        if line == "\n":
+                        if pattern_type == utilities.SYSCALL or (pattern_type == utilities.ARG and line == "\n"):
                             break
                         data.append(line)
                 if find_it:
+                    target_file = file_name
                     break
         
         dirs = os.path.join(self.syzkaller_path, search_path)
         if not os.path.isdir(dirs):
             self.logger.info("{} do not exist".format(self.index, dirs))
             return False
-        for file in os.listdir(dirs):
-            if file.endswith(extension):
+        for file_name in os.listdir(dirs):
+            if file_name.endswith(extension):
                 find_it = False
                 start = 0
                 end = 0
-                f = open(os.path.join(dirs, file), "r")
+                f = open(os.path.join(dirs, file_name), "r")
                 text = f.readlines()
                 f.close()
                 for i in range(0, len(text)):
@@ -300,10 +397,11 @@ class Deployer:
                     
                     if find_it:
                         end = i
-                        if line == "\n":
+                        if pattern_type == utilities.SYSCALL or (pattern_type == utilities.ARG and line == "\n"):
                             break
+            
                 if find_it:
-                    f = open(os.path.join(dirs, file), "w")
+                    f = open(os.path.join(dirs, file_name), "w")
                     new_data = []
                     new_data.extend(text[:start])
                     new_data.extend(data)
@@ -311,10 +409,47 @@ class Deployer:
                     f.writelines(new_data)
                     f.close()
                     break
+                elif target_file == file_name:
+                    f = open(os.path.join(dirs, file_name), "w")
+                    new_data = []
+                    new_data.extend(text)
+                    new_data.extend(data)
+                    f.writelines(new_data)
+                    f.close()
+                    find_it = True
+                    break
+        #if pattern_type == utilities.ARG:
+        #    for each_struct in self.getSubStruct(data):
+        #        self.replaceTemplate(each_struct, utilities.ARG)
         return find_it
-
     
-    def confirmSuccess(self, hash, case):
+    def getSubStruct(self, struct_data):
+        regx_field = r'\W*([a-zA-Z0-9\[\]_]+)\W+([a-zA-Z0-9\[\]_, ]+)'
+        start = False
+        end = False
+        res = []
+        for line in struct_data:
+            if line.find('{') != -1:
+                start = True
+            if line.find('}') != -1:
+                end = True
+            if end:
+                break
+            if start:
+                field_type = utilities.regx_get(regx_field, line, 1)
+                struct_list = self.extractStruct(field_type)
+                if len(struct_list) > 0:
+                    res.extend(struct_list)
+        return res
+
+    def extractStruct(self, text):
+        trivial_type = ["int8", "int16", "int32", "int64", "int16be", "int32be", "int64be", "intptr",
+                        "in", "out", "inout", "dec", "hex", "oct", "fmt", "string", "target", 
+                        "x86_real", "x86_16", "x86_32", "x86_64", "arm64", "text", "proc", "ptr", "ptr64",
+                        "inet", "pseudo", "csum", "vma", "vma64", "flags", "const", "array", "void"
+                        "len", "bytesize", "bytesize2", "bytesize4", "bytesize8", "bitsize", "offsetof"]
+    
+    def confirmSuccess(self, hash_val, case):
         syz_repro = case["syz_repro"]
         syz_commit = case["syzkaller"]
         commit = case["commit"]
@@ -325,7 +460,7 @@ class Deployer:
             i386 = True
         log = case["log"]
         res = []
-        if not self.__check_confirmed(hash):
+        if not self.__check_confirmed(hash_val):
             """self.logger.info("Compare with original PoC")
             res = self.crash_checker.run(syz_repro, syz_commit, log, commit, config, c_repro, i386)
             if res[0]:
@@ -336,21 +471,21 @@ class Deployer:
                 if read_before_write:
                     self.crash_checker.logger.info("Detect read before write")
                 self.logger.info("Write to confirmedSuccess")
-                self.__write_to_confirmed_sucess(hash)
+                self.__write_to_confirmed_sucess(hash_val)
                 path = res[1]
             else:
                 self.crash_checker.logger.info("Call trace match failed")
             """
-            res = self.repro_on_fixed_kernel(hash, case)
+            res = self.repro_on_fixed_kernel(hash_val, case)
             """
             if res != []:
                 self.logger.info("Write to confirmedSuccess")
-                self.__write_to_confirmed_sucess(hash)
+                self.__write_to_confirmed_sucess(hash_val)
             """
             return res
         return []
     
-    def repro_on_fixed_kernel(self, hash, case, crashes_path=None):
+    def repro_on_fixed_kernel(self, hash_val, case, crashes_path=None):
         syz_repro = case["syz_repro"]
         syz_commit = case["syzkaller"]
         commit = case["commit"]
@@ -360,21 +495,21 @@ class Deployer:
         res = []
         if utilities.regx_match(r'386', case["manager"]):
             i386 = True
-        commit = utilities.get_patch_commit(hash)
+        commit = utilities.get_patch_commit(hash_val)
         if commit != None:
             res = self.crash_checker.repro_on_fixed_kernel(syz_commit, case["commit"], config, c_repro, i386, commit, crashes_path=crashes_path)
         return res
 
-    def __check_confirmed(self, hash):
+    def __check_confirmed(self, hash_val):
         return False
 
-    def __write_to_confirmed_sucess(self, hash):
+    def __write_to_confirmed_sucess(self, hash_val):
         with open("{}/work/confirmedSuccess".format(self.project_path), "a+") as f:
-            f.write(hash[:7]+"\n")
+            f.write(hash_val[:7]+"\n")
     
-    def __write_to_sucess(self, hash):
+    def __write_to_sucess(self, hash_val):
         with open("{}/work/success".format(self.project_path), "a+") as f:
-            f.write(hash[:7]+"\n")
+            f.write(hash_val[:7]+"\n")
 
     def __run_linux_clone_script(self):
         chmodX("scripts/linux-clone.sh")
@@ -382,7 +517,7 @@ class Deployer:
         self.logger.info("run: scripts/linux-clone.sh {} {}".format(self.index, self.linux_path, index))
         call(["scripts/linux-clone.sh", self.linux_path, index])
 
-    def __run_delopy_script(self, hash, case, kasan_patch=0):
+    def __run_delopy_script(self, hash_val, case, kasan_patch=0):
         commit = case["commit"]
         syzkaller = case["syzkaller"]
         config = case["config"]
@@ -398,7 +533,7 @@ class Deployer:
         chmodX("scripts/deploy.sh")
         index = str(self.index)
         self.logger.info("run: scripts/deploy.sh".format(self.index))
-        p = Popen(["scripts/deploy.sh", self.linux_path, hash, commit, syzkaller, config, testcase, index, self.catalog, image, self.arch, self.gcc, str(kasan_patch)],
+        p = Popen(["scripts/deploy.sh", self.linux_path, hash_val, commit, syzkaller, config, testcase, index, self.catalog, image, self.arch, self.gcc, str(kasan_patch)],
                 stdout=PIPE,
                 stderr=STDOUT
                 )
@@ -408,7 +543,7 @@ class Deployer:
         self.logger.info("script/deploy.sh is done with exitcode {}".format(exitcode))
         return exitcode
 
-    def __write_config(self, testcase, hash):
+    def __write_config(self, testcase, hash_val):
         dependent_syscalls = []
         syscalls = self.__extract_syscalls(testcase)
         if syscalls == []:
@@ -422,8 +557,8 @@ class Deployer:
         new_syscalls.extend(dependent_syscalls)
         new_syscalls = utilities.unique(new_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(new_syscalls) + "\""
-        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash, self.default_port+self.index, self.current_case_path, self.time_limit, self.arch)
-        f = open(os.path.join(self.syzkaller_path, "workdir/{}-poc.cfg".format(hash)), "w")
+        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash_val, self.default_port+self.index, self.current_case_path, self.time_limit, self.arch)
+        f = open(os.path.join(self.syzkaller_path, "workdir/{}-poc.cfg".format(hash_val)), "w")
         f.writelines(syz_config)
         f.close()
 
@@ -437,8 +572,8 @@ class Deployer:
         new_syscalls.extend(raw_syscalls)
         new_syscalls = utilities.unique(new_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(new_syscalls) + "\""
-        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash, self.default_port+self.index, self.current_case_path, self.time_limit, self.arch)
-        f = open(os.path.join(self.syzkaller_path, "workdir/{}.cfg".format(hash)), "w")
+        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash_val, self.default_port+self.index, self.current_case_path, self.time_limit, self.arch)
+        f = open(os.path.join(self.syzkaller_path, "workdir/{}.cfg".format(hash_val)), "w")
         f.writelines(syz_config)
         f.close()
 
@@ -545,15 +680,15 @@ class Deployer:
                 res.append(syscall)
         return res
 
-    def __save_case(self, hash, exitcode, case, need_fuzzing, title=None, secondary_fuzzing=False):
+    def __save_case(self, hash_val, exitcode, case, need_fuzzing, title=None, secondary_fuzzing=False):
         if exitcode !=0:
-            self.__save_error(hash)
+            self.__save_error(hash_val)
         else:
             self.__copy_crashes(need_fuzzing)
             self.__create_stamp(stamp_finish_fuzzing)
-            if self.__success_check(hash[:7]):
+            if self.__success_check(hash_val[:7]):
                 if need_fuzzing:
-                    paths = self.confirmSuccess(hash, case)
+                    paths = self.confirmSuccess(hash_val, case)
                     if len(paths) > 0:
                         for each in paths:
                             self.__copy_new_capability(each, need_fuzzing, title)
@@ -574,18 +709,18 @@ class Deployer:
                         testcase_path = os.path.join(each, "repro.prog")
                         if os.path.isfile(testcase_path):
                             #Using patch to eliminate cases wuth different root cases
-                            if len(self.repro_on_fixed_kernel(hash, case, [each]))>0:
-                                dst = "{}/gopath/src/github.com/google/syzkaller/workdir/testcase-{}".format(self.current_case_path, hash[:7])
+                            if len(self.repro_on_fixed_kernel(hash_val, case, [each]))>0:
+                                dst = "{}/gopath/src/github.com/google/syzkaller/workdir/testcase-{}".format(self.current_case_path, hash_val[:7])
                                 shutil.copy(testcase_path, dst)
                                 with open(testcase_path, 'r') as f:
                                     self.logger.info("OOB/UAF Read detected, rerun syzkaller base on new testcase {}".format(testcase_path))
                                     raw_text = f.readlines()
-                                    self.__write_config("".join(raw_text),hash)
+                                    self.__write_config("".join(raw_text),hash_val)
                                     if need_patch == 0:
                                         need_patch = 1
-                                        self.__run_delopy_script(hash[:7], case, need_patch)
-                                    exitcode = self.run_syzkaller(hash)
-                                    self.__save_case(hash, exitcode, case, need_fuzzing, secondary_fuzzing=True)
+                                        self.__run_delopy_script(hash_val[:7], case, need_patch)
+                                    exitcode = self.run_syzkaller(hash_val)
+                                    self.__save_case(hash_val, exitcode, case, need_fuzzing, secondary_fuzzing=True)
                                     return
                     self.__move_to_completed()
 
@@ -626,8 +761,8 @@ class Deployer:
     def __trigger_alert(self, name, alert_key):
         self.logger.info("An alert for {} was trigger by crash {}".format(alert_key, name))
 
-    def __save_error(self, hash):
-        self.logger.info("case {} encounter an error. See log for details.".format(hash))
+    def __save_error(self, hash_val):
+        self.logger.info("case {} encounter an error. See log for details.".format(hash_val))
         self.__move_to_error()
 
     def __copy_crashes(self, need_fuzzing):
@@ -703,11 +838,11 @@ class Deployer:
         stamp_path = "{}/.stamp/{}".format(self.current_case_path, name)
         call(['touch',stamp_path])
     
-    def __check_stamp(self, name, hash, folder):
-        stamp_path1 = "{}/work/{}/{}/.stamp/{}".format(self.project_path, folder, hash, name)
+    def __check_stamp(self, name, hash_val, folder):
+        stamp_path1 = "{}/work/{}/{}/.stamp/{}".format(self.project_path, folder, hash_val, name)
         return os.path.isfile(stamp_path1)
     
-    def __clean_stamp(self, name, hash):
+    def __clean_stamp(self, name, hash_val):
         stamp_path = "{}/.stamp/{}".format(self.current_case_path, name)
         if os.path.isfile(stamp_path):
             os.remove(stamp_path)
@@ -763,7 +898,7 @@ class Deployer:
             if log_level == logging.DEBUG:
                 self.case_logger.debug(line)
 
-    def __success_check(self, hash):
+    def __success_check(self, hash_val):
         success_path = "{}/work/success".format(self.project_path)
         if os.path.isfile(success_path):
             f = open(success_path, "r")
@@ -771,7 +906,7 @@ class Deployer:
             f.close()
             for line in text:
                 line = line.strip('\n')
-                if line == hash:
+                if line == hash_val:
                     return True
         return False
     

@@ -15,7 +15,7 @@ ARCH=$2
 export GOPATH=$CASE_PATH/gopath
 
 cd $SYZ_PATH
-rm CorrectTemplate
 make generate || exit 1
+rm CorrectTemplate
 make TARGETARCH=$ARCH TARGETVMARCH=amd64 || exit 1
 exit 0

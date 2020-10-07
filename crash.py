@@ -529,10 +529,10 @@ class CrashChecker:
     def __match_allocated_section(self, report1 ,report2):
         self.case_logger.info("match allocated section")
         ratio = 1
-        allocation1 = self.__extract_allocated_section(report1)
-        allocation2 = self.__extract_allocated_section(report2)
-        seq1 = [self.__extract_func_name(x) for x in allocation1 if self.__extract_func_name(x) != None]
-        seq2 = [self.__extract_func_name(x) for x in allocation2 if self.__extract_func_name(x) != None]
+        allocation1 = utilities.extract_allocated_section(report1, self.kasan_func_list)
+        allocation2 = utilities.extract_allocated_section(report2, self.kasan_func_list)
+        seq1 = [utilities.extract_func_name(x) for x in allocation1 if utilities.extract_func_name(x) != None]
+        seq2 = [utilities.extract_func_name(x) for x in allocation2 if utilities.extract_func_name(x) != None]
         counter = 0
 
         """
@@ -559,10 +559,10 @@ class CrashChecker:
     def __match_call_trace(self, report1, report2):
         self.case_logger.info("match call trace")
         ratio = 1
-        trace1 = self.__extrace_call_trace(report1)
-        trace2 = self.__extrace_call_trace(report2)
-        seq1 = [self.__extract_func_name(x) for x in trace1 if self.__extract_func_name(x) != None]
-        seq2 = [self.__extract_func_name(x) for x in trace2 if self.__extract_func_name(x) != None]
+        trace1 = utilities.extrace_call_trace(report1, self.kasan_func_list)
+        trace2 = utilities.extrace_call_trace(report2, self.kasan_func_list)
+        seq1 = [utilities.extract_func_name(x) for x in trace1 if utilities.extract_func_name(x) != None]
+        seq2 = [utilities.extract_func_name(x) for x in trace2 if utilities.extract_func_name(x) != None]
         counter = 0
 
         """
@@ -585,45 +585,6 @@ class CrashChecker:
         if ratio > 0.3:
             return [False, ratio]
         return [True, ratio]
-
-    def __is_kasan_func(self, func_name):
-        if func_name in self.kasan_func_list:
-            return True
-        return False
-    
-    def __extract_allocated_section(self, report):
-        res = []
-        record_flag = 0
-        for line in report:
-            if record_flag and not self.__is_kasan_func(self.__extract_func_name(line)):
-                res.append(line)
-            if utilities.regx_match(r'Allocated by task \d+', line):
-                record_flag ^= 1
-            if utilities.regx_match(r'Freed by task \d+', line):
-                record_flag ^= 1
-                break
-        return res[:-2]
-    
-    def __extrace_call_trace(self, report):
-        res = []
-        record_flag = 0
-        implicit_call_regx = r'\[.+\]  \?.*'
-        for line in report:
-            if record_flag and \
-               not utilities.regx_match(implicit_call_regx, line) and \
-               not self.__is_kasan_func(self.__extract_func_name(line)):
-                res.append(line)
-            if utilities.regx_match(r'Call Trace', line):
-                record_flag ^= 1
-            if record_flag == 1 and utilities.regx_match(r'Allocated by task', line):
-                record_flag ^= 1
-                break
-        return res
-
-    def __extract_func_name(self, line):
-        m = re.search(r'([A-Za-z0-9_.]+)\+0x[0-9a-f]+', line)
-        if m != None and len(m.groups()) != 0:
-            return m.groups()[0]
     
     def __init_case_logger(self, logger_name):
         handler = logging.FileHandler("{}/poc/log".format(self.case_path))

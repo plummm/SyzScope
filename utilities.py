@@ -12,11 +12,23 @@ FOLDER=0
 CASE=1
 URL=2
 
+KASAN_NONE=0
+KASAN_OOB=1
+KASAN_UAF=2
+
+SYSCALL = 0
+ARG = 1
+
 syzbot_bug_base_url = "bug?id="
 syzbot_host_url = "https://syzkaller.appspot.com/"
 kasan_write_regx = r'KASAN: ([a-z\\-]+) Write in ([a-zA-Z0-9_]+).*'
 kasan_read_regx = r'KASAN: ([a-z\\-]+) Read in ([a-zA-Z0-9_]+).*'
+kasan_write_addr_regx = r'Write of size (\d+) at addr (\w+)'
+kasan_read_addr_regx = r'Read of size (\d+) at addr (\w+)'
 free_regx = r'KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
+bug_desc_begin_regx = r'The buggy address belongs to the object at'
+bug_desc_end_regx = r'The buggy address belongs to the page'
+offset_desc_regx = r'The buggy address is located (\d+) bytes inside of'
 
 def get_hash_from_log(path):
     with open(path, "r") as f:
@@ -25,6 +37,135 @@ def get_hash_from_log(path):
             if m != None and len(m.groups()) != 0:
                 return m.groups()[0]  
     return None
+
+def regx_match(regx, line):
+    m = re.search(regx, line)
+    if m != None and len(m.group()) != 0:
+        return True
+    return False
+
+def regx_get(regx, line, index):
+    m = re.search(regx, line)
+    if m != None and len(m.groups()) > index:
+        return m.groups()[index]
+    return None
+
+def regx_kasan_line(line):
+    m = re.search(r'([A-Za-z0-9_.]+)(\+0x[0-9a-f]+\/0x[0-9a-f]+)?( (([A-Za-z0-9_.]+\/)+[A-Za-z0-9_.]+:\d+))?( \[inline\])?', line)
+    if m != None:
+        return m.groups()
+    return None
+
+def extract_debug_info(line):
+    res = regx_kasan_line(line)
+    if res == None:
+        return res
+    return res[3]
+
+def isInline(line):
+    res = regx_kasan_line(line)
+    if res == None:
+        return False
+    if res[5] != None:
+        return True
+    return False
+
+def extract_func_name(line):
+    res = regx_kasan_line(line)
+    if res == None:
+        return res
+    return res[0]
+
+def is_kasan_func(source_path):
+    if source_path == None:
+        return False
+    if regx_match(r'dump_stack.c', source_path) or regx_match(r'mm\/kasan', source_path):
+        return True
+    return False
+
+def extract_allocated_section(report):
+        res = []
+        record_flag = 0
+        for line in report:
+            if record_flag and not is_kasan_func(extract_debug_info(line)):
+                res.append(line)
+            if regx_match(r'Allocated by task \d+', line):
+                record_flag ^= 1
+            if regx_match(r'Freed by task \d+', line):
+                record_flag ^= 1
+                break
+        return res[:-2]
+    
+def extrace_call_trace(report):
+    res = []
+    record_flag = 0
+    implicit_call_regx = r'\[.+\]  \?.*'
+    for line in report:
+        if record_flag and \
+            not regx_match(implicit_call_regx, line) and \
+            not is_kasan_func(extract_debug_info(line)):
+            res.append(line)
+        if regx_match(r'Call Trace', line):
+            record_flag ^= 1
+        if record_flag == 1 and regx_match(r'Allocated by task', line):
+            record_flag ^= 1
+            break
+    return res
+
+def extract_bug_description(report):
+    res = []
+    record_flag = 0
+    for line in report:
+        if regx_match(bug_desc_begin_regx, line):
+            record_flag ^= 1
+        if regx_match(bug_desc_end_regx, line):
+            record_flag ^= 1
+        if record_flag:
+            res.append(line)
+    return res
+
+def extract_bug_type(report):
+    for line in report:
+        if regx_match(r'KASAN: use-after-free', line):
+            return KASAN_UAF
+        if regx_match(r'KASAN: \w+-out-of-bounds', line):
+            return KASAN_OOB
+    return KASAN_NONE
+
+def extract_bug_mem_addr(report):
+    addr = None
+    for line in report:
+        addr = regx_get(kasan_read_addr_regx, line , 1)
+        if addr != None:
+            return int(addr, 16)
+        addr = regx_get(kasan_write_addr_regx, line , 1)
+        if addr != None:
+            return int(addr, 16)
+    return None
+
+def extract_vul_obj_offset(report):
+    offset = None
+    bug_desc = extract_bug_description(report)
+    bug_type = extract_bug_type(report)
+    bug_mem_addr = extract_bug_mem_addr(report)
+    if bug_mem_addr == None:
+        print("Failed to locate the memory address that trigger UAF/OOB")
+        return offset
+    if bug_type == KASAN_NONE:
+        return offset
+    if bug_type == KASAN_UAF or bug_type == KASAN_OOB:
+        for line in bug_desc:
+            offset = regx_get(offset_desc_regx, line, 0)
+            if offset != None:
+                offset = int(offset)
+                break
+        if offset == None:
+            line = bug_desc[0]
+            addr_begin = regx_get(r'The buggy address belongs to the object at \w+', line, 0)
+            if addr_begin != None:
+                addr_begin = int(addr_begin, 16)
+                offset = bug_mem_addr - addr_begin
+    return offset
 
 def urlsOfCases(dirOfCases, type=FOLDER):
     res = []
@@ -46,18 +187,6 @@ def urlsOfCases(dirOfCases, type=FOLDER):
                     res.append(r)
     
     return res
-
-def regx_match(regx, line):
-    m = re.search(regx, line)
-    if m != None and len(m.group()) != 0:
-        return True
-    return False
-
-def regx_get(regx, line, index):
-    m = re.search(regx, line)
-    if m != None and len(m.groups()) > index:
-        return m.groups()[index]
-    return None
 
 def chmodX(path):
     st = os.stat(path)
@@ -330,7 +459,7 @@ def set_gcc_version(time):
         return "gcc-8.0.1-20180412"
     if time >= t2 and time < t3:
         return "gcc-8.0.1-20180412"
-    if time >= t3:
+    if time >= t3 and time < t4:
         return "gcc-9.0.0-20181231"
     if time >= t4:
         return "gcc-10.1.0-20200507"

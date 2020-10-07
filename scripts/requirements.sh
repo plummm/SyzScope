@@ -21,7 +21,7 @@ fi
 # Check for image
 echo "[+] Building image"
 cd $TOOLS_PATH
-if [ ! -f "$TOOLS_PATH/.stamp/MAKE_IMAGE" ]; then
+if [ ! -f "$TOOLS_PATH/.stamp/BUILD_IMAGE" ]; then
   if [ ! -d "img" ]; then
     mkdir img
   fi
@@ -33,13 +33,13 @@ if [ ! -f "$TOOLS_PATH/.stamp/MAKE_IMAGE" ]; then
     wget https://storage.googleapis.com/syzkaller/wheezy.img > /dev/null
     wget https://storage.googleapis.com/syzkaller/wheezy.img.key > /dev/null
     chmod 400 wheezy.img.key
-    touch $TOOLS_PATH/.stamp/MAKE_IMAGE
+    touch $TOOLS_PATH/.stamp/BUILD_IMAGE
   fi
   cd ..
 fi
 
 echo "[+] Building gcc"
-if [ ! -f "$TOOLS_PATH/.stamp/MAKE_GCC" ]; then
+if [ ! -f "$TOOLS_PATH/.stamp/BUILD_GCC" ]; then
   wget https://storage.googleapis.com/syzkaller/gcc-7.tar.gz > /dev/null
   tar xzf gcc-7.tar.gz
   mv gcc gcc-7
@@ -70,7 +70,39 @@ if [ ! -f "$TOOLS_PATH/.stamp/MAKE_GCC" ]; then
   #if [ ! -f "/usr/lib/x86_64-linux-gnu/libmpfr.so.4" ]; then
   #  sudo ln -s /usr/lib/x86_64-linux-gnu/libmpfr.so.6 /usr/lib/x86_64-linux-gnu/libmpfr.so.4
   #fi
-  touch $TOOLS_PATH/.stamp/MAKE_GCC
+  touch $TOOLS_PATH/.stamp/BUILD_GCC
+  cd ..
+fi
+
+echo "[+] Building cmake"
+if [ ! -f "$TOOLS_PATH/.stamp/BUILD_CMAKE" ]; then
+  wget https://github.com/Kitware/CMake/releases/download/v3.18.3/cmake-3.18.3.tar.gz > /dev/null
+  tar xzf cmake-3.18.3.tar.gz
+  mv cmake-3.18.3 cmake
+  rm -rf cmake-3.18.3.tar.gz
+  cd cmake
+  ./bootstrap
+  make -j16
+  sudo make install
+  CMAKE=`pwd`/bin/cmake
+
+  touch $TOOLS_PATH/.stamp/BUILD_CMAKE
+  cd ..
+fi
+
+echo "[+] Building llvm"
+if [ ! -f "$TOOLS_PATH/.stamp/BUILD_LLVM" ]; then
+  wget https://github.com/llvm/llvm-project/releases/download/llvmorg-10.0.1/llvm-project-10.0.1.tar.xz > /dev/null
+  tar xf llvm-project-10.0.1.tar.xz
+  mv llvm-project-10.0.1 llvm
+  rm llvm-project-10.0.1.tar.xz
+  cd llvm
+  mkdir build
+  cd build
+  cmake -G "Unix Makefiles" -DLLVM_ENABLE_PROJECTS="clang;lld" -DCMAKE_BUILD_TYPE=Release -LLVM_ENABLE_DUMP ../llvm
+  make -j16
+
+  touch $TOOLS_PATH/.stamp/BUILD_LLVM
   cd ..
 fi
 

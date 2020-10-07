@@ -24,37 +24,88 @@ using namespace llvm;
 using namespace llvm::sys;
 using namespace std;
 
+static cl::opt<string> BUG_Vul_File ("VulFile", cl::desc("The file that UAF/OOB occurs"), cl::init(""));
+static cl::opt<string> BUG_Func_File ("FuncFile", cl::desc("The bug may occur in an inline function, this argument indicate the file of first non-inline caller"), cl::init(""));
+static cl::opt<string> BUG_Func ("Func", cl::desc("The function that UAF/OOB occurs"), cl::init(""));
+static cl::opt<int> BUG_Vul_Line ("VulLine", cl::desc("Which line of the vulerable function that UAF/OOB occur"), cl::init(0));
+static cl::opt<int> BUG_Func_Line ("FuncLine", cl::desc("Which line of the caller that UAF/OOB occur"), cl::init(0));
+static cl::opt<int> BUG_Offset ("Offset", cl::desc("Offset from base pointer that trigger OOB/UAF"), cl::init(0));
+
+struct Input {
+    llvm::Value *basePointer;
+    int offset;
+};
 struct thisPass : public ModulePass {
     static char ID;
     llvm::DataLayout *dl;
     thisPass() : ModulePass(ID) {}
 
     bool runOnModule(Module &M) override {
+        struct Input *input = locatePointerAndOffset(M);
+        return true;
+    }
+
+    struct Input *locatePointerAndOffset(Module &M) {
+        llvm::Value *basePointer = NULL;
+        uint64_t offset = -1;
+        int func_bound[2];
         dl = new llvm::DataLayout(&M);
         for(auto &F : M){
-            if (F.getName().str() == "tcp_fastretrans_alert") {
-                int lastLine = 0;
+            if (F.getName().str() == BUG_Func) {
+                getFuncBoundary(&F, func_bound);
                 for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I) {
                     auto dbgloc = (*I).getDebugLoc();
                     if (dbgloc && dbgloc->getLine()) {
-                        //errs() << dbgloc->getFilename().str() << ":" << dbgloc->getLine() << "\n";
-                        //lastLine = dbgloc->getLine();
-                        if (dbgloc->getLine() == 1846 && dbgloc->getFilename().str() == "./include/net/tcp.h") {
+                        int curLine = dbgloc->getLine();
+                        if (curLine >= func_bound[0] && curLine <= func_bound[1]) {
+                            //errs() << dbgloc->getFilename().str() << ":" << curLine << "\n";
+                            if (curLine > BUG_Func_Line && basePointer != NULL)
+                                break;
+                        }
+                        if (curLine == BUG_Vul_Line && stripFileName(dbgloc->getFilename().str()) == BUG_Vul_File) {
                             auto a = (*I).getOperand(0);
                             auto type = a->getType();
-                            if(GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(&(*I))) {
-                                // processing on GEP
+                            if(LoadInst *load = dyn_cast<LoadInst>(&(*I))) {
                                 errs() << (*I) << "\n";
-                                errs() << "This is a GEP instruction\n"; 
-                                uint64_t offset = getOffsetOfBaseObj(&(*I));
+                                errs() << "This is a Load instruction\n"; 
+                                llvm::Value *op = load->getPointerOperand();
+                                APInt ap_offset(64, 0, true);
+                                basePointer = op->stripAndAccumulateConstantOffsets(*dl, ap_offset, true);
+                                offset = ap_offset.getSExtValue();
+                                offset -= BUG_Offset;
                                 errs() << "offset to base obj is " << offset << "\n";
                             }
                         }
                     }
                 }
+                break;
             }
         }
-        return true;
+        struct Input *ret = (struct Input *)malloc(sizeof(struct Input));
+        ret->basePointer = basePointer;
+        ret->offset = offset;
+        return ret;
+    }
+
+    int* getFuncBoundary(llvm::Function *F, int ret[2]) {
+        ret[0] = 0;
+        ret[1] = 0;
+        for (inst_iterator I = inst_begin(*F), E = inst_end(*F); I != E; ++I) {
+            auto dbgloc = (*I).getDebugLoc();
+            if (dbgloc && dbgloc->getLine() && stripFileName(dbgloc->getFilename().str()) == BUG_Func_File) {
+                ret[1] = dbgloc->getLine();
+                if (ret[0] == 0)
+                    ret[0] = ret[1];
+            }
+        }
+        return ret;
+    }
+
+    string stripFileName(string fileName) {
+        if (fileName.find("./") == 0) {
+            return fileName.substr(2, fileName.size());
+        }
+        return fileName;
     }
 
     uint64_t getOffsetOfBaseObj(llvm::Instruction *I) {
