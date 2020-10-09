@@ -59,7 +59,7 @@ class Deployer:
         self.crash_checker = None
         self.image_switching_date = datetime.datetime(2020, 3, 15)
         self.arch = None
-        self.gcc = None
+        self.compiler = None
         self.force_fuzz = force_fuzz
         self.alert = alert
         self.static_analysis = static_analysis
@@ -108,7 +108,7 @@ class Deployer:
         if self.force or \
             (not self.__check_stamp(stamp_finish_fuzzing, hash_val[:7], 'succeed')  and\
             not self.__check_stamp(stamp_finish_fuzzing, hash_val[:7], 'completed')):
-            self.gcc = utilities.set_gcc_version(time_parser.parse(case["time"]))
+            self.compiler = utilities.set_compiler_version(time_parser.parse(case["time"]), case["config"])
             write_without_mutating = False
             self.__create_dir_for_case()
             if self.force:
@@ -135,7 +135,7 @@ class Deployer:
                 self.logger.error("Error occur in deploy.sh")
                 self.__save_error(hash_val)
                 return
-            self.case_info_logger.info("gcc: "+self.gcc)
+            self.case_info_logger.info("compiler: "+self.compiler)
             self.crash_checker = CrashChecker(
                 self.project_path,
                 self.current_case_path,
@@ -143,7 +143,7 @@ class Deployer:
                 self.logger,
                 self.debug,
                 self.index,
-                gcc=self.gcc)
+                compiler=self.compiler)
             i386 = None
             if utilities.regx_match(r'386', case["manager"]):
                 i386 = True
@@ -160,9 +160,9 @@ class Deployer:
                 req = requests.request(method='GET', url=case["syz_repro"])
                 self.__write_config(req.content.decode("utf-8"), hash_val[:7])
                 exitcode = self.run_syzkaller(hash_val)
-                self.__save_case(hash_val, exitcode, case, need_fuzzing)
+                self.__save_case(hash_val, exitcode, case, need_fuzzing, write_without_mutating)
             if write_without_mutating:
-                self.__save_case(hash_val, 0, case, False, title=title)
+                self.__save_case(hash_val, 0, case, need_fuzzing=False, title=title)
         else:
             self.logger.info("{} has finished".format(hash_val[:7]))
         return self.index
@@ -331,61 +331,75 @@ class Deployer:
         if text.find('syscall:') != -1:
             pattern = text.split(':')[1]
             pattern_type = utilities.SYSCALL
-            pattern = pattern + "("
+            pattern = pattern + "\("
         if text.find('arg:') != -1:
             pattern = text.split(':')[1]
-            pattern_type = utilities.ARG
+            pattern_type = utilities.STRUCT
             i = pattern.find('[')
             if i != -1:
                 pattern = "type " + pattern[:i]
             else:
                 pattern = pattern + " {"
         
-        find_it = self.replaceTemplate(pattern, pattern_type)
-        return find_it
-
-    def replaceTemplate(self, pattern, pattern_type):
-        find_it = False
         search_path="sys/linux"
         extension=".txt"
+        ori_syzkaller_path = os.path.join(self.current_case_path, "poc/gopath/src/github.com/google/syzkaller")
+        regx_pattern = "^"+pattern
+        src = os.path.join(ori_syzkaller_path, search_path)
+        dst = os.path.join(self.syzkaller_path, search_path)
+        find_it = self.syncFilesByPattern(regx_pattern, pattern_type, src, dst, extension)
+        return find_it
+
+    def syncFilesByPattern(self, pattern, pattern_type, src, dst, ends):
+        find_it = False
         data = []
         target_file = ''
+        brackets = -1 #-1 means no '{' found ever 
 
-        ori_syzkaller_path = os.path.join(self.current_case_path, "poc/gopath/src/github.com/google/syzkaller")
-        dirs = os.path.join(ori_syzkaller_path, search_path)
-        if not os.path.isdir(dirs):
-            self.logger.info("{} do not exist".format(self.index, dirs))
+        if not os.path.isdir(src):
+            self.logger.info("{} do not exist".format(self.index, src))
             return find_it
-        for file_name in os.listdir(dirs):
-            if file_name.endswith(extension):
+        for file_name in os.listdir(src):
+            if file_name.endswith(ends):
                 find_it = False
-                f = open(os.path.join(dirs, file_name), "r")
+                f = open(os.path.join(src, file_name), "r")
                 text = f.readlines()
                 f.close()
                 for line in text:
-                    if line.find(pattern) != -1:
+                    if utilities.regx_match(pattern, line):
                         data.append(line)
                         find_it = True
+                        if pattern_type == utilities.FUNC_DEF and line.find('{') != -1:
+                            if brackets == -1:
+                                brackets = 1
                         continue
 
                     if find_it:
-                        if pattern_type == utilities.SYSCALL or (pattern_type == utilities.ARG and line == "\n"):
+                        if pattern_type == utilities.SYSCALL or (pattern_type == utilities.STRUCT and line == "\n"):
                             break
                         data.append(line)
+                        if pattern_type == utilities.FUNC_DEF:
+                            if line.find('{') != -1:
+                                if brackets == -1:
+                                    brackets = 0
+                                brackets += 1
+                            if line.find('}') != -1:
+                                brackets -= 1
+                            if brackets == 0:
+                                break
                 if find_it:
                     target_file = file_name
                     break
         
-        dirs = os.path.join(self.syzkaller_path, search_path)
-        if not os.path.isdir(dirs):
-            self.logger.info("{} do not exist".format(self.index, dirs))
+        if not os.path.isdir(dst):
+            self.logger.info("{} do not exist".format(self.index, dst))
             return False
-        for file_name in os.listdir(dirs):
-            if file_name.endswith(extension):
+        for file_name in os.listdir(dst):
+            if file_name.endswith(ends):
                 find_it = False
                 start = 0
                 end = 0
-                f = open(os.path.join(dirs, file_name), "r")
+                f = open(os.path.join(dst, file_name), "r")
                 text = f.readlines()
                 f.close()
                 for i in range(0, len(text)):
@@ -397,11 +411,11 @@ class Deployer:
                     
                     if find_it:
                         end = i
-                        if pattern_type == utilities.SYSCALL or (pattern_type == utilities.ARG and line == "\n"):
+                        if pattern_type == utilities.SYSCALL or (pattern_type == utilities.STRUCT and line == "\n"):
                             break
             
                 if find_it:
-                    f = open(os.path.join(dirs, file_name), "w")
+                    f = open(os.path.join(dst, file_name), "w")
                     new_data = []
                     new_data.extend(text[:start])
                     new_data.extend(data)
@@ -410,7 +424,7 @@ class Deployer:
                     f.close()
                     break
                 elif target_file == file_name:
-                    f = open(os.path.join(dirs, file_name), "w")
+                    f = open(os.path.join(dst, file_name), "w")
                     new_data = []
                     new_data.extend(text)
                     new_data.extend(data)
@@ -418,11 +432,18 @@ class Deployer:
                     f.close()
                     find_it = True
                     break
-        #if pattern_type == utilities.ARG:
+        if pattern_type == utilities.SYSCALL:
+            if utilities.regx_match(r'^syz_', pattern):
+                regx_pattern = "^"+pattern
+                src = os.path.join(self.current_case_path, "poc/gopath/src/github.com/google/syzkaller/executor")
+                dst = os.path.join(self.syzkaller_path, "executor")
+                file_ends = "common_linux.h"
+                self.syncFilesByPattern(regx_pattern, utilities.FUNC_DEF, src, dst, file_ends)
+        #if pattern_type == utilities.STRUCT:
         #    for each_struct in self.getSubStruct(data):
-        #        self.replaceTemplate(each_struct, utilities.ARG)
+        #        self.replaceTemplate(each_struct, utilities.STRUCT)
         return find_it
-    
+
     def getSubStruct(self, struct_data):
         regx_field = r'\W*([a-zA-Z0-9\[\]_]+)\W+([a-zA-Z0-9\[\]_, ]+)'
         start = False
@@ -533,7 +554,7 @@ class Deployer:
         chmodX("scripts/deploy.sh")
         index = str(self.index)
         self.logger.info("run: scripts/deploy.sh".format(self.index))
-        p = Popen(["scripts/deploy.sh", self.linux_path, hash_val, commit, syzkaller, config, testcase, index, self.catalog, image, self.arch, self.gcc, str(kasan_patch)],
+        p = Popen(["scripts/deploy.sh", self.linux_path, hash_val, commit, syzkaller, config, testcase, index, self.catalog, image, self.arch, self.compiler, str(kasan_patch)],
                 stdout=PIPE,
                 stderr=STDOUT
                 )
@@ -547,12 +568,12 @@ class Deployer:
         dependent_syscalls = []
         syscalls = self.__extract_syscalls(testcase)
         if syscalls == []:
-            self.logger.info("No syscalls found in testcase: {}".format(self.index, testcase))
+            self.logger.info("No syscalls found in testcase: {}".format(testcase))
             return -1
         for each in syscalls:
             dependent_syscalls.extend(self.__extract_dependent_syscalls(each, self.syzkaller_path))
         if len(dependent_syscalls) < 1:
-            self.logger.info("Cannot find dependent syscalls for {}.\nTry to continue without them".format(self.index))
+            self.logger.info("Cannot find dependent syscalls for\n{}\nTry to continue without them".format(testcase))
         new_syscalls = syscalls.copy()
         new_syscalls.extend(dependent_syscalls)
         new_syscalls = utilities.unique(new_syscalls)
@@ -680,7 +701,7 @@ class Deployer:
                 res.append(syscall)
         return res
 
-    def __save_case(self, hash_val, exitcode, case, need_fuzzing, title=None, secondary_fuzzing=False):
+    def __save_case(self, hash_val, exitcode, case, need_fuzzing, title=None, secondary_fuzzing=False, write_without_mutating=False):
         if exitcode !=0:
             self.__save_error(hash_val)
         else:
@@ -688,10 +709,14 @@ class Deployer:
             self.__create_stamp(stamp_finish_fuzzing)
             if self.__success_check(hash_val[:7]):
                 if need_fuzzing:
+                    if write_without_mutating:
+                        self.__copy_new_capability(case, need_fuzzing, title)
                     paths = self.confirmSuccess(hash_val, case)
                     if len(paths) > 0:
                         for each in paths:
                             self.__copy_new_capability(each, need_fuzzing, title)
+                        self.__move_to_succeed()
+                    elif write_without_mutating:
                         self.__move_to_succeed()
                     else:
                         self.__move_to_completed()

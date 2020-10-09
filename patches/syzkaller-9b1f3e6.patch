@@ -258,7 +258,7 @@ index 69df2a80..c7f071e1 100644
 +	TimeLimit      string `json:"time_limit"`
  }
 diff --git a/pkg/mgrconfig/load.go b/pkg/mgrconfig/load.go
-index 4e413636..9ad59ac9 100644
+index 4e413636..857dd80d 100644
 --- a/pkg/mgrconfig/load.go
 +++ b/pkg/mgrconfig/load.go
 @@ -11,6 +11,7 @@ import (
@@ -278,7 +278,7 @@ index 4e413636..9ad59ac9 100644
  			}
  		}
  	} else {
-@@ -225,7 +226,7 @@ func ParseEnabledSyscalls(target *prog.Target, enabled, disabled []string) ([]in
+@@ -225,11 +226,11 @@ func ParseEnabledSyscalls(target *prog.Target, enabled, disabled []string) ([]in
  			}
  		}
  		if n == 0 {
@@ -287,6 +287,11 @@ index 4e413636..9ad59ac9 100644
  		}
  	}
  	if len(syscalls) == 0 {
+-		return nil, fmt.Errorf("all syscalls are disabled by disable_syscalls in config")
++		log.Logf(0, "all syscalls are disabled by disable_syscalls in config")
+ 	}
+ 	var arr []int
+ 	for id := range syscalls {
 diff --git a/pkg/report/linux.go b/pkg/report/linux.go
 index 07c061ff..fbf4773a 100644
 --- a/pkg/report/linux.go
@@ -626,7 +631,7 @@ index fcc01a99..19abe3a5 100644
 +	Sandbox      string
 +}
 diff --git a/prog/encoding.go b/prog/encoding.go
-index 6bded49d..d0e40b57 100644
+index 6bded49d..f1d6a33b 100644
 --- a/prog/encoding.go
 +++ b/prog/encoding.go
 @@ -6,10 +6,13 @@ package prog
@@ -900,6 +905,14 @@ index 6bded49d..d0e40b57 100644
  func (ctx *serializer) printf(text string, args ...interface{}) {
  	fmt.Fprintf(ctx.buf, text, args...)
  }
+@@ -262,6 +515,7 @@ func (p *parser) parseProg() (*Prog, error) {
+ 		}
+ 		meta := p.target.SyscallMap[name]
+ 		if meta == nil {
++			MissingSyscall = name
+ 			return nil, fmt.Errorf("unknown syscall %v", name)
+ 		}
+ 		c := &Call{
 diff --git a/prog/minimization.go b/prog/minimization.go
 index 9a71dd06..e3f64e0c 100644
 --- a/prog/minimization.go
@@ -958,10 +971,10 @@ index 62acba58..db20d551 100644
  	for _, c := range p.Calls {
 diff --git a/prog/mutation_custom.go b/prog/mutation_custom.go
 new file mode 100644
-index 00000000..ba1772c3
+index 00000000..d6ff47ec
 --- /dev/null
 +++ b/prog/mutation_custom.go
-@@ -0,0 +1,242 @@
+@@ -0,0 +1,243 @@
 +package prog
 +
 +import (
@@ -974,6 +987,7 @@ index 00000000..ba1772c3
 +var ExecutePoCOnly = true
 +var LastGroupArg = ""
 +var LastArg = ""
++var MissingSyscall = ""
 +
 +func (ctx *mutator) spliceCus() bool {
 +	p, r := ctx.p, ctx.r
@@ -1806,10 +1820,10 @@ index 91e31dbd..19e92b93 100644
 +}
 diff --git a/syz-manager/utilities.go b/syz-manager/utilities.go
 new file mode 100644
-index 00000000..3a7d0030
+index 00000000..b55b3b1a
 --- /dev/null
 +++ b/syz-manager/utilities.go
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,96 @@
 +package main
 +
 +import (
@@ -1899,7 +1913,12 @@ index 00000000..3a7d0030
 +		log.Logf(0, "Fail to open CorrectTemplate: %v\n", err)
 +	}
 +	defer f.Close()
-+	f.Write([]byte(prog.LastGroupArg))
++	if prog.MissingSyscall != "" {
++		f.Write([]byte("syscall:" + prog.MissingSyscall))
++	}
++	if prog.LastGroupArg != "" {
++		f.Write([]byte("arg:" + prog.LastGroupArg))
++	}
 +}
 diff --git a/tools/syz-branch2addr/syz-branch2addr.go b/tools/syz-branch2addr/syz-branch2addr.go
 new file mode 100644

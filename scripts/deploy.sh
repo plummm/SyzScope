@@ -11,7 +11,7 @@ LATEST="9b1f3e6"
 
 function copy_log_then_exit() {
   LOG=$1
-  cp $LOG $CASE_PATH/$LOG-gcc-9.0.0-20181231
+  cp $LOG $CASE_PATH/$LOG-$COMPILER_VERSION
   exit 1
 }
 
@@ -71,12 +71,13 @@ INDEX=$7
 CATALOG=$8
 IMAGE=$9
 ARCH=${10}
-GCC_VERSION=${11}
+COMPILER_VERSION=${11}
 KASAN_PATCH=${12}
 PROJECT_PATH="$(pwd)"
 CASE_PATH=$PROJECT_PATH/work/$CATALOG/$HASH
 PATCHES_PATH=$PROJECT_PATH/patches
-GCC=$PROJECT_PATH/tools/$GCC_VERSION/bin/gcc
+echo "Compiler: "$COMPILER_VERSION | grep gcc && \
+COMPILER=$PROJECT_PATH/tools/$COMPILER_VERSION/bin/gcc || COMPILER=$PROJECT_PATH/tools/$COMPILER_VERSION/bin/clang
 
 if [ ! -d "tools/$1-$INDEX" ]; then
   echo "No linux repositories detected"
@@ -167,7 +168,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   fi
   git stash
   git clean -d -f -e THIS_KERNEL_IS_BEING_USED
-  #make clean CC=$GCC
+  #make clean CC=$COMPILER
   #git stash --all || set_git_config
   git checkout -f $COMMIT || (git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1 && git checkout -f $COMMIT)
   if [ "$KASAN_PATCH" == "1" ]; then
@@ -177,8 +178,8 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   #Add a rejection detector in future
   curl $CONFIG > .config
   sed -i "s/CONFIG_BUG_ON_DATA_CORRUPTION=y/# CONFIG_BUG_ON_DATA_CORRUPTION is not set/g" .config
-  make olddefconfig CC=$GCC
-  make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_exit make.log
+  make olddefconfig CC=$COMPILER
+  make -j16 CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
   touch THIS_KERNEL_IS_BEING_USED
   touch $CASE_PATH/.stamp/BUILD_KERNEL
 fi

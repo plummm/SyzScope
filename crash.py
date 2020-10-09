@@ -32,7 +32,7 @@ thread_fn = None
 qemu_num = 3
 
 class CrashChecker:
-    def __init__(self, project_path, case_path, ssh_port, logger, debug, offset, gcc="gcc-7"):
+    def __init__(self, project_path, case_path, ssh_port, logger, debug, offset, compiler="gcc-7"):
         os.makedirs("{}/poc".format(case_path), exist_ok=True)
         self.kasan_regx = r'KASAN: ([a-z\\-]+) Write in ([a-zA-Z0-9_]+).*'
         self.free_regx = r'KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
@@ -45,7 +45,7 @@ class CrashChecker:
         self.ssh_port = ssh_port+offset*qemu_num
         self.kasan_func_list = self.read_kasan_funcs()
         self.debug = debug
-        self.gcc = gcc
+        self.compiler = compiler
         self.kill_qemu = False
         self.queue = queue.Queue()
 
@@ -153,7 +153,7 @@ class CrashChecker:
     
     def patch_applying_check(self, linux_commit, config, patch_commit):
         utilities.chmodX("scripts/patch_applying_check.sh")
-        p = Popen(["scripts/patch_applying_check.sh", self.linux_path, linux_commit, config, patch_commit, self.gcc],
+        p = Popen(["scripts/patch_applying_check.sh", self.linux_path, linux_commit, config, patch_commit, self.compiler],
                 stdout=PIPE,
                 stderr=STDOUT)
         with p.stdout:
@@ -307,12 +307,12 @@ class CrashChecker:
         p = None
         if commit == None and config == None:
             #self.logger.info("run: scripts/deploy_linux.sh {} {}".format(self.linux_path, patch_path))
-            p = Popen(["scripts/deploy_linux.sh", self.gcc, str(fixed), self.linux_path, self.project_path],
+            p = Popen(["scripts/deploy_linux.sh", self.compiler, str(fixed), self.linux_path, self.project_path],
                 stdout=PIPE,
                 stderr=STDOUT)
         else:
             #self.logger.info("run: scripts/deploy_linux.sh {} {} {} {}".format(self.linux_path, patch_path, commit, config))
-            p = Popen(["scripts/deploy_linux.sh", self.gcc, str(fixed), self.linux_path, self.project_path, commit, config],
+            p = Popen(["scripts/deploy_linux.sh", self.compiler, str(fixed), self.linux_path, self.project_path, commit, config],
                 stdout=PIPE,
                 stderr=STDOUT)
         with p.stdout:
@@ -374,7 +374,7 @@ class CrashChecker:
                 if utilities.regx_match(startup_regx, line):
                     utilities.chmodX("scripts/upload-exp.sh")
                     p2 = Popen(["scripts/upload-exp.sh", self.case_path, syz_repro,
-                        str(self.ssh_port+th_index), self.image_path, syz_commit, str(repro_type), str(c_repro), str(i386), str(fixed), self.gcc],
+                        str(self.ssh_port+th_index), self.image_path, syz_commit, str(repro_type), str(c_repro), str(i386), str(fixed), self.compiler],
                     stdout=PIPE,
                     stderr=STDOUT)
                     with p2.stdout:

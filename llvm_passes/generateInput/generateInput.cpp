@@ -42,6 +42,7 @@ struct thisPass : public ModulePass {
 
     bool runOnModule(Module &M) override {
         struct Input *input = locatePointerAndOffset(M);
+        typeMatchFunc(M, input);
         return true;
     }
 
@@ -72,7 +73,11 @@ struct thisPass : public ModulePass {
                                 APInt ap_offset(64, 0, true);
                                 basePointer = op->stripAndAccumulateConstantOffsets(*dl, ap_offset, true);
                                 offset = ap_offset.getSExtValue();
-                                offset -= BUG_Offset;
+                                errs() << "offset to base obj is " << offset << "\n";
+                                if (offset >= BUG_Offset)
+                                    offset -= BUG_Offset;
+                                else
+                                    offset = 0;
                                 errs() << "offset to base obj is " << offset << "\n";
                             }
                         }
@@ -85,6 +90,50 @@ struct thisPass : public ModulePass {
         ret->basePointer = basePointer;
         ret->offset = offset;
         return ret;
+    }
+
+    void typeMatchFunc(Module &M, struct Input *input) {
+        llvm::StringRef basePointerStructName;
+        input->basePointer->print(errs());
+        llvm::Type *type = input->basePointer->getType();
+        llvm::Type *pointToType = type->getPointerElementType();
+        llvm::Value *op;
+        //errs() << "t1 " << type->getTypeID() << " t2 " << type->getPointerElementType()->getTypeID() << "\n";
+        if (pointToType->isStructTy()){
+            errs() << "\nname: " << pointToType->getStructName() << "\n";
+            basePointerStructName = pointToType->getStructName();
+        }
+
+        for(auto &F : M){
+            for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I) {
+                if(LoadInst *load = dyn_cast<LoadInst>(&(*I))) {
+                    op = load->getPointerOperand();
+                } else if(StoreInst *store = dyn_cast<StoreInst>(&(*I))) {
+                    op = store->getPointerOperand();
+                } /*else if(CallInst *call = dyn_cast<CallInst>(&(*I))) {
+                    if (call->isIndirectCall()) {
+                        //
+                    }
+                }*/ else 
+                    continue;
+                APInt ap_offset(64, 0, true);
+                auto basePointer = op->stripAndAccumulateConstantOffsets(*dl, ap_offset, true);
+                auto offset = ap_offset.getSExtValue();
+                
+                llvm::Type *t = basePointer->getType();
+                if (t->isPointerTy())
+                    t = t->getPointerElementType();
+                if (t->isStructTy()) {
+                    if (t->getStructName() == basePointerStructName && offset>=input->offset) {
+                        errs() << "find additonal use with offset " << offset << "\n";
+                        errs() << (*I) << "\n";
+                        auto dbg = I->getDebugLoc();
+                        errs() << dbg->getFilename() << ":" << dbg->getLine() << "\n";
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     int* getFuncBoundary(llvm::Function *F, int ret[2]) {

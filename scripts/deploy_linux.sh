@@ -23,11 +23,12 @@ if [ $# -lt 4 ] || [ $# -eq 5 ] || [ $# -gt 6 ]; then
   exit 1
 fi
 
-GCC_VERSION=$1
+COMPILER_VERSION=$1
 FIXED=$2
 LINUX=$3
 PATCH=$4/patches/kasan.patch
-GCC=$4/tools/$GCC_VERSION/bin/gcc
+echo "Compiler: "$COMPILER_VERSION | grep gcc && \
+COMPILER=$4/tools/$COMPILER_VERSION/bin/gcc || COMPILER=$4/tools/$COMPILER_VERSION/bin/clang
 
 if [ $# -eq 6 ]; then
   COMMIT=$5
@@ -48,7 +49,7 @@ if [ $# -eq 6 ]; then
     git clean -d -f -e THIS_KERNEL_IS_BEING_USED
     CURRENT_HEAD=`git rev-parse HEAD`
     if [ "$CURRENT_HEAD" != "$COMMIT" ]; then
-      #make clean CC=$GCC
+      #make clean CC=$COMPILER
       #git stash --all
       git checkout -f $COMMIT || (git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1 && git checkout -f $COMMIT)
     fi
@@ -62,6 +63,6 @@ fi
 
 # Panic on data corruption may stop the fuzzing session
 sed -i "s/CONFIG_BUG_ON_DATA_CORRUPTION=y/# CONFIG_BUG_ON_DATA_CORRUPTION is not set/g" .config
-make olddefconfig CC=$GCC
-make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_exit make.log
+make olddefconfig CC=$COMPILER
+make -j16 CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
 exit 0

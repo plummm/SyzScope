@@ -69,6 +69,24 @@ def print_args_info(args):
     print("[*] key: {}".format(args.key))
     print("[*] alert: {}".format(args.alert))
 
+    try:
+        int(args.syzkaller_port)
+    except:
+        print("[-] invalid argument value syzkaller_port: {}".format(args.syzkaller_port))
+        os._exit(1)
+    
+    try:
+        int(args.linux)
+    except:
+        print("[-] invalid argument value linux: {}".format(args.linux))
+        os._exit(1)
+    
+    try:
+        int(args.time)
+    except:
+        print("[-] invalid argument value time: {}".format(args.time))
+        os._exit(1)
+
 def check_kvm():
     st = os.stat("scripts/check_kvm.sh")
     os.chmod("scripts/check_kvm.sh", st.st_mode | stat.S_IEXEC)

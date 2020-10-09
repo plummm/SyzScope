@@ -10,7 +10,7 @@ echo "running patch_applying_check.sh"
 function jump_to_the_patch() {
     git stash
     git clean -d -f -e THIS_KERNEL_IS_BEING_USED
-    #make clean CC=$GCC
+    #make clean CC=$COMPILER
     #git stash --all
     git checkout -f $PATCH
     git format-patch -1 $PATCH --stdout > fixed.patch
@@ -31,8 +31,9 @@ LINUX=$1
 COMMIT=$2
 CONFIG=$3
 PATCH=$4
-GCCVERSION=$5
-GCC=`pwd`/tools/$GCCVERSION/bin/gcc
+COMPILER_VERSION=$5
+echo "Compiler: "$COMPILER_VERSION | grep gcc && \
+COMPILER=`pwd`/tools/$COMPILER_VERSION/bin/gcc || COMPILER=`pwd`/tools/$COMPILER_VERSION/bin/clang
 
 cd $LINUX
 cd ..
@@ -43,7 +44,7 @@ CURRENT_HEAD=`git rev-parse HEAD`
 git stash
 if [ "$CURRENT_HEAD" != "$COMMIT" ]; then
     git clean -d -f -e THIS_KERNEL_IS_BEING_USED
-    #make clean CC=$GCC
+    #make clean CC=$COMPILER
     #git stash --all
     git checkout -f $COMMIT || (git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1 && git checkout -f $COMMIT)
 fi
@@ -52,6 +53,6 @@ patch -p1 -N -i fixed.patch || jump_to_the_patch
 patch -p1 -R < fixed.patch
 curl $CONFIG > .config
 sed -i "s/CONFIG_BUG_ON_DATA_CORRUPTION=y/# CONFIG_BUG_ON_DATA_CORRUPTION is not set/g" .config
-make olddefconfig CC=$GCC
-make -j16 CC=$GCC > make.log 2>&1 || copy_log_then_exit make.log
+make olddefconfig CC=$COMPILER
+make -j16 CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
 exit 0

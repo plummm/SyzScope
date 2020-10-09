@@ -38,8 +38,8 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_IMAGE" ]; then
   cd ..
 fi
 
-echo "[+] Building gcc"
-if [ ! -f "$TOOLS_PATH/.stamp/BUILD_GCC" ]; then
+echo "[+] Building gcc and clang"
+if [ ! -f "$TOOLS_PATH/.stamp/BUILD_GCC_CLANG" ]; then
   wget https://storage.googleapis.com/syzkaller/gcc-7.tar.gz > /dev/null
   tar xzf gcc-7.tar.gz
   mv gcc gcc-7
@@ -65,12 +65,36 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_GCC" ]; then
   mv gcc-10 gcc-10.1.0-20200507
   rm gcc-10.1.0-syz.tar.xz
 
+  wget https://storage.googleapis.com/syzkaller/clang-kmsan-329060.tar.gz > /dev/null
+  tar xzf clang-kmsan-329060.tar.gz
+  mv clang-kmsan-329060 clang-7-329060
+  rm clang-kmsan-329060.tar.gz
+
+  wget https://storage.googleapis.com/syzkaller/clang-kmsan-334104.tar.gz > /dev/null
+  tar xzf clang-kmsan-334104.tar.gz
+  mv clang-kmsan-334104 clang-7-334104
+  rm clang-kmsan-334104.tar.gz
+
+  wget https://storage.googleapis.com/syzkaller/clang-kmsan-343298.tar.gz > /dev/null
+  tar xzf clang-kmsan-343298.tar.gz
+  mv clang-kmsan-343298 clang-8-343298
+  rm clang-kmsan-343298.tar.gz
+
+  wget https://storage.googleapis.com/syzkaller/clang_install_c2443155.tar.gz > /dev/null
+  tar xzf clang_install_c2443155.tar.gz
+  mv clang_install_c2443155 clang-10-c2443155
+  rm clang_install_c2443155.tar.gz
+
+  wget https://storage.googleapis.com/syzkaller/clang-11-prerelease-ca2dcbd030e.tar.xz > /dev/null
+  tar xf clang-11-prerelease-ca2dcbd030e.tar.xz
+  mv clang clang-11-ca2dcbd030e
+  rm clang-11-prerelease-ca2dcbd030e.tar.xz
 
   #This is for gcc-9
   #if [ ! -f "/usr/lib/x86_64-linux-gnu/libmpfr.so.4" ]; then
   #  sudo ln -s /usr/lib/x86_64-linux-gnu/libmpfr.so.6 /usr/lib/x86_64-linux-gnu/libmpfr.so.4
   #fi
-  touch $TOOLS_PATH/.stamp/BUILD_GCC
+  touch $TOOLS_PATH/.stamp/BUILD_GCC_CLANG
   cd ..
 fi
 
