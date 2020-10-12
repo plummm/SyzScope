@@ -152,7 +152,7 @@ class Deployer:
             self.logger.info("Try to triger the OOB/UAF by running original poc")
             if not self.__check_stamp(stamp_reproduce_ori_poc, hash_val[:7], 'incomplete'):
                 report, trigger = self.crash_checker.read_crash(case["syz_repro"], case["syzkaller"], None, 0, case["c_repro"], i386)
-                write_without_mutating = self.KasanWriteChecker(report, hash_val)
+                write_without_mutating, title = self.KasanWriteChecker(report, hash_val)
                 self.__create_stamp(stamp_reproduce_ori_poc)
             if self.force_fuzz or not write_without_mutating:
                 path = None
@@ -160,8 +160,9 @@ class Deployer:
                 req = requests.request(method='GET', url=case["syz_repro"])
                 self.__write_config(req.content.decode("utf-8"), hash_val[:7])
                 exitcode = self.run_syzkaller(hash_val)
-                self.__save_case(hash_val, exitcode, case, need_fuzzing, write_without_mutating)
-            if write_without_mutating:
+                self.__save_case(hash_val, exitcode, case, need_fuzzing)
+            if write_without_mutating and title != None:
+                # move to succeed group
                 self.__save_case(hash_val, 0, case, need_fuzzing=False, title=title)
         else:
             self.logger.info("{} has finished".format(hash_val[:7]))
@@ -196,6 +197,7 @@ class Deployer:
         return exitcode
     
     def KasanWriteChecker(self, report, hash_val):
+        title = None
         ret = False
         if report != []:
             for each in report:
@@ -216,7 +218,7 @@ class Deployer:
                         self.__write_to_sucess(hash_val)
                         self.__write_to_confirmed_sucess(hash_val)
                         break
-        return ret
+        return ret, title
     
     def KasanVulnChecker(self, report):
         vul_site = ''
@@ -520,6 +522,9 @@ class Deployer:
         if commit != None:
             res = self.crash_checker.repro_on_fixed_kernel(syz_commit, case["commit"], config, c_repro, i386, commit, crashes_path=crashes_path)
         return res
+    
+    def save_case(self, hash_val, exitcode, case, need_fuzzing, title=None, secondary_fuzzing=False):
+        self.__save_case(hash_val=hash_val, exitcode=exitcode, case=case, need_fuzzing=need_fuzzing, title=title, secondary_fuzzing=secondary_fuzzing)
 
     def __check_confirmed(self, hash_val):
         return False
@@ -701,7 +706,7 @@ class Deployer:
                 res.append(syscall)
         return res
 
-    def __save_case(self, hash_val, exitcode, case, need_fuzzing, title=None, secondary_fuzzing=False, write_without_mutating=False):
+    def __save_case(self, hash_val, exitcode, case, need_fuzzing, title=None, secondary_fuzzing=False):
         if exitcode !=0:
             self.__save_error(hash_val)
         else:
@@ -709,14 +714,10 @@ class Deployer:
             self.__create_stamp(stamp_finish_fuzzing)
             if self.__success_check(hash_val[:7]):
                 if need_fuzzing:
-                    if write_without_mutating:
-                        self.__copy_new_capability(case, need_fuzzing, title)
                     paths = self.confirmSuccess(hash_val, case)
                     if len(paths) > 0:
                         for each in paths:
                             self.__copy_new_capability(each, need_fuzzing, title)
-                        self.__move_to_succeed()
-                    elif write_without_mutating:
                         self.__move_to_succeed()
                     else:
                         self.__move_to_completed()
