@@ -1,12 +1,13 @@
 import os, re, stat, sys
 import logging
 import argparse
-import utilities
+import interface.utilities as utilities
 import time
 import threading
 import json
 import pathlib
 import queue
+from interface.vm import VMInstance
 
 from subprocess import call, Popen, PIPE, STDOUT
 from syzbotCrawler import Crawler
@@ -334,24 +335,10 @@ class CrashChecker:
                 self.logger.info("Failed to parse repro {}".format(syz_repro))
         else:
             c_hash = syz_commit + "-ori"
-        qemu_log = open("{}/poc/qemu-{}-{}.log".format(self.case_path, c_hash, th_index), "a")
-        qemu_log.write("QEMU-{} launched. Fixed={}\n".format(th_index, fixed))
-        p = Popen(["qemu-system-x86_64", "-m", "2G", "-smp", "2", 
-                    "-net", "nic,model=e1000", "-net", "user,host=10.0.2.10,hostfwd=tcp::{}-:22".format(self.ssh_port+th_index),
-                    "-display", "none", "-serial", "stdio", "-no-reboot", "-enable-kvm", "-cpu", "host,migratable=off", 
-                    "-hda", "{}/stretch.img".format(self.image_path), 
-                    "-snapshot", "-kernel", "{}/arch/x86_64/boot/bzImage".format(self.linux_path),
-                    "-append", "kasan_multi_shot=1 earlyprintk=serial oops=panic nmi_watchdog=panic panic=1 \
-                        ftrace_dump_on_oops=orig_cpu rodata=n vsyscall=native net.ifnames=0 \
-                        biosdevname=0 root=/dev/sda console=ttyS0 kvm-intel.nested=1 \
-                        kvm-intel.unrestricted_guest=1 kvm-intel.vmm_exclusive=1 \
-                        kvm-intel.fasteoi=1 kvm-intel.ept=1 kvm-intel.flexpriority=1 \
-                        kvm-intel.vpid=1 kvm-intel.emulate_invalid_guest_state=1 \
-                        kvm-intel.eptad=1 kvm-intel.enable_shadow_vmcs=1 kvm-intel.pml=1 \
-                        kvm-intel.enable_apicv=1"],
-                  stdout=PIPE,
-                  stderr=STDOUT
-                  )
+        qemu = VMInstance("{}/poc/qemu-{}-{}.log".format(self.case_path, c_hash, th_index))
+        qemu.log.write("QEMU-{} launched. Fixed={}\n".format(th_index, fixed))
+        qemu.setup(port=self.ssh_port+th_index, image=self.image_path, linux=self.linux_path)
+        p = qemu.run()
         x = threading.Thread(target=self.monitor_execution, args=(p,))
         x.start()
         with p.stdout:
@@ -368,7 +355,7 @@ class CrashChecker:
                     continue
                 if utilities.regx_match(reboot_regx, line) or utilities.regx_match(port_error_regx, line):
                     self.case_logger.error("Thread {}: Booting qemu-{} failed".format(th_index, th_index))
-                qemu_log.write(line+"\n")
+                qemu.log.write(line+"\n")
                 if self.debug:
                     print(line)
                 if utilities.regx_match(startup_regx, line):
@@ -380,7 +367,7 @@ class CrashChecker:
                     with p2.stdout:
                         output = self.__store_subprocess_output(p2.stdout)
                         for line in output:
-                            qemu_log.write(line+"\n")
+                            qemu.log.write(line+"\n")
                     exitcode = p2.wait()
                     if exitcode != 2 and exitcode != 3:
                         p.kill()
@@ -410,7 +397,7 @@ class CrashChecker:
                     with p3.stdout:
                         output = self.__store_subprocess_output(p3.stdout)
                         for line in output:
-                            qemu_log.write(line+"\n")
+                            qemu.log.write(line+"\n")
                     exitcode = p3.wait()
                     if exitcode == 1:
                         self.case_logger.error("QEMU threaded {}: Usually, there is no reproducer in the crash".format(th_index))
@@ -451,7 +438,7 @@ class CrashChecker:
             if p.poll() == None:
                 p.kill()
         self.queue.put([res, trgger_high_risk_bug])
-        qemu_log.close()
+        qemu.close_logger()
         return
 
     def make_commands(self, text, support_enable_features, i386):

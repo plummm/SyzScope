@@ -5,11 +5,12 @@ import shutil
 import syzbotCrawler
 import logging
 import datetime
-import utilities
+import interface.utilities as utilities
 
+from interface import s2e, static_analysis
 from subprocess import call, Popen, PIPE, STDOUT
 from crash import CrashChecker, kasan_regx, free_regx
-from utilities import chmodX
+from interface.utilities import chmodX
 from dateutil import parser as time_parser
 
 stamp_finish_fuzzing = "FINISH_FUZZING"
@@ -121,9 +122,10 @@ class Deployer:
             self.case_info_logger.info(url)
 
             if (self.static_analysis):
+                sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.current_case_path)
                 r = utilities.request_get(case['report'])
-                vul_site, func_site, func, offset = self.KasanVulnChecker(r.text)
-                r = self.prepare_static_analysis(case, vul_site, func_site)
+                vul_site, func_site, func, offset = sa.KasanVulnChecker(r.text)
+                r = sa.prepare_static_analysis(case, vul_site, func_site)
                 if r != 0:
                     self.logger.error("Error occur in deploy-bc.sh")
                 self.run_static_analysis(vul_site, func_site, func, offset)
@@ -168,34 +170,6 @@ class Deployer:
             self.logger.info("{} has finished".format(hash_val[:7]))
         return self.index
     
-    def prepare_static_analysis(self, case, vul_site, func_site):
-        bc_path = ''
-        commit = case["commit"]
-        config = case["config"]
-        vul_file, tmp = vul_site.split(':')
-        func_file, tmp = func_site.split(':')
-        if os.path.splitext(vul_file)[1] == '.h':
-            bc_path = os.path.dirname(func_file)
-        else:
-            dir_list1 = vul_file.split('/')
-            dir_list2 = func_file.split('/')
-            for i in range(0, min(len(dir_list1), len(dir_list2)) - 1):
-                if dir_list1[i] == dir_list2[i]:
-                    bc_path += dir_list1[i] + '/'
-
-        chmodX("scripts/deploy-bc.sh")
-        index = str(self.index)
-        self.logger.info("run: scripts/deploy-bc.sh".format(self.index))
-        p = Popen(["scripts/deploy-bc.sh", self.linux_path, index, self.current_case_path, commit, config, bc_path],
-                stdout=PIPE,
-                stderr=STDOUT
-                )
-        with p.stdout:
-            self.__log_subprocess_output(p.stdout, logging.INFO)
-        exitcode = p.wait()
-        self.logger.info("script/deploy-bc.sh is done with exitcode {}".format(exitcode))
-        return exitcode
-    
     def KasanWriteChecker(self, report, hash_val):
         title = None
         ret = False
@@ -219,43 +193,9 @@ class Deployer:
                         self.__write_to_confirmed_sucess(hash_val)
                         break
         return ret, title
-    
-    def KasanVulnChecker(self, report):
-        vul_site = ''
-        func_site = ''
-        offset = -1
-        report_list = report.split('\n')
-        trace = utilities.extrace_call_trace(report_list)
-        for each in trace:
-            if vul_site == '':
-                vul_site = utilities.extract_debug_info(each)
-            if utilities.isInline(each):
-                continue
-            func = utilities.extract_func_name(each)
-            func_site = utilities.extract_debug_info(each)
-            break
-        
-        offset = utilities.extract_vul_obj_offset(report_list)
-        return vul_site, func_site, func, offset
 
     def clone_linux(self):
         self.__run_linux_clone_script()
-    
-    def run_static_analysis(self, vul_site, func_site, func, offset):
-        vul_file, vul_line = vul_site.split(':')
-        func_file, func_line = func_site.split(':')
-        cmd = ["opt", "-load", "{}/llvm_passes/build/generateInput/libgenerateInput.so".format(self.project_path), 
-                "-generateInput", "-disable-output", "{}/llvm_linux/built-in.o.bc".format(self.project_path),
-                "-VulFile={}".format(vul_file), "-VulLine={}".format(vul_line), 
-                "-FuncFile={}".format(func_file), "-FuncLine={}".format(func_line),
-                "-Func={}".format(func), "-Offset={}".format(offset)]
-        p = Popen(cmd,
-                  stdout=PIPE,
-                  stderr=STDOUT
-                  )
-        with p.stdout:
-            self.__log_subprocess_output(p.stdout, logging.INFO)
-        exitcode = p.wait()
 
     def run_syzkaller(self, hash_val):
         self.logger.info("run syzkaller".format(self.index))

@@ -1,7 +1,7 @@
 from syzbotCrawler import Crawler
 from deploy import Deployer
 from subprocess import call
-from utilities import urlsOfCases
+from interface.utilities import urlsOfCases
 
 import argparse, os, stat
 import threading, re

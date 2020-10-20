@@ -99,6 +99,7 @@ def extract_allocated_section(report):
         return res[:-2]
     
 def extrace_call_trace(report):
+    call_trace_end = [r"entry_SYSENTER", r"entry_SYSCALL", r"ret_from_fork"]
     res = []
     record_flag = 0
     implicit_call_regx = r'\[.+\]  \?.*'
@@ -109,10 +110,16 @@ def extrace_call_trace(report):
             res.append(line)
         if regx_match(r'Call Trace', line):
             record_flag ^= 1
-        if record_flag == 1 and regx_match(r'Allocated by task', line):
+        if record_flag == 1 and regx_match_list(call_trace_end, line):
             record_flag ^= 1
             break
     return res
+
+def regx_match_list(regx_list, line):
+    for regx in regx_list:
+        if regx_match(regx, line):
+            return True
+    return False
 
 def extract_bug_description(report):
     res = []

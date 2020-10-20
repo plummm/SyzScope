@@ -42,7 +42,7 @@ struct thisPass : public ModulePass {
 
     bool runOnModule(Module &M) override {
         struct Input *input = locatePointerAndOffset(M);
-        typeMatchFunc(M, input);
+        //typeMatchFunc(M, input);
         return true;
     }
 
