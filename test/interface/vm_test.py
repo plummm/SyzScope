@@ -1,4 +1,5 @@
 from interface.vm.state import VMState
+from interface.vm import VM
 
 def init_vmstate():
     vm = VMState('/home/xzou017/projects/SyzbotAnalyzer/work/incomplete/00939fa/linux/')
@@ -11,7 +12,17 @@ def waitfor_kasan_report_test(vm):
 def read_mem_test(vm):
     vm.read_mem(0xffff88006bfbf760, 16)
 
+def read_regs_test(vm):
+    vm.read_regs()
+
+def init_vm():
+    vm = VM('/home/xzou017/projects/SyzbotAnalyzer/work/incomplete/00939fa/linux/', 2778, 
+    "/home/xzou017/projects/SyzbotAnalyzer/work/incomplete/00939fa/img", gdb_port=1235)
+    return vm
+
 if __name__ == '__main__':
-    vm = init_vmstate()
+    vm = init_vm()
+    vm.run()
     waitfor_kasan_report_test(vm)
     read_mem_test(vm)
+    read_regs_test(vm)

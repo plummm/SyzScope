@@ -7,7 +7,7 @@ import logging
 import datetime
 import interface.utilities as utilities
 
-from interface import s2e, static_analysis
+from interface import s2e, static_analysis, sym_exec
 from subprocess import call, Popen, PIPE, STDOUT
 from crash import CrashChecker, kasan_regx, free_regx
 from interface.utilities import chmodX
@@ -45,7 +45,7 @@ syz_config_template="""
 
 class Deployer:
     def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False):
-        self.linux_path = "linux"
+        self.linux_folder = "linux"
         self.project_path = ""
         self.syzkaller_path = ""
         self.image_path = ""
@@ -57,7 +57,7 @@ class Deployer:
         self.case_info_logger = None
         self.force = force
         self.time_limit = time
-        self.crash_checker = None
+        #self.crash_checker = None
         self.image_switching_date = datetime.datetime(2020, 3, 15)
         self.arch = None
         self.compiler = None
@@ -156,6 +156,16 @@ class Deployer:
                 report, trigger = self.crash_checker.read_crash(case["syz_repro"], case["syzkaller"], None, 0, case["c_repro"], i386)
                 write_without_mutating, title = self.KasanWriteChecker(report, hash_val)
                 self.__create_stamp(stamp_reproduce_ori_poc)
+            ### DEBUG SYMEXEC ###
+            sym = sym_exec.SymExec(debug=self.debug)
+            linux_path = os.path.join(self.current_case_path, self.linux_folder)
+            sym.setup_vm(linux_path, 2778, self.image_path, 1235, proj_path=self.current_case_path)
+            sym.run_vm()
+            ok, output = self.crash_checker.upload_exp(case["syz_repro"], 2778, case["syzkaller"], utilities.URL, case["c_repro"], i386, 0)
+            self.crash_checker.run_exp(case["syz_repro"], 2778, utilities.URL, ok, i386, 0)
+            sym.setup_bug_capture(8, 32, 0xffffffff83445776, 0xffffffff83450929, [])
+            sym.run_sym()
+            ### DEBUG SYMEXEC ###
             if self.force_fuzz or not write_without_mutating:
                 path = None
                 need_fuzzing = True
@@ -480,8 +490,8 @@ class Deployer:
     def __run_linux_clone_script(self):
         chmodX("scripts/linux-clone.sh")
         index = str(self.index)
-        self.logger.info("run: scripts/linux-clone.sh {} {}".format(self.index, self.linux_path, index))
-        call(["scripts/linux-clone.sh", self.linux_path, index])
+        self.logger.info("run: scripts/linux-clone.sh {} {}".format(self.index, self.linux_folder, index))
+        call(["scripts/linux-clone.sh", self.linux_folder, index])
 
     def __run_delopy_script(self, hash_val, case, kasan_patch=0):
         commit = case["commit"]
@@ -499,7 +509,7 @@ class Deployer:
         chmodX("scripts/deploy.sh")
         index = str(self.index)
         self.logger.info("run: scripts/deploy.sh".format(self.index))
-        p = Popen(["scripts/deploy.sh", self.linux_path, hash_val, commit, syzkaller, config, testcase, index, self.catalog, image, self.arch, self.compiler, str(kasan_patch)],
+        p = Popen(["scripts/deploy.sh", self.linux_folder, hash_val, commit, syzkaller, config, testcase, index, self.catalog, image, self.arch, self.compiler, str(kasan_patch)],
                 stdout=PIPE,
                 stderr=STDOUT
                 )

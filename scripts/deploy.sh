@@ -9,6 +9,20 @@ echo "running deploy.sh"
 
 LATEST="9b1f3e6"
 
+function config_disable() {
+  key=$1
+  sed -i "s/$key=n/# $key is not set/g" .config
+  sed -i "s/$key=m/# $key is not set/g" .config
+  sed -i "s/$key=y/# $key is not set/g" .config
+}
+
+function config_enable() {
+  key=$1
+  sed -i "s/$key=n/# $key is not set/g" .config
+  sed -i "s/$key=m/# $key is not set/g" .config
+  sed -i "s/# $key is not set/$key=y/g" .config
+}
+
 function copy_log_then_exit() {
   LOG=$1
   cp $LOG $CASE_PATH/$LOG-$COMPILER_VERSION
@@ -177,7 +191,26 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   fi
   #Add a rejection detector in future
   curl $CONFIG > .config
-  sed -i "s/CONFIG_BUG_ON_DATA_CORRUPTION=y/# CONFIG_BUG_ON_DATA_CORRUPTION is not set/g" .config
+
+  CONFIGKEYSDISABLE="
+  CONFIG_BUG_ON_DATA_CORRUPTION
+  CONFIG_KASAN_INLINE
+  "
+
+  CONFIGKEYSENABLE="
+  CONFIG_KASAN_OUTLINE
+  "
+  
+  for key in $CONFIGKEYSDISABLE;
+  do
+    config_disable $key
+  done
+
+  for key in $CONFIGKEYSENABLE;
+  do
+    config_enable $key
+  done
+
   make olddefconfig CC=$COMPILER
   make -j16 CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
   touch THIS_KERNEL_IS_BEING_USED

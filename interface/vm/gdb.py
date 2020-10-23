@@ -32,21 +32,61 @@ class GDBHelper:
     
     def get_mem_content(self, addr, size):
         ret = []
-        regx_mem_contect = r'0x[a-f0-9]+:\W+(0x[a-f0-9]+)\W+(0x[a-f0-9]+)'
+        regx_mem_contect = r'0x[a-f0-9]+:\W+(0x[a-f0-9]+)(\W+(0x[a-f0-9]+))?'
         group = math.ceil(size / 8)
         cmd = 'x/{}gx {}'.format(group, hex(addr))
         self.gdb_inst.sendline(cmd)
         raw = self.waitfor("pwndbg>")
         for line in raw.split('\n'):
             line = line.strip('\n')
-            mem0 = utilities.regx_get(regx_mem_contect, line, 0)
-            mem1 = utilities.regx_get(regx_mem_contect, line, 1)
-            if mem0 != None and mem1 != None:
-                ret.extend([mem0, mem1])
+            mem = utilities.regx_get(regx_mem_contect, line, 0)
+            if mem == None:
+               break
+            ret.append(mem)
+            mem = utilities.regx_get(regx_mem_contect, line, 2)
+            if mem == None:
+                break
+            ret.append(mem)
+        self.refresh()
         return ret
     
+    def get_registers(self):
+        ret = {}
+        regx_regs = r'([0-9a-z]+)\W+(0x[0-9a-f]+)'
+        cmd = 'info registers'
+        self.gdb_inst.sendline(cmd)
+        raw = self.waitfor("pwndbg>")
+        for line in raw.split('\n'):
+            line = line.strip('\n')
+            reg = utilities.regx_get(regx_regs, line, 0)
+            val = utilities.regx_get(regx_regs, line, 1)
+            if reg != None and val != None:
+                ret[reg] = val
+        self.refresh()
+        return ret
+    
+    def get_register(self, reg):
+        ret = None
+        regx_regs = r'([0-9a-z]+)\W+(0x[0-9a-f]+)'
+        cmd = 'info r {}'.format(reg)
+        self.gdb_inst.sendline(cmd)
+        raw = self.waitfor("pwndbg>")
+        for line in raw.split('\n'):
+            line = line.strip('\n')
+            val = utilities.regx_get(regx_regs, line, 1)
+            if val != None:
+                ret = val
+        self.refresh()
+        return ret
+    
+    def refresh(self):
+        self.sendline('')
+
     def sendline(self, cmd):
         self.gdb_inst.sendline(cmd)
+    
+    def recv(self):
+        return self.gdb_inst.recv()
 
     def command(self, cmd):
         ret = list()

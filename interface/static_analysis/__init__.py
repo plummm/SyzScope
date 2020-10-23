@@ -1,1 +1,1 @@
-from interface.static_analysis.staticAnalysis import StaticAnalysis
+from .staticAnalysis import StaticAnalysis
