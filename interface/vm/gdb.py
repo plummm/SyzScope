@@ -27,7 +27,7 @@ class GDBHelper:
     
     def waitfor(self, pattern):
         text = self.gdb_inst.recvuntil(pattern)
-        print(text.decode("utf-8"))
+        #print(text.decode("utf-8"))
         return text.decode("utf-8")
     
     def get_mem_content(self, addr, size):

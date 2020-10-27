@@ -9,34 +9,51 @@ class MemInstrument:
     CTR_ADDR = 0x40000000
 
     def __init__(self):
-        self.ctr_addr = MemInstrument.USER_PAGE_START
+        self.cur_cond_jmp = 0
+        self.mem_initialized = {}
 
-    def instrumen_mem_read(self, bv_addr, size):
-        addr = self.state.solver.eval(bv_addr)
-        if bv_addr.symbolic:
+    def instrument_mem_read(self, state, bv_addr, size):
+        addr = state.solver.eval(bv_addr)
+        if bv_addr.symbolic and not self.is_ctr_addr(addr):
             if self.is_ctr_addr(addr):
                 return
             try:
-                self.state.solver.add(bv_addr == MemInstrument.CTR_ADDR)
-                addr = self.state.solver.eval(bv_addr)
+                if not state.solver.unique(bv_addr):
+                    state.solver.add(bv_addr == MemInstrument.CTR_ADDR)
+                    addr = state.solver.eval(bv_addr)
             except:
                 return
             self.updateCtrAddr()
-        t = self.state.memory.load(bv_addr,size=1,inspect=False)
+        t = state.memory.load(bv_addr,size=1,inspect=False)
         if t.uninitialized:
-            print('Read from', hex(addr), 'size', size)
-            print('Call instruction at:', hex(self.state.addr))
+        #if self.state.memory.is_uninitialized_data(addr):
+        #try:
+        #    self.mem_initialized[state][addr]
+        #except KeyError:
+            #print('Read from', hex(addr), 'size', size)
+            #print('Call instruction at:', hex(self.state.addr))
+            #if state not in self.mem_initialized:
+            #    self.mem_initialized[state] = {}
+            #self.mem_initialized[state][addr] = 0
             if self.is_ctr_addr(addr):
-                self.make_symbolic(self.state, addr, size)
+                self.make_symbolic(state, addr, size)
+                print("Make symbolic at {}".format(hex(state.addr)))
             else:
                 val = self.vm.read_mem(addr, size)
+                #print('Store at', hex(addr), ' with value ', val)
                 if len(val) > 0:
                     self.current_state.memory.store(addr, self.current_state.solver.BVV(int(val[0], 16), size*8))
+    
+    def instrument_cond_jump(self, state):
+        self.cur_cond_jmp = state.addr
+    
+    def exit_point(self, state):
+        if state in self.simgr.active:
+            self.simgr.active.remove(state)
 
     def track_mem_read(self, state):
-        self.state = state
         size = state.inspect.mem_read_length
-        self.instrumen_mem_read(state.inspect.mem_read_address, size)
+        self.instrument_mem_read(state, state.inspect.mem_read_address, size)
     
     def trace_call(self, state):
         kasan_func = [0xffffffff815b4de0, 0xffffffff815b4ce0, 0xffffffff815b4be0, 0xffffffff815b4b40, 0xffffffff815b4f00, 
@@ -48,7 +65,7 @@ class MemInstrument:
         #rip = state.solver.eval(state.regs.rip)
         #if addr in kasan_func:
         #    self.proj.hook(rip, self.nothing, length=5)
-        print("call func ",hex(addr))
+        #print("call func ",hex(addr))
 
     def trace_instruction(self, state):
         print("trace_instruction")
@@ -61,7 +78,7 @@ class MemInstrument:
         self.debug_state(state)
     
     def trace_symbolic_variable(self, state):
-        print("A new symbolic variable was created: name: {} size: {} bit".format(state.inspect.symbolic_name, state.inspect.symbolic_size), state.inspect.symbolic_expr)
+        print("A new symbolic data: {} size: {} bit".format(state.inspect.symbolic_name, state.inspect.symbolic_size), state.inspect.symbolic_expr)
         
     def debug_state(self, state):
         print("rax: is_symbolic: {} {}".format(state.regs.rax.symbolic, state.solver.eval(state.regs.rax)))
@@ -115,6 +132,18 @@ class MemInstrument:
         self.proj.hook_symbol("__asan_store16", kasan_16)
         self.proj.hook_symbol("__asan_load16", kasan_16)
         self.proj.hook_symbol("check_memory_region", SkipInst())
+        self.proj.hook_symbol("__kasan_check_read", SkipInst())
+        self.proj.hook_symbol("__kasan_check_write", SkipInst())
+        self.proj.hook_symbol("__mutex_lock", SkipInst())
+        self.proj.hook_symbol("__mutex_unlock_slowpath", SkipInst())
+    """
+    def update_mem_initialized_map(self, state, successors):
+        if len(successors) >= 1:
+            self.mem_initialized[successors[0]] = self.mem_initialized[state]
+        
+        if len(successors) == 2:
+            self.mem_initialized[successors[1]] = self.mem_initialized[state]
+    """
     
     def make_symbolic(self, state, addr, size, name=None):
         if (size <= 8):
@@ -156,5 +185,6 @@ class KasanAccess(SkipInst, MemInstrument):
         SkipInst.__init__(self)
 
     def kasan_access(self, addr):
-        self.instrumen_mem_read(addr, self.size)
+        pass
+        #self.instrument_mem_read(addr, self.size)
         #print("kasan inspect {} with {} bytes".format(hex(self.state.solver.eval(addr)), self.size))

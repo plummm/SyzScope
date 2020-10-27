@@ -11,6 +11,8 @@ class SymExec(MemInstrument):
     def __init__(self, debug=False):
         MemInstrument.__init__(self)
         self.debug = debug
+        self.state_logger = {}
+        self.state_counter = 0
         #self.gdb_port = None
         #self.vm = None
         #self.proj = None
@@ -73,54 +75,82 @@ class SymExec(MemInstrument):
     def symbolic_execute(self, vuln_site, target_site, path):
         extras = {angr.options.REVERSE_MEMORY_NAME_MAP,
                   angr.options.TRACK_ACTION_HISTORY,
-                  angr.options.CONSERVATIVE_READ_STRATEGY,
+                  #angr.options.CONSERVATIVE_READ_STRATEGY,
                   angr.options.KEEP_IP_SYMBOLIC,
                   angr.options.CONSTRAINT_TRACKING_IN_SOLVER,
-                  angr.options.REGION_MAPPING}
+                  angr.options.REGION_MAPPING,
+                  angr.options.ZERO_FILL_UNCONSTRAINED_REGISTERS}
         self.init_state = self.proj.factory.blank_state(addr=vuln_site, add_options=extras)
         self.restore_registers()
         self.symbolize_vuln_mem()
+        self.hookup_path(path)
         self.explore(target_site)
     
     def explore(self, target_site):
+        last_state = 0
         self.current_state = self.init_state
         #self.cfg = self.proj.analyses.CFGFast(normalize = True, function_starts=[self.vuln_site])
         self.current_state.inspect.b('mem_read', when=angr.BP_BEFORE, action=self.track_mem_read)
         #self.current_state.inspect.b('call', when=angr.BP_BEFORE, action=self.trace_call)
         self.current_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.trace_instruction, instruction=target_site)
-        #self.current_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.trace_instruction, instruction=0xffffffff8345231d)
+        self.current_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.trace_instruction, instruction=0xffffffff821b7e49)
+        self.current_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.trace_instruction, instruction=0xffffffff821b7e5d)
         self.current_state.inspect.b('fork', when=angr.BP_BEFORE, action=self.trace_fork)
         self.current_state.inspect.b('symbolic_variable', when=angr.BP_AFTER, action=self.trace_symbolic_variable)
+        self.state_logger[self.current_state] = self.state_counter
+
         self.hook_kasan_access()
-        simgr = self.proj.factory.simgr(self.current_state, save_unconstrained=True)
-        #limiter = angr.exploration_techniques.LoopSeer(cfg=self.cfg, bound=5)
-        legth_limiter = angr.exploration_techniques.LengthLimiter(max_length=1000, drop=True)
+        self.simgr = self.proj.factory.simgr(self.current_state, save_unconstrained=True)
+        #loop_seer = angr.exploration_techniques.LoopSeer(bound=5)
+        legth_limiter = angr.exploration_techniques.LengthLimiter(max_length=700, drop=True)
         dfs = angr.exploration_techniques.DFS()
-        explorer = angr.exploration_techniques.Explorer(find=target_site)
-        simgr.use_technique(dfs)
-        simgr.use_technique(legth_limiter)
-        simgr.use_technique(explorer)
+        #explorer = angr.exploration_techniques.Explorer(find=target_site)
+        self.simgr.use_technique(dfs)
+        self.simgr.use_technique(legth_limiter)
+        #self.simgr.use_technique(loop_seer)
+        #self.simgr.use_technique(explorer)
         while True:
+            if len(self.simgr.active) == 1:
+                cur_state = self.state_logger[self.simgr.active[0]]
+                if last_state != cur_state:
+                    print("Switch state {} to state {}".format(last_state, cur_state))
+                    last_state = cur_state
+                cap = self.proj.factory.block(self.simgr.active[0].addr).capstone
+                cap.pp()
+            self.simgr.step(successor_func=self.my_successor_func)
+            """
             try:
-                simgr.step()
-                for each in simgr.active:
-                    print("=======dump=======")
-                    cap = self.proj.factory.block(each.addr).capstone
-                    cap.pp()
-                    #print(simgr.deferred)
+                self.simgr.step(successor_func=self.my_successor_func)
             except:
                 print("Error occur")
                 return
-            if len(simgr.active) == 0:
+            """
+            if len(self.simgr.active) == 0:
                 print("No active states")
-            if simgr.unconstrained:
-                for each_state in simgr.unconstrained:
+            if self.simgr.unconstrained:
+                for each_state in self.simgr.unconstrained:
                     if each_state.regs.rip.symbolic:
-                        cap = self.proj.factory.block(each_state.addr).capstone
-                        cap.pp()
-        
+                        print("Reach the target address")
         return
     
+    def hookup_path(self, path):
+        self.branch = {}
+        hooked = []
+        for each in path:
+            cond = each['cond']
+            correct_path = each['correct_path']
+            wrong_path = each['wrong_path']
+            self.branch[cond] = [correct_path, wrong_path]
+            self.init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.instrument_cond_jump, instruction=cond)
+            if cond == 0 and correct_path == 0 and wrong_path != 0:
+                self.init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.exit_point, instruction=wrong_path)
+            """if wrong_path not in hooked:
+                self.init_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.instrument_wrong_path, instruction=wrong_path)
+                hooked.append(wrong_path)
+            if correct_path not in hooked:
+                self.init_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.instrument_correct_path, instruction=correct_path)
+                hooked.append(correct_path)"""
+
     def symbolize_vuln_mem(self):
         for i in range(0, self.vul_mem_size):
             self.make_symbolic(self.init_state, self.vul_mem_start + i, 1, "s_obj_{}".format(i))
@@ -144,7 +174,13 @@ class SymExec(MemInstrument):
         self.init_state.regs.r14 = self.init_state.solver.BVV(int(regs['r14'], 16), 64)
         self.init_state.regs.r15 = self.init_state.solver.BVV(int(regs['r15'], 16), 64)
         self.init_state.regs.rip = self.init_state.solver.BVV(int(regs['rip'], 16), 64)
-        self.init_state.regs.gs = self.init_state.solver.BVV(int(regs['gs'], 16), 64)
+        self.init_state.regs.gs = self.init_state.solver.BVV(int(regs['gs'], 16), 32)
+        #self.init_state.regs.cs = self.init_state.solver.BVV(int(regs['cs'], 16), 32)
+        #self.init_state.regs.ss = self.init_state.solver.BVV(int(regs['ss'], 16), 32)
+        #self.init_state.regs.ds = self.init_state.solver.BVV(int(regs['ds'], 16), 32)
+        self.init_state.regs.fs = self.init_state.solver.BVV(int(regs['fs'], 16), 32)
+        #self.init_state.regs.es = self.init_state.solver.BVV(int(regs['es'], 16), 32)
+        self.init_state.regs.eflags = self.init_state.solver.BVV(int(regs['eflags'], 16), 32)
 
     def is_vul_mem(self, addr):
         if addr >= self.vul_mem_start and addr <= self.vul_mem_end:
@@ -163,3 +199,39 @@ class SymExec(MemInstrument):
                 self.case_logger.info(line)
             if log_level == logging.DEBUG:
                 self.case_logger.debug(line)
+
+    def wrong_path_detector(self, state):
+        if self.cur_cond_jmp == 0:
+            return False
+        if state.addr == self.branch[self.cur_cond_jmp][1]:
+            return True
+        return False
+    
+    def my_successor_func(self, state):
+        succ = state.step()
+        successors = succ.successors
+        #self.update_mem_initialized_map(state, successors)
+        if len(succ.successors) == 1:
+            self.state_logger[successors[0]] = self.state_counter
+        if len(succ.successors) == 2:
+            self.state_logger[successors[1]] = self.state_counter
+            self.state_counter += 1
+            self.state_logger[successors[0]] = self.state_counter
+            print("state {} fork state {} at {} ".format(self.state_logger[state], self.state_counter, hex(state.addr)))
+            print("     state {} start at {}".format(self.state_counter, hex(successors[1].addr)))
+            #cap = self.proj.factory.block(each.addr).capstone
+            #cap.pp()
+
+        if len(succ.successors) > 2:
+            print("WTF")
+
+        for each in successors:
+            if self.cur_cond_jmp != 0 and each.addr == self.branch[self.cur_cond_jmp][1]:
+                print("kill a wrong state: state {}".format(self.state_logger[each]))
+                succ.successors.remove(each)
+                if each in succ.flat_successors:
+                    succ.flat_successors.remove(each)
+                if each in succ.all_successors :
+                    succ.all_successors .remove(each)
+        self.cur_cond_jmp = 0
+        return succ

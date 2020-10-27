@@ -163,7 +163,15 @@ class Deployer:
             sym.run_vm()
             ok, output = self.crash_checker.upload_exp(case["syz_repro"], 2778, case["syzkaller"], utilities.URL, case["c_repro"], i386, 0)
             self.crash_checker.run_exp(case["syz_repro"], 2778, utilities.URL, ok, i386, 0)
-            sym.setup_bug_capture(8, 32, 0xffffffff83445776, 0xffffffff83450929, [])
+            paths = []
+            paths.append({'cond': 0xffffffff8344577d, 'correct_path': 0xffffffff8344577f, 'wrong_path': 0xffffffff8344579a})
+            paths.append({'cond': 0xffffffff83450924, 'correct_path': 0xffffffff83450926, 'wrong_path': 0xffffffff8345092b})
+            paths.append({'cond': 0xffffffff8345182f, 'correct_path': 0xffffffff8345188e, 'wrong_path': 0xffffffff83451831})
+            paths.append({'cond': 0xffffffff83452313, 'correct_path': 0xffffffff83452315, 'wrong_path': 0xffffffff83452372})
+            paths.append({'cond': 0xffffffff83452323, 'correct_path': 0xffffffff83452325, 'wrong_path': 0xffffffff83452372})
+            paths.append({'cond': 0xffffffff83452370, 'correct_path': 0xffffffff83452315, 'wrong_path': 0xffffffff83452372})
+            paths.append({'cond': 0, 'correct_path': 0, 'wrong_path': 0xffffffff834457ae})
+            sym.setup_bug_capture(8, 32, 0xffffffff83445776, 0xffffffff83450929, paths)
             sym.run_sym()
             ### DEBUG SYMEXEC ###
             if self.force_fuzz or not write_without_mutating:
