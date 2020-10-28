@@ -4,7 +4,7 @@ from pwn import *
 import time
 import pexpect
 import math
-import interface.utilities as utilities
+import syzbot_analyzer.interface.utilities as utilities
 
 
 class GDBHelper:
@@ -15,15 +15,16 @@ class GDBHelper:
         context.log_level = 'info'
     
     def connect(self, port):
-        self.gdb_inst.sendline('target remote :{}'.format(port))
+        self.sendline('target remote :{}'.format(port))
         self.waitfor("pwndbg>")
     
     def set_breakpoint(self, addr):
-        self.gdb_inst.sendline('break *{}'.format(addr))
+        self.sendline('break *{}'.format(addr))
         self.waitfor("pwndbg>")
 
     def resume(self):
-        self.gdb_inst.sendline('continue')
+        self.sendline('continue')
+        print("QEMU is running")
     
     def waitfor(self, pattern):
         text = self.gdb_inst.recvuntil(pattern)
@@ -35,7 +36,7 @@ class GDBHelper:
         regx_mem_contect = r'0x[a-f0-9]+:\W+(0x[a-f0-9]+)(\W+(0x[a-f0-9]+))?'
         group = math.ceil(size / 8)
         cmd = 'x/{}gx {}'.format(group, hex(addr))
-        self.gdb_inst.sendline(cmd)
+        self.sendline(cmd)
         raw = self.waitfor("pwndbg>")
         for line in raw.split('\n'):
             line = line.strip('\n')
@@ -54,7 +55,7 @@ class GDBHelper:
         ret = {}
         regx_regs = r'([0-9a-z]+)\W+(0x[0-9a-f]+)'
         cmd = 'info registers'
-        self.gdb_inst.sendline(cmd)
+        self.sendline(cmd)
         raw = self.waitfor("pwndbg>")
         for line in raw.split('\n'):
             line = line.strip('\n')
@@ -69,7 +70,7 @@ class GDBHelper:
         ret = None
         regx_regs = r'([0-9a-z]+)\W+(0x[0-9a-f]+)'
         cmd = 'info r {}'.format(reg)
-        self.gdb_inst.sendline(cmd)
+        self.sendline(cmd)
         raw = self.waitfor("pwndbg>")
         for line in raw.split('\n'):
             line = line.strip('\n')
@@ -79,10 +80,29 @@ class GDBHelper:
         self.refresh()
         return ret
     
+    def get_sections(self):
+        ret = {}
+        cmd = 'elfheader'
+        regx_sections = r'(0x[0-9a-f]+) - (0x[0-9a-f]+)  (.*)'
+        self.sendline(cmd)
+        raw = self.waitfor("pwndbg>")
+        for line in raw.split('\n'):
+            line = line.strip('\n')
+            s = utilities.regx_get(regx_sections, line, 0)
+            e = utilities.regx_get(regx_sections, line, 1)
+            name = utilities.regx_get(regx_sections, line, 2)
+            if s != None and e != None and name != None:
+                ret[name] = {}
+                ret[name]['start'] = int(s, 16)
+                ret[name]['end'] = int(e, 16)
+        self.refresh()
+        return ret
+    
     def refresh(self):
-        self.sendline('')
+        self.sendline('echo')
 
     def sendline(self, cmd):
+        #print("send", cmd)
         self.gdb_inst.sendline(cmd)
     
     def recv(self):

@@ -1,4 +1,4 @@
-from interface.s2e import S2EInterface
+from .s2e import S2EInterface
 
 class Interface:
     def __init__(self):

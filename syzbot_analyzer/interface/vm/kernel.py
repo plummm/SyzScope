@@ -80,12 +80,14 @@ class Kernel:
     ADDRESS = 1
 
     def __init__(self, vmlinux):
+        print("Loading kernel in angr. It will take a few minutes...")
         self.proj = angr.Project(vmlinux,
                                  load_options={"auto_load_libs": False})
         self.gdbhelper = GDBHelper(vmlinux)
         # private
         self._kasan_report = 0
         self._kasan_ret = 0
+        self._sections = None
 
     def getStructOffset(self, struct_name, field_name):
         cmd = "p &((struct %s *)0)->%s" % (struct_name, field_name)
@@ -241,6 +243,18 @@ class Kernel:
 
     def getBlock(self, addr):
         return self.proj.factory.block(addr)
+    
+    def getSection(self, name):
+        if self._sections == None:
+            self._sections = self.gdbhelper.get_sections()
+        if name in self._sections:
+            return self._sections[name]
+        return None
+    
+    def getSections(self):
+        if self._sections == None:
+            self._sections = self.gdbhelper.get_sections()
+        return self._sections
 
     def backtrace(self,
                   filepath,

@@ -2,15 +2,15 @@ import re
 import os, stat, sys
 import requests
 import shutil
-import syzbotCrawler
 import logging
 import datetime
-import interface.utilities as utilities
+import syzbot_analyzer.interface.utilities as utilities
 
-from interface import s2e, static_analysis, sym_exec
+from .syzbotCrawler import syzbot_host_url, syzbot_bug_base_url
+from syzbot_analyzer.interface import s2e, static_analysis, sym_exec
 from subprocess import call, Popen, PIPE, STDOUT
-from crash import CrashChecker, kasan_regx, free_regx
-from interface.utilities import chmodX
+from .crash import CrashChecker, kasan_regx, free_regx
+from syzbot_analyzer.interface.utilities import chmodX
 from dateutil import parser as time_parser
 
 stamp_finish_fuzzing = "FINISH_FUZZING"
@@ -47,6 +47,7 @@ class Deployer:
     def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False):
         self.linux_folder = "linux"
         self.project_path = ""
+        self.package_path = None
         self.syzkaller_path = ""
         self.image_path = ""
         self.current_case_path = ""
@@ -89,12 +90,13 @@ class Deployer:
             self.logger.setLevel(logging.INFO)
     
     def init_replay_crash(self, hash_val):
-        chmodX("scripts/init-replay.sh")
+        chmodX("syzbot_analyzer/scripts/init-replay.sh")
         self.logger.info("run: scripts/init-replay.sh {} {}".format(self.catalog, hash_val))
-        call(["scripts/init-replay.sh", self.catalog, hash_val])
+        call(["syzbot_analyzer/scripts/init-replay.sh", self.catalog, hash_val])
 
     def deploy(self, hash_val, case):
         self.project_path = os.getcwd()
+        self.package_path = os.path.join(self.project_path, "syzbot_analyzer")
         self.current_case_path = "{}/work/{}/{}".format(self.project_path, self.catalog, hash_val[:7])
         self.image_path = "{}/img".format(self.current_case_path)
         self.syzkaller_path = "{}/gopath/src/github.com/google/syzkaller".format(self.current_case_path)
@@ -118,7 +120,7 @@ class Deployer:
                 self.__clean_stamp(stamp_build_syzkaller, hash_val[:7])
             self.case_logger = self.__init_case_logger("{}-log".format(hash_val))
             self.case_info_logger = self.__init_case_logger("{}-info".format(hash_val))
-            url = syzbotCrawler.syzbot_host_url + syzbotCrawler.syzbot_bug_base_url + hash_val
+            url = syzbot_host_url + syzbot_bug_base_url + hash_val
             self.case_info_logger.info(url)
 
             if (self.static_analysis):
@@ -164,14 +166,12 @@ class Deployer:
             ok, output = self.crash_checker.upload_exp(case["syz_repro"], 2778, case["syzkaller"], utilities.URL, case["c_repro"], i386, 0)
             self.crash_checker.run_exp(case["syz_repro"], 2778, utilities.URL, ok, i386, 0)
             paths = []
-            paths.append({'cond': 0xffffffff8344577d, 'correct_path': 0xffffffff8344577f, 'wrong_path': 0xffffffff8344579a})
-            paths.append({'cond': 0xffffffff83450924, 'correct_path': 0xffffffff83450926, 'wrong_path': 0xffffffff8345092b})
-            paths.append({'cond': 0xffffffff8345182f, 'correct_path': 0xffffffff8345188e, 'wrong_path': 0xffffffff83451831})
-            paths.append({'cond': 0xffffffff83452313, 'correct_path': 0xffffffff83452315, 'wrong_path': 0xffffffff83452372})
-            paths.append({'cond': 0xffffffff83452323, 'correct_path': 0xffffffff83452325, 'wrong_path': 0xffffffff83452372})
-            paths.append({'cond': 0xffffffff83452370, 'correct_path': 0xffffffff83452315, 'wrong_path': 0xffffffff83452372})
-            paths.append({'cond': 0, 'correct_path': 0, 'wrong_path': 0xffffffff834457ae})
-            sym.setup_bug_capture(8, 32, 0xffffffff83445776, 0xffffffff83450929, paths)
+            paths.append({'cond': 0xffffffff8328c77d, 'correct_path': 0xffffffff8328c77f, 'wrong_path': 0xffffffff8328c79a})
+            paths.append({'cond': 0xffffffff83295764, 'correct_path': 0xffffffff83295766, 'wrong_path': 0xffffffff8329576b})
+            paths.append({'cond': 0xffffffff8329661f, 'correct_path': 0xffffffff8329667b, 'wrong_path': 0xffffffff83296621})
+            paths.append({'cond': 0xffffffff83296f63, 'correct_path': 0xffffffff83296f65, 'wrong_path': 0xffffffff83296fc2})
+            paths.append({'cond': 0xffffffff83296fc0, 'correct_path': 0xffffffff83296f65, 'wrong_path': 0xffffffff83296fc2})
+            sym.setup_bug_capture(8, 32, 0xffffffff8328c776, 0xffffffff83295769, paths)
             sym.run_sym()
             ### DEBUG SYMEXEC ###
             if self.force_fuzz or not write_without_mutating:
@@ -261,9 +261,9 @@ class Deployer:
         return exitcode
     
     def compileTemplate(self):
-        chmodX("scripts/syz-compile.sh")
+        chmodX("syzbot_analyzer/scripts/syz-compile.sh")
         self.logger.info("run: scripts/syz-compile.sh")
-        p = Popen(["scripts/syz-compile.sh", self.current_case_path ,self.arch],
+        p = Popen(["syzbot_analyzer/scripts/syz-compile.sh", self.current_case_path ,self.arch],
                 stdout=PIPE,
                 stderr=STDOUT
                 )
@@ -496,10 +496,10 @@ class Deployer:
             f.write(hash_val[:7]+"\n")
 
     def __run_linux_clone_script(self):
-        chmodX("scripts/linux-clone.sh")
+        chmodX("syzbot_analyzer/scripts/linux-clone.sh")
         index = str(self.index)
         self.logger.info("run: scripts/linux-clone.sh {} {}".format(self.index, self.linux_folder, index))
-        call(["scripts/linux-clone.sh", self.linux_folder, index])
+        call(["syzbot_analyzer/scripts/linux-clone.sh", self.linux_folder, index])
 
     def __run_delopy_script(self, hash_val, case, kasan_patch=0):
         commit = case["commit"]
@@ -514,10 +514,10 @@ class Deployer:
             image = "stretch"
         else:
             image = "wheezy"
-        chmodX("scripts/deploy.sh")
+        chmodX("syzbot_analyzer/scripts/deploy.sh")
         index = str(self.index)
         self.logger.info("run: scripts/deploy.sh".format(self.index))
-        p = Popen(["scripts/deploy.sh", self.linux_folder, hash_val, commit, syzkaller, config, testcase, index, self.catalog, image, self.arch, self.compiler, str(kasan_patch)],
+        p = Popen(["syzbot_analyzer/scripts/deploy.sh", self.linux_folder, hash_val, commit, syzkaller, config, testcase, index, self.catalog, image, self.arch, self.compiler, str(kasan_patch)],
                 stdout=PIPE,
                 stderr=STDOUT
                 )

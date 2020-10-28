@@ -19,7 +19,7 @@ function copy_log_then_exit() {
 }
 
 if [ $# -lt 4 ] || [ $# -eq 5 ] || [ $# -gt 6 ]; then
-  echo "Usage ./deploy_linux gcc_version fixed linux_path project_path [linux_commit, config_url]"
+  echo "Usage ./deploy_linux gcc_version fixed linux_path package_path [linux_commit, config_url]"
   exit 1
 fi
 

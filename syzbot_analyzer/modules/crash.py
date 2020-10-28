@@ -1,16 +1,16 @@
 import os, re, stat, sys
 import logging
 import argparse
-import interface.utilities as utilities
+import syzbot_analyzer.interface.utilities as utilities
 import time
 import threading
 import json
 import pathlib
 import queue
-from interface.vm import VM
+from syzbot_analyzer.interface.vm import VM
 
 from subprocess import call, Popen, PIPE, STDOUT
-from syzbotCrawler import Crawler
+from .syzbotCrawler import Crawler
 from dateutil import parser as time_parser
 
 startup_regx = r'Debian GNU\/Linux \d+ syzkaller ttyS\d+'
@@ -39,6 +39,7 @@ class CrashChecker:
         self.free_regx = r'KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
         self.logger = logger
         self.project_path = project_path
+        self.package_path = os.path.join(project_path, "syzbot_analyzer")
         self.case_path = case_path
         self.image_path = "{}/img".format(self.case_path)
         self.linux_path = "{}/linux".format(self.case_path)
@@ -153,8 +154,8 @@ class CrashChecker:
         return res
     
     def patch_applying_check(self, linux_commit, config, patch_commit):
-        utilities.chmodX("scripts/patch_applying_check.sh")
-        p = Popen(["scripts/patch_applying_check.sh", self.linux_path, linux_commit, config, patch_commit, self.compiler],
+        utilities.chmodX("syzbot_analyzer/scripts/patch_applying_check.sh")
+        p = Popen(["syzbot_analyzer/scripts/patch_applying_check.sh", self.linux_path, linux_commit, config, patch_commit, self.compiler],
                 stdout=PIPE,
                 stderr=STDOUT)
         with p.stdout:
@@ -164,7 +165,7 @@ class CrashChecker:
     
     def read_kasan_funcs(self):
         res = []
-        path = os.path.join(self.project_path, "resources/kasan_related_funcs")
+        path = os.path.join(self.package_path, "resources/kasan_related_funcs")
         with open(path, "r") as f:
             lines = f.readlines()
             for line in lines:
@@ -304,16 +305,16 @@ class CrashChecker:
                 f.write("\n")
     
     def deploy_linux(self, commit, config, fixed):
-        utilities.chmodX("scripts/deploy_linux.sh")
+        utilities.chmodX("syzbot_analyzer/scripts/deploy_linux.sh")
         p = None
         if commit == None and config == None:
             #self.logger.info("run: scripts/deploy_linux.sh {} {}".format(self.linux_path, patch_path))
-            p = Popen(["scripts/deploy_linux.sh", self.compiler, str(fixed), self.linux_path, self.project_path],
+            p = Popen(["syzbot_analyzer/scripts/deploy_linux.sh", self.compiler, str(fixed), self.linux_path, self.package_path],
                 stdout=PIPE,
                 stderr=STDOUT)
         else:
             #self.logger.info("run: scripts/deploy_linux.sh {} {} {} {}".format(self.linux_path, patch_path, commit, config))
-            p = Popen(["scripts/deploy_linux.sh", self.compiler, str(fixed), self.linux_path, self.project_path, commit, config],
+            p = Popen(["syzbot_analyzer/scripts/deploy_linux.sh", self.compiler, str(fixed), self.linux_path, self.package_path, commit, config],
                 stdout=PIPE,
                 stderr=STDOUT)
         with p.stdout:
@@ -404,8 +405,8 @@ class CrashChecker:
 
     def upload_exp(self, syz_repro, port, syz_commit, repro_type, c_repro, i386, fixed):
         output = []
-        utilities.chmodX("scripts/upload-exp.sh")
-        p2 = Popen(["scripts/upload-exp.sh", self.case_path, syz_repro,
+        utilities.chmodX("syzbot_analyzer/scripts/upload-exp.sh")
+        p2 = Popen(["syzbot_analyzer/scripts/upload-exp.sh", self.case_path, syz_repro,
             str(port), self.image_path, syz_commit, str(repro_type), str(c_repro), str(i386), str(fixed), self.compiler],
         stdout=PIPE,
         stderr=STDOUT)
@@ -436,8 +437,8 @@ class CrashChecker:
                     command = f.readline().strip('\n')
             else:"""
             command = self.make_commands(text, exitcode, i386)
-        utilities.chmodX("scripts/run-script.sh")
-        p3 = Popen(["scripts/run-script.sh", command, str(port), self.image_path, self.case_path],
+        utilities.chmodX("syzbot_analyzer/scripts/run-script.sh")
+        p3 = Popen(["syzbot_analyzer/scripts/run-script.sh", command, str(port), self.image_path, self.case_path],
         stdout=PIPE,
         stderr=STDOUT)
         with p3.stdout:

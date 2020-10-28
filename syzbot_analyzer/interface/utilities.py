@@ -5,7 +5,7 @@ import json
 import datetime
 
 from bs4 import BeautifulSoup
-from syzbotCrawler import Crawler
+from syzbot_analyzer.modules import Crawler
 from dateutil import parser as time_parser
 
 FOLDER=0
@@ -598,7 +598,7 @@ def cmp_case_with_last_day(case):
     return -1
 
 if __name__ == '__main__':
-    res = urlsOfCases("UAF_OOB_READ_BACKUP2/completed/")
+    res = urlsOfCases("/home/xzou017/projects/results_of_syzbot_analysis/UAF_OOB_LATEST_BACKUP/completed/")
     for each in res:
         print(each)
     """

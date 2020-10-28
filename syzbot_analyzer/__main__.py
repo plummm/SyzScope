@@ -1,10 +1,10 @@
-from syzbotCrawler import Crawler
-from deploy import Deployer
-from subprocess import call
-from interface.utilities import urlsOfCases
-
-import argparse, os, stat
+import argparse, os, stat, sys
 import threading, re
+
+sys.path.append(os.getcwd())
+from syzbot_analyzer.modules import Crawler, Deployer
+from subprocess import call
+from syzbot_analyzer.interface.utilities import urlsOfCases
 
 def args_parse():
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
@@ -88,9 +88,11 @@ def print_args_info(args):
         os._exit(1)
 
 def check_kvm():
-    st = os.stat("scripts/check_kvm.sh")
-    os.chmod("scripts/check_kvm.sh", st.st_mode | stat.S_IEXEC)
-    r = call(['scripts/check_kvm.sh'], shell=False)
+    proj_path = os.path.join(os.getcwd(), "syzbot_analyzer")
+    check_kvm_path = os.path.join(proj_path, "scripts/check_kvm.sh")
+    st = os.stat(check_kvm_path)
+    os.chmod(check_kvm_path, st.st_mode | stat.S_IEXEC)
+    r = call([check_kvm_path], shell=False)
     if r == 1:
         exit(0)
 
@@ -118,9 +120,11 @@ def remove_using_flag(index):
         os.remove(flag_path)
 
 def install_requirments():
-    st = os.stat("scripts/requirements.sh")
-    os.chmod("scripts/requirements.sh", st.st_mode | stat.S_IEXEC)
-    call(['scripts/requirements.sh'], shell=False)
+    proj_path = os.path.join(os.getcwd(), "syzbot_analyzer")
+    requirements_path = os.path.join(proj_path, "scripts/requirements.sh")
+    st = os.stat(requirements_path)
+    os.chmod(requirements_path, st.st_mode | stat.S_IEXEC)
+    call([requirements_path], shell=False)
 
 def args_dependencies():
     if args.debug:

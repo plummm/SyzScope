@@ -1,7 +1,7 @@
 import threading
 import logging
 import os
-import interface.utilities as utilities
+import syzbot_analyzer.interface.utilities as utilities
 
 from subprocess import Popen, PIPE, STDOUT, call
 

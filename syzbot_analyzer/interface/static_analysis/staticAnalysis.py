@@ -1,6 +1,6 @@
 import os, stat
 import logging
-import interface.utilities as utilities
+import syzbot_analyzer.interface.utilities as utilities
 
 from subprocess import Popen, PIPE, STDOUT
 
@@ -8,6 +8,7 @@ class StaticAnalysis:
     def __init__(self, logger, proj_path, case_path):
         self.case_logger = logger
         self.proj_path = proj_path
+        self.package_path = os.path.join(proj_path, "syzbot_analyzer")
         self.case_path = case_path
 
     def prepare_static_analysis(self, case, vul_site, func_site):
@@ -25,7 +26,7 @@ class StaticAnalysis:
                 if dir_list1[i] == dir_list2[i]:
                     bc_path += dir_list1[i] + '/'
 
-        script_path = os.path.join(self.proj_path, "scripts/deploy-bc.sh")
+        script_path = os.path.join(self.package_path, "scripts/deploy-bc.sh")
         utilities.chmodX(script_path)
         index = str(self.index)
         self.logger.info("run: scripts/deploy-bc.sh".format(self.index))
@@ -78,8 +79,8 @@ class StaticAnalysis:
     def run_static_analysis(self, vul_site, func_site, func, offset):
         vul_file, vul_line = vul_site.split(':')
         func_file, func_line = func_site.split(':')
-        cmd = ["opt", "-load", "{}/llvm_passes/build/generateInput/libgenerateInput.so".format(self.project_path), 
-                "-generateInput", "-disable-output", "{}/llvm_linux/built-in.o.bc".format(self.project_path),
+        cmd = ["opt", "-load", "{}/llvm_passes/build/generateInput/libgenerateInput.so".format(self.package_path), 
+                "-generateInput", "-disable-output", "{}/llvm_linux/built-in.o.bc".format(self.proj_path),
                 "-VulFile={}".format(vul_file), "-VulLine={}".format(vul_line), 
                 "-FuncFile={}".format(func_file), "-FuncLine={}".format(func_line),
                 "-Func={}".format(func), "-Offset={}".format(offset)]
