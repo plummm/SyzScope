@@ -50,8 +50,10 @@ class MemInstrument:
         #print("write to {} with {} bytes, pc = {}".format(hex(addr), size, hex(state.addr)))
         #b = math.ceil(size/8)
         #n = size - b * 8
+        if 'mem' not in self.current_state.globals:
+            self.current_state.globals['mem'] = {}
         for i in range(0, size):
-            self.current_state.globals[addr+i] = 0
+            self.current_state.globals['mem'][addr+i] = 0
     
     def trace_call(self, state):
         if state.regs.rip.symbolic:
@@ -138,7 +140,7 @@ class MemInstrument:
                 state.memory.store(addr, sym)
                 index += 8
     
-    def update_mem_initialized_map(self, state, successors):
+    def update_state_globals(self, state, successors):
         if len(successors) == 1:
             successors[0].globals = state.globals
         if len(successors) == 2:
@@ -152,32 +154,35 @@ class MemInstrument:
             if self._is_ctr_addr(addr):
                 return
             try:
-                if not state.solver.unique(bv_addr):
-                    state.solver.add(bv_addr == MemInstrument.CTR_ADDR)
+                state.solver.add(bv_addr == MemInstrument.CTR_ADDR)
+                if state.satisfiable():
                     addr = state.solver.eval(bv_addr)
             except:
                 return
             self._updateCtrAddr()
-        t = state.memory.load(bv_addr,size=1,inspect=False)
-        if t.uninitialized:
-            uninitialized_flag = True
+        #t = state.memory.load(bv_addr,size=1,inspect=False)
+        #if t.uninitialized:
+        #    uninitialized_flag = True
         #if self.state.memory.is_uninitialized_data(addr):
         if (addr < 0x7fffffffffff and not self._is_ctr_addr(addr)) or (self.is_section(addr)):
             return
         i = 0
         try:
             for i in range(0, size):
-                self.current_state.globals[addr+i]
+                self.current_state.globals['mem'][addr+i]
         except KeyError:
             if i != 0:
                 print("i: {} addr {} -> {}".format(i, hex(addr), hex(addr + i)))
             addr += i
             size -= i
-            if not uninitialized_flag:
-                print("uninitialized unsync confirm {} {}, pc = {}".format(hex(addr), size, hex(state.addr)))
+            #if not uninitialized_flag:
+            #    print("uninitialized unsync confirm {} {}, pc = {}".format(hex(addr), size, hex(state.addr)))
             if self._is_ctr_addr(addr):
                 self.make_symbolic(state, addr, size)
                 print("Make symbolic at {}".format(hex(state.addr)))
+                if 'sym' not in self.current_state.globals:
+                    self.current_state.globals['sym'] = {}
+                self.current_state.globals['sym'][addr] = size
             else:
                 val = self.vm.read_mem(addr, size)
                 #print('Store at', hex(addr), ' with value ', val)

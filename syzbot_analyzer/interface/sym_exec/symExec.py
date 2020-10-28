@@ -142,8 +142,12 @@ class SymExec(MemInstrument):
                 print("No active states")
             if self.simgr.unconstrained:
                 for each_state in self.simgr.unconstrained:
-                    if each_state.regs.rip.symbolic:
-                        print("Reach the target address")
+                    if each_state.regs.rip.symbolic and each_state.satisfiable():
+                        print("Reach target site")
+                        for addr in each_state.globals['sym']:
+                            size = each_state.globals['sym'][addr]
+                            bv = each_state.memory.load(addr, size=size, inspect=False)
+                            print("addr {} eval to {}".format(hex(addr), hex(each_state.solver.eval(bv))))
         return
     
     def _hookup_path(self, path):
@@ -165,8 +169,11 @@ class SymExec(MemInstrument):
                 hooked.append(correct_path)"""
 
     def _symbolize_vuln_mem(self):
+        self._init_state.globals['mem'] = {}
+        self._init_state.globals['sym'] = {}
         for i in range(0, self.vul_mem_size):
-            self._init_state.globals[self.vul_mem_start + i] = 0
+            self._init_state.globals['mem'][self.vul_mem_start + i] = 0
+            self._init_state.globals['sym'][self.vul_mem_start + i] = 1
             self.make_symbolic(self._init_state, self.vul_mem_start + i, 1, "s_obj_{}".format(i))
     
     def _restore_registers(self):
@@ -205,7 +212,7 @@ class SymExec(MemInstrument):
         self.current_state = state
         succ = state.step()
         successors = succ.successors
-        self.update_mem_initialized_map(state, successors)
+        self.update_state_globals(state, successors)
         if len(succ.successors) == 1:
             self._state_logger[successors[0]] = self._state_counter
         if len(succ.successors) == 2:
