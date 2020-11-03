@@ -7,7 +7,6 @@ from subprocess import Popen, PIPE, STDOUT, call
 
 
 class VMInstance:
-    QEMU_READY = 0
 
     def __init__(self, proj_path='/tmp/', log_name='vm.log', debug=False):
         self.proj_path = proj_path
@@ -18,6 +17,7 @@ class VMInstance:
         self.cmd_launch = None
         self.debug = debug
         self.qemu_logger = None
+        self.qemu_ready = False
         self.def_opts = ["kasan_multi_shot=1", "earlyprintk=serial", "oops=panic", "nmi_watchdog=panic", "panic=1", \
                         "ftrace_dump_on_oops=orig_cpu", "rodata=n", "vsyscall=native", "net.ifnames=0", \
                         "biosdevname=0", "kvm-intel.nested=1", \
@@ -84,9 +84,13 @@ class VMInstance:
             self.__log_subprocess_output(p.stdout, self.log)
     
     def __log_qemu(self, pipe):
-        for line in iter(pipe.readline, b''):
-            line = line.decode("utf-8").strip('\n').strip('\r')
-            if utilities.regx_match('syzkaller', line):
-                VMInstance.QEMU_READY = 1
-            if self.debug:
-                print(line)
+        try:
+            for line in iter(pipe.readline, b''):
+                line = line.decode("utf-8").strip('\n').strip('\r')
+                if utilities.regx_match('syzkaller', line):
+                    self.qemu_ready = True
+                if self.debug:
+                    print(line)
+        except:
+            # Qemu may crash and makes pipe NULL
+            return

@@ -2,6 +2,7 @@ import logging
 import time
 import angr
 import math
+import archinfo
 import syzbot_analyzer.interface.utilities as utilities
 
 from syzbot_analyzer.interface.vm import VM
@@ -29,9 +30,9 @@ class SymExec(MemInstrument):
         self.current_state = None
         self.cus_sections = sections
 
-    def setup_vm(self, linux, port, image, gdb_port, proj_path='/tmp/', mem="2G", cpu="2", key=None, opts=None, log_name="vm.log"):
+    def setup_vm(self, linux, arch, port, image, gdb_port, proj_path='/tmp/', mem="2G", cpu="2", key=None, opts=None, log_name="vm.log"):
         self.gdb_port = gdb_port
-        self.vm = VM(linux=linux, port=port, image=image, proj_path=proj_path, mem=mem, cpu=cpu, key=key, gdb_port=gdb_port, opts=opts, log_name=log_name, debug=self.debug)
+        self.vm = VM(linux=linux, arch=arch, port=port, image=image, proj_path=proj_path, mem=mem, cpu=cpu, key=key, gdb_port=gdb_port, opts=opts, log_name=log_name, debug=self.debug)
     
     def setup_bug_capture(self, offset, size, vuln_site, target_site, path = [], extra_noisy_func=None):
         self.vul_mem_offset = offset
@@ -51,7 +52,7 @@ class SymExec(MemInstrument):
         self.vm.connect(self.gdb_port)
         self.proj = self.vm.kernel.proj
         while True:
-            if self.vm.QEMU_READY:
+            if self.vm.qemu_ready:
                 break
             time.sleep(1)
         """
@@ -66,7 +67,7 @@ class SymExec(MemInstrument):
                     break
         """
 
-    def run_sym(self):
+    def run_sym(self, sym_tracing=False):
         if self.vm == None:
             print("Call setup_vm() to initialize the vm first")
             return
@@ -82,9 +83,9 @@ class SymExec(MemInstrument):
         # set a breakpoint at vulnerable site, resume the qemu
         self.vm.reach_vul_site(self.vuln_site)
         print("Reach vuln site")
-        self.symbolic_execute(self.vuln_site, self.target_site, self.path)
+        self.symbolic_execute(self.vuln_site, self.target_site, self.path, sym_tracing)
     
-    def symbolic_execute(self, vuln_site, target_site, path):
+    def symbolic_execute(self, vuln_site, target_site, path, sym_tracing=False):
         extras = {angr.options.REVERSE_MEMORY_NAME_MAP,
                   angr.options.TRACK_ACTION_HISTORY,
                   #angr.options.CONSERVATIVE_READ_STRATEGY,
@@ -94,7 +95,7 @@ class SymExec(MemInstrument):
                   angr.options.ZERO_FILL_UNCONSTRAINED_REGISTERS}
         self._init_state = self.proj.factory.blank_state(addr=vuln_site, add_options=extras)
         self._restore_registers()
-        self._symbolize_vuln_mem()
+        self._symbolize_vuln_mem(sym_tracing)
         self._hookup_path(path)
         self._explore(target_site)
     
@@ -128,8 +129,8 @@ class SymExec(MemInstrument):
                 if last_state != cur_state:
                     print("Switch state {} to state {}".format(last_state, cur_state))
                     last_state = cur_state
-                #cap = self.proj.factory.block(self.simgr.active[0].addr).capstone
-                #cap.pp()
+                cap = self.proj.factory.block(self.simgr.active[0].addr).capstone
+                cap.pp()
             self.simgr.step(successor_func=self._my_successor_func)
             """
             try:
@@ -146,7 +147,7 @@ class SymExec(MemInstrument):
                         print("Reach target site")
                         for addr in each_state.globals['sym']:
                             size = each_state.globals['sym'][addr]
-                            bv = each_state.memory.load(addr, size=size, inspect=False)
+                            bv = each_state.memory.load(addr, size=size, inspect=False, endness=archinfo.Endness.LE)
                             print("addr {} eval to {}".format(hex(addr), hex(each_state.solver.eval(bv))))
         return
     
@@ -160,7 +161,7 @@ class SymExec(MemInstrument):
             self._branch[cond] = [correct_path, wrong_path]
             self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.instrument_cond_jump, instruction=cond)
             if cond == 0 and correct_path == 0 and wrong_path != 0:
-                self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.exit_point, instruction=wrong_path)
+                self._init_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.exit_point, instruction=wrong_path)
             """if wrong_path not in hooked:
                 self._init_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.instrument_wrong_path, instruction=wrong_path)
                 hooked.append(wrong_path)
@@ -168,13 +169,23 @@ class SymExec(MemInstrument):
                 self._init_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.instrument_correct_path, instruction=correct_path)
                 hooked.append(correct_path)"""
 
-    def _symbolize_vuln_mem(self):
+    def _symbolize_vuln_mem(self, sym_tracing):
         self._init_state.globals['mem'] = {}
         self._init_state.globals['sym'] = {}
         for i in range(0, self.vul_mem_size):
             self._init_state.globals['mem'][self.vul_mem_start + i] = 0
             self._init_state.globals['sym'][self.vul_mem_start + i] = 1
             self.make_symbolic(self._init_state, self.vul_mem_start + i, 1, "s_obj_{}".format(i))
+            if sym_tracing:
+                bv = self._init_state.memory.load(self.vul_mem_start + i, size=1, inspect=False)
+                if not bv.symbolic:
+                    print("Vulnerable memory ({}) is not symbolic".format(hex(self.vul_mem_start + i)))
+                    continue
+                val = self.vm.read_mem(self.vul_mem_start + i, 1)
+                if len(val) == 1:
+                    self._init_state.solver.add(bv == int(val[0], 16))
+                else:
+                    print("Vulnerable memory has strange data:", val)
     
     def _restore_registers(self):
         regs = self.vm.read_regs()

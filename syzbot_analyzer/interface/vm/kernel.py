@@ -79,11 +79,11 @@ class Kernel:
     FUNCNAME = 0
     ADDRESS = 1
 
-    def __init__(self, vmlinux):
+    def __init__(self, vmlinux, addr_len):
         print("Loading kernel in angr. It will take a few minutes...")
         self.proj = angr.Project(vmlinux,
                                  load_options={"auto_load_libs": False})
-        self.gdbhelper = GDBHelper(vmlinux)
+        self.gdbhelper = GDBHelper(vmlinux, addr_len)
         # private
         self._kasan_report = 0
         self._kasan_ret = 0

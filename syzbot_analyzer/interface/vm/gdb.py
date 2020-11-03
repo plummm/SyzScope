@@ -8,9 +8,14 @@ import syzbot_analyzer.interface.utilities as utilities
 
 
 class GDBHelper:
-    def __init__(self, vmlinux):
+    def __init__(self, vmlinux, addr_len):
         self._vmlinux = vmlinux
         self._prompt = "gdbbot"
+        self.s_mem = 'g'
+        self.s_group = 8
+        if addr_len == 32:
+            self.s_mem = 'w'
+            self.s_group = 4
         self.gdb_inst = process(["gdb", self._vmlinux])
         context.log_level = 'info'
     
@@ -34,8 +39,8 @@ class GDBHelper:
     def get_mem_content(self, addr, size):
         ret = []
         regx_mem_contect = r'0x[a-f0-9]+:\W+(0x[a-f0-9]+)(\W+(0x[a-f0-9]+))?'
-        group = math.ceil(size / 8)
-        cmd = 'x/{}gx {}'.format(group, hex(addr))
+        group = math.ceil(size / self.s_group)
+        cmd = 'x/{}{}x {}'.format(group, self.s_mem, hex(addr))
         self.sendline(cmd)
         raw = self.waitfor("pwndbg>")
         for line in raw.split('\n'):

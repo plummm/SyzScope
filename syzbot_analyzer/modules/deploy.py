@@ -65,6 +65,7 @@ class Deployer:
         self.force_fuzz = force_fuzz
         self.alert = alert
         self.static_analysis = static_analysis
+        self.guided_symbolic_execution = True
         if replay == None:
             self.replay = False
             self.catalog = 'incomplete'
@@ -159,20 +160,22 @@ class Deployer:
                 write_without_mutating, title = self.KasanWriteChecker(report, hash_val)
                 self.__create_stamp(stamp_reproduce_ori_poc)
             ### DEBUG SYMEXEC ###
-            sym = sym_exec.SymExec(debug=self.debug)
-            linux_path = os.path.join(self.current_case_path, self.linux_folder)
-            sym.setup_vm(linux_path, 2778, self.image_path, 1235, proj_path=self.current_case_path)
-            sym.run_vm()
-            ok, output = self.crash_checker.upload_exp(case["syz_repro"], 2778, case["syzkaller"], utilities.URL, case["c_repro"], i386, 0)
-            self.crash_checker.run_exp(case["syz_repro"], 2778, utilities.URL, ok, i386, 0)
-            paths = []
-            paths.append({'cond': 0xffffffff8328c77d, 'correct_path': 0xffffffff8328c77f, 'wrong_path': 0xffffffff8328c79a})
-            paths.append({'cond': 0xffffffff83295764, 'correct_path': 0xffffffff83295766, 'wrong_path': 0xffffffff8329576b})
-            paths.append({'cond': 0xffffffff8329661f, 'correct_path': 0xffffffff8329667b, 'wrong_path': 0xffffffff83296621})
-            paths.append({'cond': 0xffffffff83296f63, 'correct_path': 0xffffffff83296f65, 'wrong_path': 0xffffffff83296fc2})
-            paths.append({'cond': 0xffffffff83296fc0, 'correct_path': 0xffffffff83296f65, 'wrong_path': 0xffffffff83296fc2})
-            sym.setup_bug_capture(8, 32, 0xffffffff8328c776, 0xffffffff83295769, paths)
-            sym.run_sym()
+            if self.guided_symbolic_execution:
+                sym = sym_exec.SymExec(debug=self.debug)
+                linux_path = os.path.join(self.current_case_path, self.linux_folder)
+                sym.setup_vm(linux_path, 'amd64', 2778, self.image_path, 1235, proj_path=self.current_case_path)
+                sym.run_vm()
+                ok, output = self.crash_checker.upload_exp(case["syz_repro"], 2778, case["syzkaller"], utilities.URL, case["c_repro"], i386, 0)
+                self.crash_checker.run_exp(case["syz_repro"], 2778, utilities.URL, ok, i386, 0)
+                paths = []
+                #paths.append({'cond': 0xffffffff8328c77d, 'correct_path': 0xffffffff8328c77f, 'wrong_path': 0xffffffff8328c79a})
+                #paths.append({'cond': 0xffffffff83295764, 'correct_path': 0xffffffff83295766, 'wrong_path': 0xffffffff8329576b})
+                #paths.append({'cond': 0xffffffff8329661f, 'correct_path': 0xffffffff8329667b, 'wrong_path': 0xffffffff83296621})
+                #paths.append({'cond': 0xffffffff83296f63, 'correct_path': 0xffffffff83296f65, 'wrong_path': 0xffffffff83296fc2})
+                #paths.append({'cond': 0xffffffff83296fc0, 'correct_path': 0xffffffff83296f65, 'wrong_path': 0xffffffff83296fc2})
+                paths.append({'cond': 0, 'correct_path': 0, 'wrong_path': 0xffffffff8328c7ad})
+                sym.setup_bug_capture(8, 32, 0xffffffff8328c776, 0xffffffff83295769, paths)
+                sym.run_sym(sym_tracing=True)
             ### DEBUG SYMEXEC ###
             if self.force_fuzz or not write_without_mutating:
                 path = None

@@ -336,7 +336,7 @@ class CrashChecker:
                 self.logger.info("Failed to parse repro {}".format(syz_repro))
         else:
             c_hash = syz_commit + "-ori"
-        qemu = VM(linux=self.linux_path, port=self.ssh_port+th_index, image=self.image_path, log_path="{}/poc/qemu-{}-{}.log".format(self.case_path, c_hash, th_index))
+        qemu = VM(linux=self.linux_path, port=self.ssh_port+th_index, image=self.image_path, proj_path="{}/poc/".format(self.case_path) ,log_name="qemu-{}-{}.log".format(c_hash, th_index))
         qemu.log.write("QEMU-{} launched. Fixed={}\n".format(th_index, fixed))
         p = qemu.run()
         x = threading.Thread(target=self.monitor_execution, args=(p,))
