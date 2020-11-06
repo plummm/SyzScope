@@ -2,28 +2,29 @@ import math
 import archinfo
 
 from angr import SimProcedure
-from .symTracing import InvokeHandler
+from .symTracing import PropagationHandler
+from .stateManager import StateManager
 
-class MemInstrument(InvokeHandler):
+class MemInstrument(StateManager):
     USER_PAGE_START = 0x40000000
     USER_PAGE_END = 0x50000000
     PAGE_SIZE = 0x1000
     CTR_ADDR = 0x40000000
-    WRITE_QUEUE = [1]
 
     def __init__(self):
-        InvokeHandler.__init__(self)
+        StateManager.__init__(self)
+        self.ppg_handler = PropagationHandler()
         self.cur_cond_jmp = 0
         self.sections = None
     
-    def setup_sections(self, vm, name=None):
+    def setup_sections(self, name=None):
         self.sections = {}
         if type(name) == str:
-            self.sections[name] = self._get_one_section(vm, name)
+            self.sections[name] = self._get_one_section(name)
         if type(name) == list:
             for each in name:
-                self.sections[each] = self._get_one_section(vm, each)
-        self.sections = self._get_sections(vm)
+                self.sections[each] = self._get_one_section(each)
+        self.sections = self._get_sections()
     
     def is_section(self, addr):
         if self.sections == None:
@@ -38,7 +39,7 @@ class MemInstrument(InvokeHandler):
         self.cur_cond_jmp = state.addr
     
     def exit_point(self, state):
-        print(self.get_symbolic_propagation())
+        print(self.ppg_handler.get_symbolic_propagation())
         if state in self.simgr.active:
             self.simgr.active.remove(state)
 
@@ -53,16 +54,16 @@ class MemInstrument(InvokeHandler):
         size = state.solver.eval(state.inspect.mem_write_length)
         if type(bv_addr) != int and bv_addr.symbolic:
             print("Arbitrary write found")
-        if (type(bv_addr) == int and self.is_kasan_write(bv_addr)) \
-            or type(bv_addr) != int and not bv_addr.symbolic:
+        if bv_expr.symbolic:
+            print("Check here")
+        if self.ppg_handler.is_kasan_write(addr) \
+            and ((type(bv_addr) != int and not bv_addr.symbolic) or type(bv_addr) == int):
             if bv_expr.symbolic:
-                self.log_symbolic_propagation()
+                self.ppg_handler.log_symbolic_propagation()
         #b = math.ceil(size/8)
         #n = size - b * 8
-        if 'mem' not in self.current_state.globals:
-            self.current_state.globals['mem'] = {}
         for i in range(0, size):
-            self.current_state.globals['mem'][addr+i] = 0
+            self.update_states_globals(addr+i, 0, StateManager.G_MEM)
         #self.dump_state(state)
     
     def trace_call(self, state):
@@ -107,7 +108,7 @@ class MemInstrument(InvokeHandler):
         
 
     def hook_noisy_func(self, extra):
-        noisy_func = ["check_memory_region", "check_memory_region", "__kasan_check_write"]
+        noisy_func = ["check_memory_region", "__kasan_check_read", "__kasan_check_write"]
         if type(extra) == list:
             noisy_func.extend(extra)
         if type(extra) == str:
@@ -115,16 +116,17 @@ class MemInstrument(InvokeHandler):
         for each in noisy_func:
             self.proj.hook_symbol(each, SkipInst())
         
-        kasan_1_r = KasanAccess(1, KasanAccess.READ)
-        kasan_2_r = KasanAccess(2, KasanAccess.READ)
-        kasan_4_r = KasanAccess(4, KasanAccess.READ)
-        kasan_8_r = KasanAccess(8, KasanAccess.READ)
-        kasan_16_r = KasanAccess(16, KasanAccess.READ)
-        kasan_1_w = KasanAccess(1, KasanAccess.WRITE)
-        kasan_2_w = KasanAccess(2, KasanAccess.WRITE)
-        kasan_4_w = KasanAccess(4, KasanAccess.WRITE)
-        kasan_8_w = KasanAccess(8, KasanAccess.WRITE)
-        kasan_16_w = KasanAccess(16, KasanAccess.WRITE)
+        stack_addr = self.vm.stack_addr
+        kasan_1_r = KasanAccess(1, KasanAccess.READ, stack_addr, self.ppg_handler)
+        kasan_2_r = KasanAccess(2, KasanAccess.READ, stack_addr, self.ppg_handler)
+        kasan_4_r = KasanAccess(4, KasanAccess.READ, stack_addr, self.ppg_handler)
+        kasan_8_r = KasanAccess(8, KasanAccess.READ, stack_addr, self.ppg_handler)
+        kasan_16_r = KasanAccess(16, KasanAccess.READ, stack_addr, self.ppg_handler)
+        kasan_1_w = KasanAccess(1, KasanAccess.WRITE, stack_addr, self.ppg_handler)
+        kasan_2_w = KasanAccess(2, KasanAccess.WRITE, stack_addr, self.ppg_handler)
+        kasan_4_w = KasanAccess(4, KasanAccess.WRITE, stack_addr, self.ppg_handler)
+        kasan_8_w = KasanAccess(8, KasanAccess.WRITE, stack_addr, self.ppg_handler)
+        kasan_16_w = KasanAccess(16, KasanAccess.WRITE, stack_addr, self.ppg_handler)
 
         self.proj.hook_symbol("__asan_store1", kasan_1_w)
         self.proj.hook_symbol("__asan_load1", kasan_1_r)
@@ -136,9 +138,6 @@ class MemInstrument(InvokeHandler):
         self.proj.hook_symbol("__asan_load8", kasan_8_r)
         self.proj.hook_symbol("__asan_store16", kasan_16_w)
         self.proj.hook_symbol("__asan_load16", kasan_16_r)
-        self.proj.hook_symbol("check_memory_region", SkipInst())
-        self.proj.hook_symbol("__kasan_check_read", SkipInst())
-        self.proj.hook_symbol("__kasan_check_write", SkipInst())
     
     def make_symbolic(self, state, addr, size, name=None):
         if (size <= 8):
@@ -159,7 +158,7 @@ class MemInstrument(InvokeHandler):
                 state.memory.store(addr, sym)
                 index += 8
     
-    def update_state_globals(self, state, successors):
+    def transfer_state_globals(self, state, successors):
         if len(successors) == 1:
             successors[0].globals = state.globals
         if len(successors) == 2:
@@ -167,7 +166,6 @@ class MemInstrument(InvokeHandler):
             successors[1].globals = state.globals
     
     def _instrument_mem_read(self, state, bv_addr, size):
-        uninitialized_flag = False
         addr = state.solver.eval(bv_addr)
         if type(bv_addr) !=int and bv_addr.symbolic and not self._is_ctr_addr(addr):
             if self._is_ctr_addr(addr):
@@ -180,30 +178,33 @@ class MemInstrument(InvokeHandler):
                 return
             self._updateCtrAddr()
 
-        if (addr < 0x7fffffffffff and not self._is_ctr_addr(addr)) or (self.is_section(addr)):
+        if self.is_section(addr):
             return
         i = 0
         try:
             for i in range(0, size):
-                self.current_state.globals['mem'][addr+i]
+                self.get_states_globals(addr+i, StateManager.G_MEM)
         except KeyError:
+            """
             if i != 0:
                 print("i: {} addr {} -> {}".format(i, hex(addr), hex(addr + i)))
             addr += i
             size -= i
-            #if not uninitialized_flag:
-            #    print("uninitialized unsync confirm {} {}, pc = {}".format(hex(addr), size, hex(state.addr)))
+            for j in range(0, size):
+                self.update_states_globals(addr+j, 0, StateManager.G_MEM)
+            """
             if self._is_ctr_addr(addr):
                 self.make_symbolic(state, addr, size)
                 print("Make symbolic at {}".format(hex(state.addr)))
-                if 'sym' not in self.current_state.globals:
-                    self.current_state.globals['sym'] = {}
-                self.current_state.globals['sym'][addr] = size
+                self.update_states_globals(addr, size, StateManager.G_SYM)
             else:
                 val = self.vm.read_mem(addr, size)
                 #print('Store at', hex(addr), ' with value ', val)
                 if len(val) > 0:
                     state.memory.store(addr, state.solver.BVV(int(val[0], 16), size*8), endness=archinfo.Endness.LE)
+                elif not self._is_ctr_addr(addr):
+                    print("page fault occur")
+                    self.purge_current_state()
                     #bv = state.memory.load(addr, size, inspect=False, endness=archinfo.Endness.LE)
                     #print(hex(state.solver.eval(bv)))
     
@@ -213,15 +214,22 @@ class MemInstrument(InvokeHandler):
     def _updateCtrAddr(self):
         MemInstrument.CTR_ADDR += MemInstrument.PAGE_SIZE
     
-    def _get_sections(self, vm):
-        vm.waitfor_pwndbg()
-        sections = vm.kernel.getSections()
+    def _get_sections(self):
+        if self.vm == None:
+            return
+        sections = self.vm.read_section()
         return sections
     
-    def _get_one_section(self, vm, name):
-        vm.waitfor_pwndbg()
-        section = vm.kernel.getSection(name)
+    def _get_one_section(self, name):
+        if self.vm == None:
+            return
+        section = self.vm.read_section(name)
         return section
+    
+    def is_on_stack(self, addr):
+        if self.vm == None:
+            return
+        return self.vm.is_on_stack(addr)
 
 class SkipInst(SimProcedure):
     def __init__(self):
@@ -234,20 +242,30 @@ class SkipInst(SimProcedure):
     def kasan_access(self, addr):
         pass
 
-class KasanAccess(SkipInst, MemInstrument):
+class KasanAccess(SkipInst):
     READ = 0
     WRITE = 1
 
-    def __init__(self, size: int, action: int):
+    def __init__(self, size: int, action: int, stack_addr :list, handler):
         self.size = size
         self.action = action
-        MemInstrument.__init__(self)
+        self.stack_addr = stack_addr
+        self.handler = handler
         SkipInst.__init__(self)
+    
+    def is_on_stack(self, addr):
+        if self.stack_addr[0] == 0 and self.stack_addr[1] == 0:
+            print("Stack range is unclear")
+            return False
+        return addr >= self.stack_addr[0] and addr <= self.stack_addr[1]
 
     def kasan_access(self, addr):
         if self.action == KasanAccess.WRITE:
-            if not addr.symbolic:
-                print("kasan inspect {} with {} bytes".format(hex(self.state.solver.eval(addr)), self.size))
-                self.log_kasan_write(addr)
+            if type(addr) != int and not addr.symbolic and not self.is_on_stack(self.state.solver.eval(addr)) \
+                or type(addr) == int and not self.is_on_stack(addr):
+                if type(addr) != int:
+                    addr = self.state.solver.eval(addr)
+                print("kasan inspect {} with {} bytes".format(hex(addr), self.size))
+                self.handler.log_kasan_write(addr)
         #self._instrument_mem_read(addr, self.size)
         #print("kasan inspect {} with {} bytes".format(hex(self.state.solver.eval(addr)), self.size))

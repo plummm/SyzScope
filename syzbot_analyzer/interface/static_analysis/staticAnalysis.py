@@ -5,11 +5,13 @@ import syzbot_analyzer.interface.utilities as utilities
 from subprocess import Popen, PIPE, STDOUT
 
 class StaticAnalysis:
-    def __init__(self, logger, proj_path, case_path):
+    def __init__(self, logger, proj_path, index, case_path, linux_folder):
         self.case_logger = logger
         self.proj_path = proj_path
         self.package_path = os.path.join(proj_path, "syzbot_analyzer")
         self.case_path = case_path
+        self.index = index
+        self.linux_folder = linux_folder
 
     def prepare_static_analysis(self, case, vul_site, func_site):
         bc_path = ''
@@ -29,15 +31,15 @@ class StaticAnalysis:
         script_path = os.path.join(self.package_path, "scripts/deploy-bc.sh")
         utilities.chmodX(script_path)
         index = str(self.index)
-        self.logger.info("run: scripts/deploy-bc.sh".format(self.index))
-        p = Popen([script_path, self.linux_path, index, self.current_case_path, commit, config, bc_path],
+        self.case_logger.info("run: scripts/deploy-bc.sh".format(index))
+        p = Popen([script_path, self.linux_folder, index, self.case_path, commit, config, bc_path],
                 stdout=PIPE,
                 stderr=STDOUT
                 )
         with p.stdout:
             self.__log_subprocess_output(p.stdout, logging.INFO)
         exitcode = p.wait()
-        self.logger.info("script/deploy-bc.sh is done with exitcode {}".format(exitcode))
+        self.case_logger.info("script/deploy-bc.sh is done with exitcode {}".format(exitcode))
         return exitcode
     
     def KasanVulnChecker(self, report):
@@ -55,9 +57,9 @@ class StaticAnalysis:
             func_site = utilities.extract_debug_info(each)
             break
         
-        offset = utilities.extract_vul_obj_offset(report_list)
+        offset, size = utilities.extract_vul_obj_offset_and_size(report_list)
         self.saveCallTrace2File(trace, vul_site)
-        return vul_site, func_site, func, offset
+        return vul_site, func_site, func, offset, size
     
     def saveCallTrace2File(self, trace, vul_site):
         text = []

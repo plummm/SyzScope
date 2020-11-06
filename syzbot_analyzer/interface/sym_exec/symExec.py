@@ -12,8 +12,6 @@ class SymExec(MemInstrument):
     def __init__(self, sections=None, debug=False):
         MemInstrument.__init__(self)
         self.debug = debug
-        self._state_logger = {}
-        self._state_counter = 0
         self.vul_mem_offset = None
         self.vul_mem_size = None
         self.vul_mem_start = None
@@ -27,14 +25,13 @@ class SymExec(MemInstrument):
         self.simgr = None
         self._branch = None
         self._init_state = None
-        self.current_state = None
         self.cus_sections = sections
 
     def setup_vm(self, linux, arch, port, image, gdb_port, proj_path='/tmp/', mem="2G", cpu="2", key=None, opts=None, log_name="vm.log"):
         self.gdb_port = gdb_port
         self.vm = VM(linux=linux, arch=arch, port=port, image=image, proj_path=proj_path, mem=mem, cpu=cpu, key=key, gdb_port=gdb_port, opts=opts, log_name=log_name, debug=self.debug)
     
-    def setup_bug_capture(self, offset, size, vuln_site, target_site, path = [], extra_noisy_func=None):
+    def setup_bug_capture(self, offset, size, vuln_site=None, target_site=None, path = [], extra_noisy_func=None):
         self.vul_mem_offset = offset
         self.vul_mem_size = size
         self.vuln_site = vuln_site
@@ -74,18 +71,17 @@ class SymExec(MemInstrument):
         if self.vul_mem_offset == None:
             print("Call setup_bug_capture() to initialize vulnerability information")
             return
-        self.setup_sections(self.vm, self.cus_sections)
         rdi_val = self.vm.read_reg('rdi')
         vul_mem = int(rdi_val, 16)
         self.vul_mem_start = vul_mem - self.vul_mem_offset
         self.vul_mem_end = self.vul_mem_start + self.vul_mem_size
         print("Vuln mem: {} to {}".format(hex(self.vul_mem_start), hex(self.vul_mem_end)))
         # set a breakpoint at vulnerable site, resume the qemu
-        self.vm.reach_vul_site(self.vuln_site)
-        print("Reach vuln site")
-        self.symbolic_execute(self.vuln_site, self.target_site, self.path, sym_tracing)
+        # self.vm.reach_vul_site(self.vuln_site)
+        self.vm.back_to_vul_site()
+        self.symbolic_execute(self.target_site, self.path, sym_tracing)
     
-    def symbolic_execute(self, vuln_site, target_site, path, sym_tracing=False):
+    def symbolic_execute(self, target_site, path, sym_tracing=False):
         extras = {angr.options.REVERSE_MEMORY_NAME_MAP,
                   angr.options.TRACK_ACTION_HISTORY,
                   #angr.options.CONSERVATIVE_READ_STRATEGY,
@@ -93,44 +89,39 @@ class SymExec(MemInstrument):
                   angr.options.CONSTRAINT_TRACKING_IN_SOLVER,
                   angr.options.REGION_MAPPING,
                   angr.options.ZERO_FILL_UNCONSTRAINED_REGISTERS}
-        self._init_state = self.proj.factory.blank_state(addr=vuln_site, add_options=extras)
+        self._init_state = self.proj.factory.blank_state(addr=0, add_options=extras)
         self._restore_registers()
+        print("Initial state explore at {}".format(hex(self._init_state.addr)))
+        self._restore_memory()
         self._symbolize_vuln_mem(sym_tracing)
         self._hookup_path(path)
         self._explore(target_site)
-    
-    def _explore(self, target_site):
-        last_state = 0
-        self.current_state = self._init_state
-        #self.cfg = self.proj.analyses.CFGFast(normalize = True, function_starts=[self.vuln_site])
-        self.current_state.inspect.b('mem_read', when=angr.BP_BEFORE, action=self.track_mem_read)
-        self.current_state.inspect.b('mem_write', when=angr.BP_BEFORE, action=self.track_mem_write)
-        #self.current_state.inspect.b('call', when=angr.BP_BEFORE, action=self.trace_call)
-        self.current_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.trace_instruction, instruction=target_site)
-        self.current_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.trace_instruction, instruction=0xffffffff821b7e49)
-        self.current_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.trace_instruction, instruction=0xffffffff821b7e5d)
-        #self.current_state.inspect.b('fork', when=angr.BP_BEFORE, action=self.trace_fork)
-        self.current_state.inspect.b('symbolic_variable', when=angr.BP_AFTER, action=self.trace_symbolic_variable)
-        self._state_logger[self.current_state] = self._state_counter
 
+    def _explore(self, target_site):
+        print("Initial state explore at {}".format(hex(self._init_state.addr)))
+        last_state = 0
+        if target_site != None:
+            self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.trace_instruction, instruction=target_site)
+        self._init_state.inspect.b('mem_read', when=angr.BP_BEFORE, action=self.track_mem_read)
+        self._init_state.inspect.b('mem_write', when=angr.BP_BEFORE, action=self.track_mem_write)
+        self._init_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.trace_instruction, instruction=0xffffffff821b7e49)
+        self._init_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.trace_instruction, instruction=0xffffffff821b7e5d)
+        self._init_state.inspect.b('symbolic_variable', when=angr.BP_AFTER, action=self.trace_symbolic_variable)
+
+        self.setup_current_state(self._init_state)
         self.hook_noisy_func(self.extra_noisy_func)
-        self.simgr = self.proj.factory.simgr(self.current_state, save_unconstrained=True)
-        #loop_seer = angr.exploration_techniques.LoopSeer(bound=5)
-        legth_limiter = angr.exploration_techniques.LengthLimiter(max_length=700, drop=True)
-        dfs = angr.exploration_techniques.DFS()
-        #explorer = angr.exploration_techniques.Explorer(find=target_site)
-        self.simgr.use_technique(dfs)
-        self.simgr.use_technique(legth_limiter)
-        #self.simgr.use_technique(loop_seer)
-        #self.simgr.use_technique(explorer)
+        self.init_simgr()
+
         while True:
             if len(self.simgr.active) == 1:
-                cur_state = self._state_logger[self.current_state]
+                cur_state = self.get_state_index(self.get_current_state())
                 if last_state != cur_state:
                     print("Switch state {} to state {}".format(last_state, cur_state))
                     last_state = cur_state
+                print("=======dump========")
                 cap = self.proj.factory.block(self.simgr.active[0].addr).capstone
                 cap.pp()
+
             self.simgr.step(successor_func=self._my_successor_func)
             """
             try:
@@ -139,8 +130,9 @@ class SymExec(MemInstrument):
                 print("Error occur")
                 return
             """
-            if len(self.simgr.active) == 0:
+            if len(self.simgr.active) == 0 and len(self.simgr.deferred) == 0:
                 print("No active states")
+                print(self.ppg_handler.get_symbolic_propagation())
             if self.simgr.unconstrained:
                 for each_state in self.simgr.unconstrained:
                     if each_state.regs.rip.symbolic and each_state.satisfiable():
@@ -214,23 +206,26 @@ class SymExec(MemInstrument):
         #self._init_state.regs.es = self._init_state.solver.BVV(int(regs['es'], 16), 32)
         self._init_state.regs.eflags = self._init_state.solver.BVV(int(regs['eflags'], 16), 32)
 
+    def _restore_memory(self):
+        self.setup_sections(self.cus_sections)
+        self.vm.read_stack_range()
+
     def _is_vul_mem(self, addr):
         if addr >= self.vul_mem_start and addr <= self.vul_mem_end:
             return True
         return False
     
     def _my_successor_func(self, state):
-        self.current_state = state
+        self.setup_current_state(state)
         succ = state.step()
         successors = succ.successors
-        self.update_state_globals(state, successors)
+        self.transfer_state_globals(state, successors)
         if len(succ.successors) == 1:
-            self._state_logger[successors[0]] = self._state_counter
+            self.update_states(successors[0], False)
         if len(succ.successors) == 2:
-            self._state_logger[successors[1]] = self._state_counter
-            self._state_counter += 1
-            self._state_logger[successors[0]] = self._state_counter
-            print("state {} fork state {}({}) at {} ".format(self._state_logger[state], self._state_counter, hex(successors[1].addr), hex(state.addr)))
+            self.update_states(successors[1], True)
+            self.update_states(successors[0], False)
+            print("state {} fork state {}({}) at {} ".format(self.get_state_index(state), self.state_counter, hex(successors[1].addr), hex(state.addr)))
             #cap = self.proj.factory.block(each.addr).capstone
             #cap.pp()
 
@@ -239,7 +234,7 @@ class SymExec(MemInstrument):
 
         for each in successors:
             if self.cur_cond_jmp != 0 and each.addr == self._branch[self.cur_cond_jmp][1]:
-                print("kill a wrong state: state {}".format(self._state_logger[each]))
+                print("kill a wrong state: state {}".format(self.self.get_state_index(each)))
                 succ.successors.remove(each)
                 if each in succ.flat_successors:
                     succ.flat_successors.remove(each)

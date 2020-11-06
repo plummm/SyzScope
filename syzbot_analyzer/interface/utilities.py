@@ -30,6 +30,7 @@ free_regx = r'KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
 bug_desc_begin_regx = r'The buggy address belongs to the object at'
 bug_desc_end_regx = r'The buggy address belongs to the page'
 offset_desc_regx = r'The buggy address is located (\d+) bytes inside of'
+size_desc_regx = r'which belongs to the cache [a-z0-9\-]+ of size (\d+)'
 kernel_func_def_regx= r'^(static )?(const |struct )?\w+(\*)? ([a-zA-Z0-9:_]*( |\n))?(\*)?([a-zA-Z0-9:_]+)\((\)|void\)|((volatile)? (const |struct |unsigned )?\w+( )?[\*]*( )?\w+(, \.\.\.\)|, |,\n|\)))+)'
 
 def get_hash_from_log(path):
@@ -53,7 +54,7 @@ def regx_get(regx, line, index):
     return None
 
 def regx_kasan_line(line):
-    m = re.search(r'([A-Za-z0-9_.]+)(\+0x[0-9a-f]+\/0x[0-9a-f]+)?( (([A-Za-z0-9_.]+\/)+[A-Za-z0-9_.]+:\d+))?( \[inline\])?', line)
+    m = re.search(r'([A-Za-z0-9_.]+)(\+0x[0-9a-f]+\/0x[0-9a-f]+)?( (([A-Za-z0-9_\-.]+\/)+[A-Za-z0-9_.\-]+:\d+))?( \[inline\])?', line)
     if m != None:
         return m.groups()
     return None
@@ -152,8 +153,9 @@ def extract_bug_mem_addr(report):
             return int(addr, 16)
     return None
 
-def extract_vul_obj_offset(report):
+def extract_vul_obj_offset_and_size(report):
     offset = None
+    size = None
     bug_desc = extract_bug_description(report)
     bug_type = extract_bug_type(report)
     bug_mem_addr = extract_bug_mem_addr(report)
@@ -164,9 +166,15 @@ def extract_vul_obj_offset(report):
         return offset
     if bug_type == KASAN_UAF or bug_type == KASAN_OOB:
         for line in bug_desc:
-            offset = regx_get(offset_desc_regx, line, 0)
-            if offset != None:
-                offset = int(offset)
+            if offset == None:
+                offset = regx_get(offset_desc_regx, line, 0)
+                if offset != None:
+                    offset = int(offset)
+            if size == None:
+                size = regx_get(size_desc_regx, line, 0)
+                if size != None:
+                    size = int(size)
+            if offset != None and size != None:
                 break
         if offset == None:
             line = bug_desc[0]
@@ -174,7 +182,9 @@ def extract_vul_obj_offset(report):
             if addr_begin != None:
                 addr_begin = int(addr_begin, 16)
                 offset = bug_mem_addr - addr_begin
-    return offset
+        if size == None:
+            size = offset
+    return offset, size
 
 def urlsOfCases(dirOfCases, type=FOLDER):
     res = []

@@ -21,19 +21,17 @@ class GDBHelper:
     
     def connect(self, port):
         self.sendline('target remote :{}'.format(port))
-        self.waitfor("pwndbg>")
     
     def set_breakpoint(self, addr):
         self.sendline('break *{}'.format(addr))
-        self.waitfor("pwndbg>")
 
     def resume(self):
-        self.sendline('continue')
+        self._sendline('continue')
         print("QEMU is running")
     
     def waitfor(self, pattern):
         text = self.gdb_inst.recvuntil(pattern)
-        #print(text.decode("utf-8"))
+        print(text.decode("utf-8"))
         return text.decode("utf-8")
     
     def get_mem_content(self, addr, size):
@@ -41,8 +39,7 @@ class GDBHelper:
         regx_mem_contect = r'0x[a-f0-9]+:\W+(0x[a-f0-9]+)(\W+(0x[a-f0-9]+))?'
         group = math.ceil(size / self.s_group)
         cmd = 'x/{}{}x {}'.format(group, self.s_mem, hex(addr))
-        self.sendline(cmd)
-        raw = self.waitfor("pwndbg>")
+        raw = self.sendline(cmd)
         for line in raw.split('\n'):
             line = line.strip('\n')
             mem = utilities.regx_get(regx_mem_contect, line, 0)
@@ -60,8 +57,7 @@ class GDBHelper:
         ret = {}
         regx_regs = r'([0-9a-z]+)\W+(0x[0-9a-f]+)'
         cmd = 'info registers'
-        self.sendline(cmd)
-        raw = self.waitfor("pwndbg>")
+        raw = self.sendline(cmd)
         for line in raw.split('\n'):
             line = line.strip('\n')
             reg = utilities.regx_get(regx_regs, line, 0)
@@ -75,8 +71,7 @@ class GDBHelper:
         ret = None
         regx_regs = r'([0-9a-z]+)\W+(0x[0-9a-f]+)'
         cmd = 'info r {}'.format(reg)
-        self.sendline(cmd)
-        raw = self.waitfor("pwndbg>")
+        raw = self.sendline(cmd)
         for line in raw.split('\n'):
             line = line.strip('\n')
             val = utilities.regx_get(regx_regs, line, 1)
@@ -89,8 +84,7 @@ class GDBHelper:
         ret = {}
         cmd = 'elfheader'
         regx_sections = r'(0x[0-9a-f]+) - (0x[0-9a-f]+)  (.*)'
-        self.sendline(cmd)
-        raw = self.waitfor("pwndbg>")
+        raw = self.sendline(cmd)
         for line in raw.split('\n'):
             line = line.strip('\n')
             s = utilities.regx_get(regx_sections, line, 0)
@@ -103,15 +97,51 @@ class GDBHelper:
         self.refresh()
         return ret
     
+    def get_stack_range(self):
+        ret = []
+        cmd = 'vmmap'
+        regx_stack = r'(0x[0-9a-f]+) (0x[0-9a-f]+) .*\[stack\]'
+        raw = self.sendline(cmd)
+        for line in raw.split('\n'):
+            line = line.strip('\n')
+            s = utilities.regx_get(regx_stack, line, 0)
+            e = utilities.regx_get(regx_stack, line, 1)
+            if s != None and e != None:
+                ret.append(s)
+                ret.append(e)
+                break
+        self.refresh()
+        return ret
+    
+    def get_backtrace(self, n=None):
+        ret = []
+        cmd = 'bt'
+        regx_bt = r'#\d+( )+([A-Za-z0-9_.]+)'
+        raw = self.sendline(cmd)
+        for line in raw.split('\n'):
+            line = line.strip('\n')
+            func_name = utilities.regx_get(regx_bt, line, 1)
+            if func_name != None:
+                ret.append(func_name)
+            if len(ret) >= n:
+                break
+        self.refresh()
+        return ret
+    
     def refresh(self):
-        self.sendline('echo')
+        self._sendline('echo')
 
     def sendline(self, cmd):
         #print("send", cmd)
-        self.gdb_inst.sendline(cmd)
+        self._sendline(cmd)
+        raw = self.waitfor("pwndbg>")
+        return raw
     
     def recv(self):
         return self.gdb_inst.recv()
+
+    def _sendline(self, cmd):
+        self.gdb_inst.sendline(cmd)
 
     def command(self, cmd):
         ret = list()

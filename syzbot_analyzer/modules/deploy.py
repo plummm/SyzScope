@@ -66,6 +66,7 @@ class Deployer:
         self.alert = alert
         self.static_analysis = static_analysis
         self.guided_symbolic_execution = True
+        self.sa = None
         if replay == None:
             self.replay = False
             self.catalog = 'incomplete'
@@ -125,13 +126,13 @@ class Deployer:
             self.case_info_logger.info(url)
 
             if (self.static_analysis):
-                sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.current_case_path)
+                self.sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.index, self.current_case_path, self.linux_folder)
                 r = utilities.request_get(case['report'])
-                vul_site, func_site, func, offset = sa.KasanVulnChecker(r.text)
-                r = sa.prepare_static_analysis(case, vul_site, func_site)
-                if r != 0:
-                    self.logger.error("Error occur in deploy-bc.sh")
-                self.run_static_analysis(vul_site, func_site, func, offset)
+                vul_site, func_site, func, offset, size = self.sa.KasanVulnChecker(r.text)
+                #r = sa.prepare_static_analysis(case, vul_site, func_site)
+                #if r != 0:
+                #    self.logger.error("Error occur in deploy-bc.sh")
+                self.sa.run_static_analysis(vul_site, func_site, func, offset)
             need_patch = 0
             if self.__need_kasan_patch(case['title']):
                 need_patch = 1
@@ -161,6 +162,11 @@ class Deployer:
                 self.__create_stamp(stamp_reproduce_ori_poc)
             ### DEBUG SYMEXEC ###
             if self.guided_symbolic_execution:
+                if self.sa == None:
+                    self.sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.index, self.current_case_path, self.linux_folder)
+                r = utilities.request_get(case['report'])
+                vul_site, func_site, func, offset, size = self.sa.KasanVulnChecker(r.text)
+
                 sym = sym_exec.SymExec(debug=self.debug)
                 linux_path = os.path.join(self.current_case_path, self.linux_folder)
                 sym.setup_vm(linux_path, 'amd64', 2778, self.image_path, 1235, proj_path=self.current_case_path)
@@ -173,8 +179,8 @@ class Deployer:
                 #paths.append({'cond': 0xffffffff8329661f, 'correct_path': 0xffffffff8329667b, 'wrong_path': 0xffffffff83296621})
                 #paths.append({'cond': 0xffffffff83296f63, 'correct_path': 0xffffffff83296f65, 'wrong_path': 0xffffffff83296fc2})
                 #paths.append({'cond': 0xffffffff83296fc0, 'correct_path': 0xffffffff83296f65, 'wrong_path': 0xffffffff83296fc2})
-                paths.append({'cond': 0, 'correct_path': 0, 'wrong_path': 0xffffffff8328c7ad})
-                sym.setup_bug_capture(8, 32, 0xffffffff8328c776, 0xffffffff83295769, paths)
+                #paths.append({'cond': 0, 'correct_path': 0, 'wrong_path': 0xffffffff8328c7ad})
+                sym.setup_bug_capture(offset, size)
                 sym.run_sym(sym_tracing=True)
             ### DEBUG SYMEXEC ###
             if self.force_fuzz or not write_without_mutating:
