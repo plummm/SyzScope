@@ -87,12 +87,14 @@ else
     cd $CASE_PATH/gopath/src/github.com/google/syzkaller
 fi
 if [ -d "bin/linux_amd64" ]; then
-    scp -F /dev/null -o UserKnownHostsFile=/dev/null \
+    CMD="scp -F /dev/null -o UserKnownHostsFile=/dev/null \
         -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-        -i $IMAGE_PATH/stretch.img.key -P $PORT bin/linux_amd64/syz-execprog bin/linux_$ARCH/syz-executor root@localhost:/
+        -i $IMAGE_PATH/stretch.img.key -P $PORT bin/linux_amd64/syz-execprog bin/linux_$ARCH/syz-executor root@localhost:/"
 else
-    scp -F /dev/null -o UserKnownHostsFile=/dev/null \
+    CMD="scp -F /dev/null -o UserKnownHostsFile=/dev/null \
         -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-        -i $IMAGE_PATH/stretch.img.key -P $PORT bin/syz-execprog bin/syz-executor root@localhost:/
+        -i $IMAGE_PATH/stretch.img.key -P $PORT bin/syz-execprog bin/syz-executor root@localhost:/"
 fi
+$CMD
+echo $CMD > upload-exp.sh
 exit $EXITCODE

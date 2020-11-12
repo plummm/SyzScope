@@ -53,9 +53,18 @@ def args_parse():
     parser.add_argument('-ff', '--force-fuzz',
                         action='store_true',
                         help='Force to do fuzzing even detect write without mutating')
-    parser.add_argument('-sa', '--static-analysis',
+    parser.add_argument('--static-analysis',
                         action='store_true',
-                        help='Run static analysis before fuzzing')        
+                        help='Run static analysis before fuzzing')
+    parser.add_argument('--disable-symbolic-tracing',
+                        action='store_false',
+                        help='Disable symbolic tracing before fuzzing')
+    parser.add_argument('--gdb', nargs='?',
+                        default='1235',
+                        help='Default gdb port for attaching')
+    parser.add_argument('--qemu-monitor', nargs='?',
+                        default='9700',
+                        help='Default port of qemu monitor')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug mode')
 
@@ -169,6 +178,6 @@ if __name__ == '__main__':
     l = list(crawler.cases.keys())
     total = len(l)
     for i in range(0,min(parallel_max,len(crawler.cases))):
-        deployer.append(Deployer(i, args.debug, args.force, int(args.syzkaller_port), args.replay, int(args.linux), int(args.time), args.force_fuzz, args.alert, args.static_analysis))
+        deployer.append(Deployer(index=i, debug=args.debug, force=args.force, port=int(args.syzkaller_port), replay=args.replay, linux_index=int(args.linux), time=int(args.time), force_fuzz=args.force_fuzz, alert=args.alert, static_analysis=args.static_analysis, symbolic_tracing=args.disable_symbolic_tracing, gdb_port=int(args.gdb), qemu_monitor_port=int(args.qemu_monitor)))
         x = threading.Thread(target=deploy_one_case, args=(i,))
         x.start()

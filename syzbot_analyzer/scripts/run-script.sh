@@ -15,6 +15,8 @@ PORT=$2
 IMAGE_PATH=$3
 CASE_PATH=$4
 
+RAW_COMMAND=`echo $COMMAND | sed -E "s/ -enable=[a-z_]+(,[a-z_]+)*//g"`
+
 cd $CASE_PATH/poc || exit 1
 cat << EOF > run.sh
 #!/bin/bash
@@ -27,14 +29,16 @@ set -ex
 
 for i in {1..10}
 do
-    ${COMMAND}
+    ${COMMAND} || ${RAW_COMMAND}
     
     #Sometimes the testcase is not required to repeat, but we still give a shot
     sleep 5
 done
 EOF
 
-scp -F /dev/null -o UserKnownHostsFile=/dev/null \
+CMD="scp -F /dev/null -o UserKnownHostsFile=/dev/null \
     -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-    -i $IMAGE_PATH/stretch.img.key -P $PORT ./run.sh root@localhost:/root
+    -i $IMAGE_PATH/stretch.img.key -P $PORT ./run.sh root@localhost:/root"
+$CMD
+echo $CMD > run-script.sh
 exit 0

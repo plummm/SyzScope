@@ -3,20 +3,15 @@ import os, stat, sys
 import requests
 import shutil
 import logging
-import datetime
 import syzbot_analyzer.interface.utilities as utilities
 
-from .syzbotCrawler import syzbot_host_url, syzbot_bug_base_url
+from syzbot_analyzer.modules.syzbotCrawler import syzbot_host_url, syzbot_bug_base_url
 from syzbot_analyzer.interface import s2e, static_analysis, sym_exec
 from subprocess import call, Popen, PIPE, STDOUT
-from .crash import CrashChecker, kasan_regx, free_regx
+from syzbot_analyzer.modules.crash import CrashChecker, kasan_regx, free_regx
 from syzbot_analyzer.interface.utilities import chmodX
 from dateutil import parser as time_parser
-
-stamp_finish_fuzzing = "FINISH_FUZZING"
-stamp_build_syzkaller = "BUILD_SYZKALLER"
-stamp_build_kernel = "BUILD_KERNEL"
-stamp_reproduce_ori_poc = "REPRO_ORI_POC"
+from .worker import Workers
 
 syz_config_template="""
 {{ 
@@ -43,53 +38,10 @@ syz_config_template="""
         ]
 }}"""
 
-class Deployer:
-    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False):
-        self.linux_folder = "linux"
-        self.project_path = ""
-        self.package_path = None
-        self.syzkaller_path = ""
-        self.image_path = ""
-        self.current_case_path = ""
-        self.kernel_path = ""
-        self.index = index
-        self.case_logger = None
-        self.logger = None
-        self.case_info_logger = None
-        self.force = force
-        self.time_limit = time
-        #self.crash_checker = None
-        self.image_switching_date = datetime.datetime(2020, 3, 15)
-        self.arch = None
-        self.compiler = None
-        self.force_fuzz = force_fuzz
-        self.alert = alert
-        self.static_analysis = static_analysis
-        self.guided_symbolic_execution = True
-        self.sa = None
-        if replay == None:
-            self.replay = False
-            self.catalog = 'incomplete'
-        else:
-            self.replay = True
-            self.catalog = replay
-        self.default_port = port
-        if linux_index != -1:
-            self.index = linux_index
-        self.init_logger(debug)
-        self.debug = debug
+class Deployer(Workers):
+    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False, symbolic_tracing=True, gdb_port=1235, qemu_monitor_port=9700):
+        Workers.__init__(self, index, debug, force, port, replay, linux_index, time, force_fuzz, alert, static_analysis, symbolic_tracing, gdb_port, qemu_monitor_port)
         self.clone_linux()
-
-    def init_logger(self, debug):
-        self.logger = logging.getLogger(__name__+str(self.index))
-        handler = logging.StreamHandler(sys.stdout)
-        format = logging.Formatter('%(asctime)s Thread {}: %(message)s'.format(self.index))
-        handler.setFormatter(format)
-        self.logger.addHandler(handler)
-        if debug:
-            self.logger.setLevel(logging.DEBUG)
-        else:
-            self.logger.setLevel(logging.INFO)
     
     def init_replay_crash(self, hash_val):
         chmodX("syzbot_analyzer/scripts/init-replay.sh")
@@ -97,6 +49,7 @@ class Deployer:
         call(["syzbot_analyzer/scripts/init-replay.sh", self.catalog, hash_val])
 
     def deploy(self, hash_val, case):
+        self.setup_hash(hash_val)
         self.project_path = os.getcwd()
         self.package_path = os.path.join(self.project_path, "syzbot_analyzer")
         self.current_case_path = "{}/work/{}/{}".format(self.project_path, self.catalog, hash_val[:7])
@@ -111,28 +64,26 @@ class Deployer:
         if self.replay:
             self.init_replay_crash(hash_val[:7])    
         if self.force or \
-            (not self.__check_stamp(stamp_finish_fuzzing, hash_val[:7], 'succeed')  and\
-            not self.__check_stamp(stamp_finish_fuzzing, hash_val[:7], 'completed')):
+                (self.finished_fuzzing(hash_val, 'succeed')  and self.finished_fuzzing(hash_val, 'completed')):
             self.compiler = utilities.set_compiler_version(time_parser.parse(case["time"]), case["config"])
             write_without_mutating = False
             self.__create_dir_for_case()
             if self.force:
-                self.__clean_stamp(stamp_finish_fuzzing, hash_val[:7])
-                self.__clean_stamp(stamp_build_kernel, hash_val[:7])
-                self.__clean_stamp(stamp_build_syzkaller, hash_val[:7])
+                self.cleanup_finished_fuzzing(hash_val)
+                self.cleanup_built_kernel(hash_val)
+                self.cleanup_built_syzkaller(hash_val)
             self.case_logger = self.__init_case_logger("{}-log".format(hash_val))
             self.case_info_logger = self.__init_case_logger("{}-info".format(hash_val))
             url = syzbot_host_url + syzbot_bug_base_url + hash_val
             self.case_info_logger.info(url)
 
+            i386 = None
+            if utilities.regx_match(r'386', case["manager"]):
+                i386 = True
+
             if (self.static_analysis):
-                self.sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.index, self.current_case_path, self.linux_folder)
-                r = utilities.request_get(case['report'])
-                vul_site, func_site, func, offset, size = self.sa.KasanVulnChecker(r.text)
-                #r = sa.prepare_static_analysis(case, vul_site, func_site)
-                #if r != 0:
-                #    self.logger.error("Error occur in deploy-bc.sh")
-                self.sa.run_static_analysis(vul_site, func_site, func, offset)
+                self.do_static_analysis(case)
+
             need_patch = 0
             if self.__need_kasan_patch(case['title']):
                 need_patch = 1
@@ -141,48 +92,18 @@ class Deployer:
                 self.logger.error("Error occur in deploy.sh")
                 self.__save_error(hash_val)
                 return
-            self.case_info_logger.info("compiler: "+self.compiler)
-            self.crash_checker = CrashChecker(
-                self.project_path,
-                self.current_case_path,
-                3777,
-                self.logger,
-                self.debug,
-                self.index,
-                compiler=self.compiler)
-            i386 = None
-            if utilities.regx_match(r'386', case["manager"]):
-                i386 = True
+
+            ### DEBUG SYMEXEC ###
+            if self.symbolic_tracing:
+                self.do_symbolic_tracing(case, i386)
+                return
+            ### DEBUG SYMEXEC ###
+            
             need_fuzzing = False
             title = None
-            self.logger.info("Try to triger the OOB/UAF by running original poc")
-            if not self.__check_stamp(stamp_reproduce_ori_poc, hash_val[:7], 'incomplete'):
-                report, trigger = self.crash_checker.read_crash(case["syz_repro"], case["syzkaller"], None, 0, case["c_repro"], i386)
-                write_without_mutating, title = self.KasanWriteChecker(report, hash_val)
-                self.__create_stamp(stamp_reproduce_ori_poc)
-            ### DEBUG SYMEXEC ###
-            if self.guided_symbolic_execution:
-                if self.sa == None:
-                    self.sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.index, self.current_case_path, self.linux_folder)
-                r = utilities.request_get(case['report'])
-                vul_site, func_site, func, offset, size = self.sa.KasanVulnChecker(r.text)
+            if self.reproduced_ori_poc(hash_val, 'incomplete'):
+                write_without_mutating, title = self.do_reproducing_ori_poc(case, hash_val, i386)
 
-                sym = sym_exec.SymExec(debug=self.debug)
-                linux_path = os.path.join(self.current_case_path, self.linux_folder)
-                sym.setup_vm(linux_path, 'amd64', 2778, self.image_path, 1235, proj_path=self.current_case_path)
-                sym.run_vm()
-                ok, output = self.crash_checker.upload_exp(case["syz_repro"], 2778, case["syzkaller"], utilities.URL, case["c_repro"], i386, 0)
-                self.crash_checker.run_exp(case["syz_repro"], 2778, utilities.URL, ok, i386, 0)
-                paths = []
-                #paths.append({'cond': 0xffffffff8328c77d, 'correct_path': 0xffffffff8328c77f, 'wrong_path': 0xffffffff8328c79a})
-                #paths.append({'cond': 0xffffffff83295764, 'correct_path': 0xffffffff83295766, 'wrong_path': 0xffffffff8329576b})
-                #paths.append({'cond': 0xffffffff8329661f, 'correct_path': 0xffffffff8329667b, 'wrong_path': 0xffffffff83296621})
-                #paths.append({'cond': 0xffffffff83296f63, 'correct_path': 0xffffffff83296f65, 'wrong_path': 0xffffffff83296fc2})
-                #paths.append({'cond': 0xffffffff83296fc0, 'correct_path': 0xffffffff83296f65, 'wrong_path': 0xffffffff83296fc2})
-                #paths.append({'cond': 0, 'correct_path': 0, 'wrong_path': 0xffffffff8328c7ad})
-                sym.setup_bug_capture(offset, size)
-                sym.run_sym(sym_tracing=True)
-            ### DEBUG SYMEXEC ###
             if self.force_fuzz or not write_without_mutating:
                 path = None
                 need_fuzzing = True
@@ -196,30 +117,6 @@ class Deployer:
         else:
             self.logger.info("{} has finished".format(hash_val[:7]))
         return self.index
-    
-    def KasanWriteChecker(self, report, hash_val):
-        title = None
-        ret = False
-        if report != []:
-            for each in report:
-                for line in each:
-                    if utilities.regx_match(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line) or\
-                    utilities.regx_match(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line):
-                        m = re.search(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line)
-                        if m != None and len(m.groups()) > 0:
-                            title = m.groups()[0]
-                        m = re.search(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line)
-                        if m != None and len(m.groups()) > 0:
-                            title = m.groups()[0]
-                    if utilities.regx_match(utilities.kasan_write_addr_regx, line):
-                        ret = True
-                        self.crash_checker.logger.info("OOB/UAF Write without mutating")
-                        self.crash_checker.logger.info("Detect read before write")
-                        self.logger.info("Write to confirmed success")
-                        self.__write_to_sucess(hash_val)
-                        self.__write_to_confirmed_sucess(hash_val)
-                        break
-        return ret, title
 
     def clone_linux(self):
         self.__run_linux_clone_script()
@@ -270,9 +167,10 @@ class Deployer:
         return exitcode
     
     def compileTemplate(self):
-        chmodX("syzbot_analyzer/scripts/syz-compile.sh")
+        target = os.path.join(self.package_path, "scripts/syz-compile.sh")
+        chmodX(target)
         self.logger.info("run: scripts/syz-compile.sh")
-        p = Popen(["syzbot_analyzer/scripts/syz-compile.sh", self.current_case_path ,self.arch],
+        p = Popen([target, self.current_case_path ,self.arch],
                 stdout=PIPE,
                 stderr=STDOUT
                 )
@@ -523,10 +421,11 @@ class Deployer:
             image = "stretch"
         else:
             image = "wheezy"
-        chmodX("syzbot_analyzer/scripts/deploy.sh")
+        target = os.path.join(self.package_path, "scripts/deploy.sh")
+        chmodX(target)
         index = str(self.index)
-        self.logger.info("run: scripts/deploy.sh".format(self.index))
-        p = Popen(["syzbot_analyzer/scripts/deploy.sh", self.linux_folder, hash_val, commit, syzkaller, config, testcase, index, self.catalog, image, self.arch, self.compiler, str(kasan_patch)],
+        self.logger.info("run: scripts/deploy.sh")
+        p = Popen([target, self.linux_folder, hash_val, commit, syzkaller, config, testcase, index, self.catalog, image, self.arch, self.compiler, str(kasan_patch)],
                 stdout=PIPE,
                 stderr=STDOUT
                 )
@@ -588,7 +487,7 @@ class Deployer:
         res = []
         dir = os.path.join(syzkaller_path, search_path)
         if not os.path.isdir(dir):
-            self.logger.info("{} do not exist".format(self.index, dir))
+            self.logger.info("{} do not exist".format(dir))
             return res
         for file in os.listdir(dir):
             if file.endswith(extension):
@@ -639,7 +538,7 @@ class Deployer:
         res = []
         dir = os.path.join(syzkaller_path, search_path)
         if not os.path.isdir(dir):
-            self.logger.info("{} do not exist".format(self.index, dir))
+            self.logger.info("{} do not exist".format(dir))
             return res
         for file in os.listdir(dir):
             if file.endswith(extension):
@@ -826,20 +725,6 @@ class Deployer:
         shutil.move(src, des)
         self.current_case_path = des
 
-    def __create_stamp(self, name):
-        self.logger.info("Create stamp {}".format(name))
-        stamp_path = "{}/.stamp/{}".format(self.current_case_path, name)
-        call(['touch',stamp_path])
-    
-    def __check_stamp(self, name, hash_val, folder):
-        stamp_path1 = "{}/work/{}/{}/.stamp/{}".format(self.project_path, folder, hash_val, name)
-        return os.path.isfile(stamp_path1)
-    
-    def __clean_stamp(self, name, hash_val):
-        stamp_path = "{}/.stamp/{}".format(self.current_case_path, name)
-        if os.path.isfile(stamp_path):
-            os.remove(stamp_path)
-
     def __create_dir_for_case(self):
         if self.__copy_from_duplicated_cases():
             return
@@ -873,6 +758,9 @@ class Deployer:
         logger = logging.getLogger(logger_name)
         logger.setLevel(self.logger.level)
         logger.addHandler(handler)
+        logger.propagate = False
+        if self.debug:
+            logger.propagate = True
         return logger
     
     def __init_case_info_logger(self, logger_name):
@@ -882,6 +770,9 @@ class Deployer:
         logger = logging.getLogger(logger_name)
         logger.setLevel(self.logger.level)
         logger.addHandler(handler)
+        logger.propagate = False
+        if self.debug:
+            logger.propagate = True
         return logger
 
     def __log_subprocess_output(self, pipe, log_level):

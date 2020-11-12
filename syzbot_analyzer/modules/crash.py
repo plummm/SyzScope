@@ -154,8 +154,9 @@ class CrashChecker:
         return res
     
     def patch_applying_check(self, linux_commit, config, patch_commit):
-        utilities.chmodX("syzbot_analyzer/scripts/patch_applying_check.sh")
-        p = Popen(["syzbot_analyzer/scripts/patch_applying_check.sh", self.linux_path, linux_commit, config, patch_commit, self.compiler],
+        target = os.path.join(self.package_path, "scripts/patch_applying_check.sh")
+        utilities.chmodX(target)
+        p = Popen([target, self.linux_path, linux_commit, config, patch_commit, self.compiler],
                 stdout=PIPE,
                 stderr=STDOUT)
         with p.stdout:
@@ -305,16 +306,17 @@ class CrashChecker:
                 f.write("\n")
     
     def deploy_linux(self, commit, config, fixed):
-        utilities.chmodX("syzbot_analyzer/scripts/deploy_linux.sh")
+        target = os.path.join(self.package_path, "scripts/deploy_linux.sh")
+        utilities.chmodX(target)
         p = None
         if commit == None and config == None:
             #self.logger.info("run: scripts/deploy_linux.sh {} {}".format(self.linux_path, patch_path))
-            p = Popen(["syzbot_analyzer/scripts/deploy_linux.sh", self.compiler, str(fixed), self.linux_path, self.package_path],
+            p = Popen([target, self.compiler, str(fixed), self.linux_path, self.package_path],
                 stdout=PIPE,
                 stderr=STDOUT)
         else:
             #self.logger.info("run: scripts/deploy_linux.sh {} {} {} {}".format(self.linux_path, patch_path, commit, config))
-            p = Popen(["syzbot_analyzer/scripts/deploy_linux.sh", self.compiler, str(fixed), self.linux_path, self.package_path, commit, config],
+            p = Popen([target, self.compiler, str(fixed), self.linux_path, self.package_path, commit, config,  "0"],
                 stdout=PIPE,
                 stderr=STDOUT)
         with p.stdout:
@@ -405,8 +407,9 @@ class CrashChecker:
 
     def upload_exp(self, syz_repro, port, syz_commit, repro_type, c_repro, i386, fixed):
         output = []
-        utilities.chmodX("syzbot_analyzer/scripts/upload-exp.sh")
-        p2 = Popen(["syzbot_analyzer/scripts/upload-exp.sh", self.case_path, syz_repro,
+        target = os.path.join(self.package_path, "scripts/upload-exp.sh")
+        utilities.chmodX(target)
+        p2 = Popen([target, self.case_path, syz_repro,
             str(port), self.image_path, syz_commit, str(repro_type), str(c_repro), str(i386), str(fixed), self.compiler],
         stdout=PIPE,
         stderr=STDOUT)
@@ -414,7 +417,7 @@ class CrashChecker:
             output = self.__store_subprocess_output(p2.stdout)
         exitcode = p2.wait()
         if exitcode != 2 and exitcode != 3:
-            return 0, None
+            return 0, output
         return exitcode, output
     
     def run_exp(self, syz_repro, port, repro_type, exitcode, i386, th_index):
@@ -437,8 +440,9 @@ class CrashChecker:
                     command = f.readline().strip('\n')
             else:"""
             command = self.make_commands(text, exitcode, i386)
-        utilities.chmodX("syzbot_analyzer/scripts/run-script.sh")
-        p3 = Popen(["syzbot_analyzer/scripts/run-script.sh", command, str(port), self.image_path, self.case_path],
+        target = os.path.join(self.package_path, "scripts/run-script.sh")
+        utilities.chmodX(target)
+        p3 = Popen([target, command, str(port), self.image_path, self.case_path],
         stdout=PIPE,
         stderr=STDOUT)
         with p3.stdout:

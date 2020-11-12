@@ -3,6 +3,7 @@ import logging
 import os
 import re
 
+from syzbot_analyzer.interface.utilities import request_get, extract_vul_obj_offset_and_size
 from bs4 import BeautifulSoup
 from bs4 import element
 
@@ -35,10 +36,14 @@ class Crawler:
         self.logger2file = logging.getLogger("log2file")
         if debug:
             self.logger.setLevel(logging.DEBUG)
+            self.logger.propagate = True
             self.logger2file.setLevel(logging.DEBUG)
+            self.logger2file.propagate = True
         else:
             self.logger.setLevel(logging.INFO)
+            self.logger.propagate = False
             self.logger2file.setLevel(logging.INFO)
+            self.logger2file.propagate = False
         self.logger2file.addHandler(handler)
 
     def run(self):
@@ -54,7 +59,8 @@ class Crawler:
 
     def run_one_case(self, hash):
         self.logger.info("retreive one case: %s",hash)
-        self.retreive_case(hash)
+        if self.retreive_case(hash) == -1:
+            return
         self.cases[hash]['title'] = self.get_title_of_case(hash)
     
     def get_title_of_case(self, hash=None, text=None):
@@ -86,6 +92,8 @@ class Crawler:
         self.cases[hash]["time"] = detail[6]
         self.cases[hash]["manager"] = detail[7]
         self.cases[hash]["report"] = detail[8]
+        self.cases[hash]["vul_offset"] = detail[9]
+        self.cases[hash]["obj_size"] = detail[10]
 
     def gather_cases(self):
         tables = self.__get_table(self.url)
@@ -170,6 +178,13 @@ class Crawler:
                             self.logger.debug("Log URL: {}".format(log))
                             report = syzbot_host_url + repros[1].next.attrs['href']
                             self.logger.debug("Log URL: {}".format(report))
+                            r = request_get(report)
+                            report_list = r.text.split('\n')
+                            offset, size = extract_vul_obj_offset_and_size(report_list)
+                            if offset == None or size == None:
+                                print("offset or size is None")
+                                # Test symbolic tracing only
+                                break
                             try:
                                 syz_repro = syzbot_host_url + repros[2].next.attrs['href']
                                 self.logger.debug("Testcase URL: {}".format(syz_repro))
@@ -187,7 +202,7 @@ class Crawler:
                         except:
                             self.logger.info("Failed to retrieve case {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
                             continue
-                        return [commit, syzkaller, config, syz_repro, log, c_repro, time_str, manager_str, report]
+                        return [commit, syzkaller, config, syz_repro, log, c_repro, time_str, manager_str, report, offset, size]
                 break
         self.logger2file.info("[Failed] {} fail to find a proper crash".format(url))
         return []

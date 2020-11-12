@@ -79,14 +79,13 @@ class Kernel:
     FUNCNAME = 0
     ADDRESS = 1
 
-    def __init__(self, vmlinux, addr_len):
-        print("Loading kernel in angr. It will take a few minutes...")
+    def __init__(self, vmlinux, addr_bytes, debug):
         self.proj = angr.Project(vmlinux,
                                  load_options={"auto_load_libs": False})
-        self.gdbhelper = GDBHelper(vmlinux, addr_len)
+        self.gdbhelper = GDBHelper(vmlinux, addr_bytes, debug)
         # private
         self._kasan_report = 0
-        self._kasan_ret = 0
+        self._kasan_ret = []
 
     def getStructOffset(self, struct_name, field_name):
         cmd = "p &((struct %s *)0)->%s" % (struct_name, field_name)
@@ -154,7 +153,7 @@ class Kernel:
             return 0
 
     def getKasanReport(self):
-        if self._kasan_ret != 0 or self._kasan_report != 0:
+        if self._kasan_ret != [] or self._kasan_report != 0:
             return self._kasan_report, self._kasan_ret
 
         kasan_report = self.find_symbol("__kasan_report")
@@ -162,7 +161,8 @@ class Kernel:
             kasan_report = self.find_symbol("kasan_report")
         start = kasan_report.rebased_addr
         end = start + kasan_report.size
-        kasan_report, kasan_ret = 0, 0
+        kasan_report = 0
+        kasan_ret = []
         while start < end:
             block = self.getBlock(start)
             if len(block.capstone.insns) == 0:
@@ -170,14 +170,17 @@ class Kernel:
                 continue
             inst = block.capstone.insns[0]
             # first check
-            if inst.mnemonic == "jne":
-                kasan_report = start + inst.size
-                kasan_ret = self.getTarget(inst.operands[0])
-                break
-            elif inst.mnemonic == "je":
-                kasan_report = self.getTarget(inst.operands[0])
-                kasan_ret = start + inst.size
-                break
+            if kasan_report == 0:
+                if inst.mnemonic == "jne":
+                    kasan_report = start + inst.size
+                    #kasan_ret = self.getTarget(inst.operands[0])
+                    #break
+                elif inst.mnemonic == "je":
+                    kasan_report = self.getTarget(inst.operands[0])
+                    #kasan_ret = start + inst.size
+                    #break
+            if inst.mnemonic == "ret":
+                kasan_ret.append(start)
             start += inst.size
 
         self._kasan_report, self._kasan_ret = kasan_report, kasan_ret

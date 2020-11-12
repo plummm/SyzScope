@@ -3,37 +3,67 @@ import angr
 
 from pwn import *
 from .kernel import Kernel
+from .monitor import Monitor
 
 class VMState:
     ADDRESS = 1
     INITIAL = 0
 
-    def __init__(self, linux, gdb_port, arch):
+    def __init__(self, linux, gdb_port, arch, debug=False):
         self.linux = os.path.join(linux, "vmlinux")
         self.gdb_port = gdb_port
         self.vm = None
         self._kasan_report = 0
         self._kasan_ret = 0
         self.kernel = None
-        self.addr_len = 64
-        if arch == 'i385':
-            self.addr_len = 32
+        self.addr_bytes = 8
+        self.gdb = None
+        self.mon = None
+        self.debug = debug
+        if arch == 'i386':
+            self.addr_bytes = 4
         self._sections = None
         self.stack_addr = [0,0]
+        self.kasan_addr = [0,[]]
         VMState.INITIAL = 1
 
-    def connect(self, port):
+    def gdb_connect(self, port):
         if self.__check_initialization():
             return
-        self.kernel = Kernel(self.linux, self.addr_len)
+        if self.debug:
+            print("Loading kernel, this process may take a while")
+        self.kernel = Kernel(self.linux, self.addr_bytes, self.debug)
         self.gdb = self.kernel.gdbhelper
-        kasan_report, kasan_ret = self.kernel.getKasanReport()
         self.waitfor_pwndbg()
         self.gdb.connect(port)
+    
+    def mon_connect(self, port):
+        if self.__check_initialization():
+            return
+        self.mon = Monitor(port, self.debug)
+        self.mon.connect()
+    
+    def set_checkpoint(self):
+        kasan_report, kasan_ret = self.kernel.getKasanReport()
         self.gdb.set_breakpoint(kasan_report)
         self.gdb.resume()
+        self.kasan_addr[0] = kasan_report
+        self.kasan_addr[1] = kasan_ret
+        return
+
+    def lock_thread(self):
+        if self.__check_initialization():
+            return
+        self.waitfor_pwndbg()
+        self.gdb.set_scheduler_mode('on')
+
+    def unlock_thread(self):
+        if self.__check_initialization():
+            return
+        self.waitfor_pwndbg()
+        self.gdb.set_scheduler_mode('off')
     
-    def reach_vul_site(self, addr):
+    def reach_target_site(self, addr):
         if self.__check_initialization():
             return
         self.waitfor_pwndbg()
@@ -79,30 +109,33 @@ class VMState:
                 return self.stack_addr[0], self.stack_addr[1]
         return 0, 0
     
-    # results are inaccurate due to the false postive from gdb, will be removed in future 
-    def locate_vul_site(self):
+    def back_to_kasan_ret(self):
         if self.__check_initialization():
             return
         self.waitfor_pwndbg()
-        index = -1
-        bt = self.gdb.get_backtrace()
-        extra_check = False
-        kasan_entries = ["__kasan_check_read", "__kasan_check_write", \
-            "__asan_store1", "__asan_store2", "__asan_store4", "__asan_store8", "__asan_store16", \
-            "__asan_load1", "__asan_load2", "__asan_load4", "__asan_load8", "__asan_load16"]
-        for i in range(0, len(bt)):
-            each = bt[i]
-            if each == "check_memory_region":
-                extra_check = True
-                continue
-            if each in kasan_entries:
-                index = i+1
-                break
-            if extra_check:
-                # check_memory_region can be both entry and callee of other entries
-                index = i
-                break
-        return index
+        if len(self.kasan_addr[1]) > 0:
+            for each in self.kasan_addr[1]:
+                self.gdb.set_breakpoint(each)
+        self.gdb.resume()
+
+    def back_to_caller(self):
+        if self.__check_initialization():
+            return
+        self.waitfor_pwndbg()
+        self.gdb.finish_cur_func()
+
+    def inspect_code(self, addr, n_line):
+        if self.__check_initialization():
+            return
+        self.waitfor_pwndbg()
+        self.gdb.print_code(addr, n_line)
+    
+    def read_backtrace(self, n):
+        if self.__check_initialization():
+            return
+        self.waitfor_pwndbg()
+        bt = self.gdb.get_backtrace(n)
+        return bt
     
     def back_to_vul_site(self):
         if self.__check_initialization():
@@ -142,9 +175,21 @@ class VMState:
         regs = self.gdb.get_registers()
         return regs
     
+    def prepare_context(self, pc):
+        index = self.mon.choose_cpu(pc)
+        self.mon.set_cpu(index)
+    
     def read_reg(self, reg):
         if self.__check_initialization():
             return
+        val = 0
+        segment_regs = ['es', 'cs', 'ss', 'ds', 'fs', 'gs', 'ldt', 'tr']
+        if reg in segment_regs:
+            if self.mon != None:
+                val = self.mon.get_register(reg)
+                return val
+            print("GDB may not retrieve the correct base of segment registers, please enable qemu monitor")
+        
         self.waitfor_pwndbg()
         val = self.gdb.get_register(reg)
         return val

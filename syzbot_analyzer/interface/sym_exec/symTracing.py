@@ -19,4 +19,6 @@ class PropagationHandler:
         self._write_from_sym.append(len(self._write_queue)-1)
     
     def get_symbolic_propagation(self):
+        if self._write_from_sym == []:
+            self._write_from_sym.append(self._write_queue)
         return self._write_from_sym

@@ -45,6 +45,7 @@ class StaticAnalysis:
     def KasanVulnChecker(self, report):
         vul_site = ''
         func_site = ''
+        func = ''
         offset = -1
         report_list = report.split('\n')
         trace = utilities.extrace_call_trace(report_list)

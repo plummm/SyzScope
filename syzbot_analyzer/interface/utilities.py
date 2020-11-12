@@ -5,7 +5,7 @@ import json
 import datetime
 
 from bs4 import BeautifulSoup
-from syzbot_analyzer.modules import Crawler
+#from syzbot_analyzer.modules import Crawler
 from dateutil import parser as time_parser
 
 FOLDER=0
@@ -177,6 +177,8 @@ def extract_vul_obj_offset_and_size(report):
             if offset != None and size != None:
                 break
         if offset == None:
+            if len(bug_desc) == 0:
+                return offset, size
             line = bug_desc[0]
             addr_begin = regx_get(r'The buggy address belongs to the object at \w+', line, 0)
             if addr_begin != None:
@@ -354,7 +356,7 @@ def use_and_free_same_task(url):
         print("Error: "+url)
     return res
         
-
+"""
 #divide into race-condition and nonrace-condition
 def get_types_of_cases(hashs):
     race = []
@@ -420,7 +422,7 @@ def get_types_of_cases(hashs):
                 
                 break
     return [race, non_race]
-
+"""
 def update_img_for_case(hash, folder, time):
     image_switching_date = datetime.datetime(2020, 3, 15)
     case_time = time_parser.parse(time)
@@ -582,7 +584,7 @@ def retrieve_cases_match_regx(dirOfCases, regx):
                 res.append(r)
     
     return res
-
+"""
 def save_cases_as_json(key, max_num):
     crawler = Crawler(keyword=key, max_retrieve=max_num)
     cases = crawler.gather_cases()
@@ -590,7 +592,7 @@ def save_cases_as_json(key, max_num):
         for each in cases:
             json.dump(each, f)
             f.write('\n')
-
+"""
 def load_cases_from_json(path):
     res = []
     with open(path, 'r') as f:
@@ -608,7 +610,7 @@ def cmp_case_with_last_day(case):
     return -1
 
 if __name__ == '__main__':
-    res = urlsOfCases("/home/xzou017/projects/results_of_syzbot_analysis/UAF_OOB_LATEST_BACKUP/completed/")
+    res = urlsOfCases("/home/xzou017/projects/SyzbotAnalyzer/work/error/")
     for each in res:
         print(each)
     """

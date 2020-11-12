@@ -8,16 +8,18 @@ import syzbot_analyzer.interface.utilities as utilities
 
 
 class GDBHelper:
-    def __init__(self, vmlinux, addr_len):
+    def __init__(self, vmlinux, addr_bytes, debug=False):
         self._vmlinux = vmlinux
         self._prompt = "gdbbot"
         self.s_mem = 'g'
         self.s_group = 8
-        if addr_len == 32:
+        self.debug = debug
+        if addr_bytes == 4:
             self.s_mem = 'w'
             self.s_group = 4
+        #log.propagate = debug
+        context.log_level = 'error'
         self.gdb_inst = process(["gdb", self._vmlinux])
-        context.log_level = 'info'
     
     def connect(self, port):
         self.sendline('target remote :{}'.format(port))
@@ -27,26 +29,27 @@ class GDBHelper:
 
     def resume(self):
         self._sendline('continue')
-        print("QEMU is running")
+        #print("QEMU is running")
     
     def waitfor(self, pattern):
         text = self.gdb_inst.recvuntil(pattern)
-        print(text.decode("utf-8"))
+        if self.debug:
+            print(text.decode("utf-8"))
         return text.decode("utf-8")
     
     def get_mem_content(self, addr, size):
         ret = []
-        regx_mem_contect = r'0x[a-f0-9]+:\W+(0x[a-f0-9]+)(\W+(0x[a-f0-9]+))?'
+        regx_mem_contect = r'0x[a-f0-9]+( <[A-Za-z0-9_.\+]+>)?:\W+(0x[a-f0-9]+)(\W+(0x[a-f0-9]+))?'
         group = math.ceil(size / self.s_group)
         cmd = 'x/{}{}x {}'.format(group, self.s_mem, hex(addr))
         raw = self.sendline(cmd)
         for line in raw.split('\n'):
             line = line.strip('\n')
-            mem = utilities.regx_get(regx_mem_contect, line, 0)
+            mem = utilities.regx_get(regx_mem_contect, line, 1)
             if mem == None:
                break
             ret.append(mem)
-            mem = utilities.regx_get(regx_mem_contect, line, 2)
+            mem = utilities.regx_get(regx_mem_contect, line, 3)
             if mem == None:
                 break
             ret.append(mem)
@@ -128,6 +131,21 @@ class GDBHelper:
         self.refresh()
         return ret
     
+    def set_scheduler_mode(self, mode):
+        cmd = 'set scheduler-locking {}'.format(mode)
+        self.sendline(cmd)
+        self.refresh()
+    
+    def finish_cur_func(self):
+        cmd = 'finish'
+        self.sendline(cmd)
+        self.refresh()
+    
+    def print_code(self, addr, n_line):
+        cmd = 'x/{}i {}'.format(n_line, hex(addr))
+        self.sendline(cmd)
+        self.refresh()
+    
     def refresh(self):
         self._sendline('echo')
 
@@ -139,6 +157,9 @@ class GDBHelper:
     
     def recv(self):
         return self.gdb_inst.recv()
+
+    def close(self):
+        self.gdb_inst.kill()
 
     def _sendline(self, cmd):
         self.gdb_inst.sendline(cmd)
