@@ -30,7 +30,7 @@ free_regx = r'KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
 bug_desc_begin_regx = r'The buggy address belongs to the object at'
 bug_desc_end_regx = r'The buggy address belongs to the page'
 offset_desc_regx = r'The buggy address is located (\d+) bytes inside of'
-size_desc_regx = r'which belongs to the cache [a-z0-9\-]+ of size (\d+)'
+size_desc_regx = r'which belongs to the cache [a-z0-9\-_]+ of size (\d+)'
 kernel_func_def_regx= r'^(static )?(const |struct )?\w+(\*)? ([a-zA-Z0-9:_]*( |\n))?(\*)?([a-zA-Z0-9:_]+)\((\)|void\)|((volatile)? (const |struct |unsigned )?\w+( )?[\*]*( )?\w+(, \.\.\.\)|, |,\n|\)))+)'
 
 def get_hash_from_log(path):

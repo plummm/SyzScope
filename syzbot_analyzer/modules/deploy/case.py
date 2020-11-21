@@ -6,6 +6,7 @@ stamp_finish_fuzzing = "FINISH_FUZZING"
 stamp_build_syzkaller = "BUILD_SYZKALLER"
 stamp_build_kernel = "BUILD_KERNEL"
 stamp_reproduce_ori_poc = "REPRO_ORI_POC"
+stamp_symbolic_tracing = "FINISH_SYM_TRACING"
 
 class Case:
     def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False, symbolic_tracing=True, gdb_port=1235, qemu_monitor_port=9700):
@@ -46,10 +47,15 @@ class Case:
         self.hash_val = None
         self.init_logger(debug)
     
-    def init_logger(self, debug):
+    def init_logger(self, debug, hash_val=None):
         self.logger = logging.getLogger(__name__+str(self.index))
+        for each in self.logger.handlers:
+            self.logger.removeHandler(each)
         handler = logging.StreamHandler(sys.stdout)
-        format = logging.Formatter('%(asctime)s Thread {}: %(message)s'.format(self.index))
+        if hash_val != None:
+            format = logging.Formatter('%(asctime)s Thread {}: {} %(message)s'.format(self.index, hash_val))
+        else:
+            format = logging.Formatter('%(asctime)s Thread {}: %(message)s'.format(self.index))
         handler.setFormatter(format)
         self.logger.addHandler(handler)
         if debug:
@@ -61,4 +67,5 @@ class Case:
     
     def setup_hash(self, hash_val):
         self.hash_val = hash_val
+        self.init_logger(self.debug, self.hash_val)
         

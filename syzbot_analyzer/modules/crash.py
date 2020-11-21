@@ -402,7 +402,6 @@ class CrashChecker:
             if p.poll() == None:
                 p.kill()
         self.queue.put([res, trgger_high_risk_bug])
-        qemu.close_logger()
         return
 
     def upload_exp(self, syz_repro, port, syz_commit, repro_type, c_repro, i386, fixed):

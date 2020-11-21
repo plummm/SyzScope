@@ -18,7 +18,7 @@ class GDBHelper:
             self.s_mem = 'w'
             self.s_group = 4
         #log.propagate = debug
-        context.log_level = 'error'
+        #context.log_level = 'error'
         self.gdb_inst = process(["gdb", self._vmlinux])
     
     def connect(self, port):
@@ -31,8 +31,8 @@ class GDBHelper:
         self._sendline('continue')
         #print("QEMU is running")
     
-    def waitfor(self, pattern):
-        text = self.gdb_inst.recvuntil(pattern)
+    def waitfor(self, pattern, timeout=5):
+        text = self.gdb_inst.recvuntil(pattern, timeout=timeout)
         if self.debug:
             print(text.decode("utf-8"))
         return text.decode("utf-8")
@@ -47,13 +47,12 @@ class GDBHelper:
             line = line.strip('\n')
             mem = utilities.regx_get(regx_mem_contect, line, 1)
             if mem == None:
-               break
-            ret.append(mem)
+                continue
+            ret.append(int(mem, 16))
             mem = utilities.regx_get(regx_mem_contect, line, 3)
             if mem == None:
-                break
-            ret.append(mem)
-        self.refresh()
+                continue
+            ret.append(int(mem, 16))
         return ret
     
     def get_registers(self):
@@ -66,8 +65,7 @@ class GDBHelper:
             reg = utilities.regx_get(regx_regs, line, 0)
             val = utilities.regx_get(regx_regs, line, 1)
             if reg != None and val != None:
-                ret[reg] = val
-        self.refresh()
+                ret[reg] = int(val, 16)
         return ret
     
     def get_register(self, reg):
@@ -79,8 +77,7 @@ class GDBHelper:
             line = line.strip('\n')
             val = utilities.regx_get(regx_regs, line, 1)
             if val != None:
-                ret = val
-        self.refresh()
+                ret = int(val, 16)
         return ret
     
     def get_sections(self):
@@ -97,7 +94,6 @@ class GDBHelper:
                 ret[name] = {}
                 ret[name]['start'] = int(s, 16)
                 ret[name]['end'] = int(e, 16)
-        self.refresh()
         return ret
     
     def get_stack_range(self):
@@ -113,7 +109,6 @@ class GDBHelper:
                 ret.append(s)
                 ret.append(e)
                 break
-        self.refresh()
         return ret
     
     def get_backtrace(self, n=None):
@@ -128,31 +123,54 @@ class GDBHelper:
                 ret.append(func_name)
             if len(ret) >= n:
                 break
-        self.refresh()
         return ret
     
     def set_scheduler_mode(self, mode):
         cmd = 'set scheduler-locking {}'.format(mode)
         self.sendline(cmd)
-        self.refresh()
     
     def finish_cur_func(self):
         cmd = 'finish'
         self.sendline(cmd)
-        self.refresh()
     
     def print_code(self, addr, n_line):
-        cmd = 'x/{}i {}'.format(n_line, hex(addr))
-        self.sendline(cmd)
-        self.refresh()
+        cmd = 'x/{}i {}'.format(n_line, addr)
+        raw = self.sendline(cmd)
+        return raw
+    
+    def get_func_name(self, addr):
+        func_name_regx = r'0x[a-f0-9]+ <(.+)>:'
+        raw = self.print_code(addr, 1)
+        ret = None
+        for line in raw.split('\n'):
+            line = line.strip('\n')
+            name = utilities.regx_get(func_name_regx, line, 0)
+            if name != None:
+                ret = name
+        # we dont need refresh again since it was done in print_code()
+        return ret
+    
+    def get_dbg_info(self, addr):
+        cmd = 'b *{}'.format(addr)
+        raw = self.sendline(cmd)
+        dbg_info_regx = r'Breakpoint \d+ at 0x[a-f0-9]+: file (([A-Za-z0-9_\-.]+\/)+[A-Za-z0-9_.\-]+), line (\d+)'
+        ret = []
+        for line in raw.split('\n'):
+            line = line.strip('\n')
+            dbg_file = utilities.regx_get(dbg_info_regx, line, 0)
+            dbg_line = utilities.regx_get(dbg_info_regx, line, 2)
+            if dbg_file != None and dbg_line != None:
+                ret.append(dbg_file)
+                ret.append(dbg_line)
+        return ret
     
     def refresh(self):
         self._sendline('echo')
 
-    def sendline(self, cmd):
+    def sendline(self, cmd, timeout=5):
         #print("send", cmd)
         self._sendline(cmd)
-        raw = self.waitfor("pwndbg>")
+        raw = self.waitfor("pwndbg>", timeout)
         return raw
     
     def recv(self):

@@ -159,6 +159,8 @@ class Kernel:
         kasan_report = self.find_symbol("__kasan_report")
         if kasan_report is None:
             kasan_report = self.find_symbol("kasan_report")
+        if kasan_report == None:
+            return None, None
         start = kasan_report.rebased_addr
         end = start + kasan_report.size
         kasan_report = 0

@@ -10,14 +10,14 @@ from subprocess import Popen, PIPE, STDOUT, call
 
 class VMInstance:
 
-    def __init__(self, proj_path='/tmp/', log_name='vm.log', debug=False):
+    def __init__(self, proj_path='/tmp/', log_name='vm.log', logger=None, debug=False):
         self.proj_path = proj_path
         self.port = None
         self.image = None
         self.linux = None
-        self.log = None
         self.cmd_launch = None
         self.timeout = None
+        self.case_logger = None
         self.debug = debug
         self.qemu_logger = None
         self.qemu_ready = False
@@ -30,17 +30,22 @@ class VMInstance:
                         "kvm-intel.vpid=1", "kvm-intel.emulate_invalid_guest_state=1", \
                         "kvm-intel.eptad=1", "kvm-intel.enable_shadow_vmcs=1", "kvm-intel.pml=1", \
                         "kvm-intel.enable_apicv=1"]
-        self.log = self.init_logger(os.path.join(proj_path, log_name))
+        self.qemu_logger = self.init_logger(os.path.join(proj_path, log_name))
+        if logger != None:
+            self.case_logger = logger
         self._qemu = None
 
     def init_logger(self, log_path):
-        log = open(log_path, "a")
-        return log
-
-    def close_logger(self):
-        if self.log != None:
-            self.log.close()
-        return
+        handler = logging.FileHandler(log_path)
+        format = logging.Formatter('%(message)s')
+        handler.setFormatter(format)
+        logger = logging.getLogger(log_path)
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        if self.debug:
+            logger.setLevel(logging.DEBUG)
+        return logger
 
     def setup(self, port, image, linux, mem="2G", cpu="2", key=None, gdb_port=None, mon_port=None, opts=None, timeout=None):
         cur_opts = ["root=/dev/sda", "console=ttyS0"]
@@ -110,8 +115,6 @@ class VMInstance:
         "-o", "ConnectTimeout=10", "-i", "".format(self.key), 
         "-v", "root@localhost", "".format(cmds)]
         p = Popen(cmd, stdout=PIPE, stderr=STDOUT)
-        with p.stdout:
-            self.__log_subprocess_output(p.stdout, self.log)
     
     def monitor_execution(self, p):
         count = 0
@@ -134,7 +137,7 @@ class VMInstance:
                 line = line.decode("utf-8").strip('\n').strip('\r')
                 if utilities.regx_match(r'Debian GNU\/Linux \d+ syzkaller ttyS\d+', line):
                     self.qemu_ready = True
-                self.log.write(line+'\n')
+                self.qemu_logger.info(line+'\n')
                 if self.debug:
                     print(line)
         except:

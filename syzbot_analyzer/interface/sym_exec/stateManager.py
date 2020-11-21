@@ -5,17 +5,20 @@ class StateManager:
     G_SYM = 1
     G_IRSB = 2
 
-    def __init__(self):
+    def __init__(self, index):
+        self.index = index
         self._current_state = None
         self.simgr = None
         self.state_logger = {}
         self.state_counter = 0
         self.add_constraints = False
+        self.symbolic_tracing = False
     
     def setup_current_state(self, init_state):
         self._current_state = init_state
 
     def init_simgr(self, symbolic_tracing):
+        self.symbolic_tracing = symbolic_tracing
         if self._current_state == None:
             err = "setup current state before initializing simgr"
             return False, err
@@ -23,9 +26,8 @@ class StateManager:
         self.simgr = self.proj.factory.simgr(self._current_state, save_unconstrained=True)
         if not symbolic_tracing:
             #self.add_constraints = True
-            pass
-        legth_limiter = angr.exploration_techniques.LengthLimiter(max_length=1000, drop=True)
-        self.simgr.use_technique(legth_limiter)
+            legth_limiter = angr.exploration_techniques.LengthLimiter(max_length=1000, drop=True)
+            self.simgr.use_technique(legth_limiter)
         dfs = angr.exploration_techniques.DFS()
         self.simgr.use_technique(dfs)
         return True, None
@@ -70,7 +72,11 @@ class StateManager:
         return val
         
     def get_state_index(self, state):
-        return self.state_logger[state]
+        try:
+            ret = self.state_logger[state]
+        except:
+            ret = -1
+        return ret
 
     def purge_current_state(self):
         if self._current_state in self.simgr.active:

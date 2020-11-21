@@ -40,57 +40,56 @@ class VMState:
     def mon_connect(self, port):
         if self.__check_initialization():
             return
-        self.mon = Monitor(port, self.debug)
+        self.mon = Monitor(port, self.addr_bytes, self.debug)
         self.mon.connect()
     
     def set_checkpoint(self):
+        if self.__check_initialization():
+            return
         kasan_report, kasan_ret = self.kernel.getKasanReport()
+        if kasan_report == None:
+            return False
         self.gdb.set_breakpoint(kasan_report)
         self.gdb.resume()
         self.kasan_addr[0] = kasan_report
         self.kasan_addr[1] = kasan_ret
-        return
+        return True
 
     def lock_thread(self):
         if self.__check_initialization():
             return
-        self.waitfor_pwndbg()
         self.gdb.set_scheduler_mode('on')
 
     def unlock_thread(self):
         if self.__check_initialization():
             return
-        self.waitfor_pwndbg()
         self.gdb.set_scheduler_mode('off')
     
     def reach_target_site(self, addr):
         if self.__check_initialization():
             return
-        self.waitfor_pwndbg()
         self.gdb.set_breakpoint(addr)
         self.gdb.resume()
     
     def read_mem(self, addr, size):
         if self.__check_initialization():
             return
-        self.waitfor_pwndbg()
-        mem = self.gdb.get_mem_content(addr, size)
+        mem = self.mon.get_mem_content(addr, size)
         if len(mem) == 1 and size < 8:
-            val = int(mem[0], 16)
-            if size == 4:
+            val = mem[0]
+            if size == 4 and self.addr_bytes == 8:
                 val = val - (val >> 32 << 32)
             if size == 2:
                 val = val - (val >> 16 << 16)
             if size == 1:
                 val = val - (val >> 8 << 8)
-            mem = [hex(val)]
+            mem = [val]
 
         return mem
     
     def read_section(self, name=None):
         if self.__check_initialization():
             return
-        self.waitfor_pwndbg()
         if self._sections == None:
             self._sections = self.gdb.get_sections()
         if name in self._sections:
@@ -100,7 +99,6 @@ class VMState:
     def read_stack_range(self):
         if self.__check_initialization():
             return
-        self.waitfor_pwndbg()
         if self.stack_addr[0] == 0 and self.stack_addr[1] == 0:
             ret = self.gdb.get_stack_range()
             if len(ret) == 2:
@@ -112,7 +110,6 @@ class VMState:
     def back_to_kasan_ret(self):
         if self.__check_initialization():
             return
-        self.waitfor_pwndbg()
         if len(self.kasan_addr[1]) > 0:
             for each in self.kasan_addr[1]:
                 self.gdb.set_breakpoint(each)
@@ -121,19 +118,16 @@ class VMState:
     def back_to_caller(self):
         if self.__check_initialization():
             return
-        self.waitfor_pwndbg()
         self.gdb.finish_cur_func()
 
     def inspect_code(self, addr, n_line):
         if self.__check_initialization():
             return
-        self.waitfor_pwndbg()
-        self.gdb.print_code(addr, n_line)
+        return self.gdb.print_code(addr, n_line)
     
     def read_backtrace(self, n):
         if self.__check_initialization():
             return
-        self.waitfor_pwndbg()
         bt = self.gdb.get_backtrace(n)
         return bt
     
@@ -147,7 +141,6 @@ class VMState:
         exit_flag = False
         extra_check = False
         while True:
-            self.waitfor_pwndbg()
             self.gdb.sendline(cmd)
             bt = self.gdb.get_backtrace(1)
             if exit_flag:
@@ -171,31 +164,40 @@ class VMState:
     def read_regs(self):
         if self.__check_initialization():
             return
-        self.waitfor_pwndbg()
-        regs = self.gdb.get_registers()
+        regs = self.mon.get_registers()
+        if 'eflags' not in regs:
+            val = self.gdb.get_register('eflags')
+            if val != None:
+                regs['eflags'] = val
         return regs
     
     def prepare_context(self, pc):
         index = self.mon.choose_cpu(pc)
         self.mon.set_cpu(index)
     
-    def read_reg(self, reg):
+    def read_reg(self, reg, timeout=5):
         if self.__check_initialization():
             return
-        val = 0
-        segment_regs = ['es', 'cs', 'ss', 'ds', 'fs', 'gs', 'ldt', 'tr']
-        if reg in segment_regs:
-            if self.mon != None:
-                val = self.mon.get_register(reg)
-                return val
-            print("GDB may not retrieve the correct base of segment registers, please enable qemu monitor")
-        
-        self.waitfor_pwndbg()
-        val = self.gdb.get_register(reg)
+        val = self.mon.get_register(reg)
         return val
+    
+    def get_func_name(self, addr):
+        if self.__check_initialization():
+            return
+        return self.gdb.get_func_name(addr)
+    
+    def get_dbg_info(self, addr):
+        if self.__check_initialization():
+            return
+        file = None
+        line = None
+        ret = self.gdb.get_dbg_info(addr)
+        if len(ret) == 2:
+            file, line = ret[0], ret[1]
+        return file, line
 
-    def waitfor_pwndbg(self):
-        self.gdb.waitfor("pwndbg>")
+    def waitfor_pwndbg(self, timeout=5):
+        self.gdb.waitfor("pwndbg>", timeout)
 
     def __check_initialization(self):
         return not VMState.INITIAL

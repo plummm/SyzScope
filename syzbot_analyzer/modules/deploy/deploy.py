@@ -64,7 +64,7 @@ class Deployer(Workers):
         if self.replay:
             self.init_replay_crash(hash_val[:7])    
         if self.force or \
-                (self.finished_fuzzing(hash_val, 'succeed')  and self.finished_fuzzing(hash_val, 'completed')):
+                (not self.finished_fuzzing(hash_val, 'succeed')  and not self.finished_fuzzing(hash_val, 'completed')):
             self.compiler = utilities.set_compiler_version(time_parser.parse(case["time"]), case["config"])
             write_without_mutating = False
             self.__create_dir_for_case()
@@ -87,21 +87,28 @@ class Deployer(Workers):
             need_patch = 0
             if self.__need_kasan_patch(case['title']):
                 need_patch = 1
+
+            ### DEBUG SYMEXEC ###
+            if self.symbolic_tracing:
+                if not self.finished_symbolic_tracing(hash_val, 'incomplete'):
+                    r = self.__run_delopy_script(hash_val[:7], case, need_patch)
+                    if r != 0:
+                        self.logger.error("Error occur in deploy.sh")
+                        self.__save_error(hash_val)
+                        return
+                    self.do_symbolic_tracing(case, i386)
+                return
+            ### DEBUG SYMEXEC ###
+
             r = self.__run_delopy_script(hash_val[:7], case, need_patch)
             if r != 0:
                 self.logger.error("Error occur in deploy.sh")
                 self.__save_error(hash_val)
                 return
-
-            ### DEBUG SYMEXEC ###
-            if self.symbolic_tracing:
-                self.do_symbolic_tracing(case, i386)
-                return
-            ### DEBUG SYMEXEC ###
             
             need_fuzzing = False
             title = None
-            if self.reproduced_ori_poc(hash_val, 'incomplete'):
+            if not self.reproduced_ori_poc(hash_val, 'incomplete'):
                 write_without_mutating, title = self.do_reproducing_ori_poc(case, hash_val, i386)
 
             if self.force_fuzz or not write_without_mutating:
@@ -393,15 +400,7 @@ class Deployer(Workers):
 
     def __check_confirmed(self, hash_val):
         return False
-
-    def __write_to_confirmed_sucess(self, hash_val):
-        with open("{}/work/confirmedSuccess".format(self.project_path), "a+") as f:
-            f.write(hash_val[:7]+"\n")
     
-    def __write_to_sucess(self, hash_val):
-        with open("{}/work/success".format(self.project_path), "a+") as f:
-            f.write(hash_val[:7]+"\n")
-
     def __run_linux_clone_script(self):
         chmodX("syzbot_analyzer/scripts/linux-clone.sh")
         index = str(self.index)

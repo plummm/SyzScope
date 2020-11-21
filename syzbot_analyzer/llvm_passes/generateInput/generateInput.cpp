@@ -58,15 +58,18 @@ struct thisPass : public ModulePass {
         for(auto &F : M){
             if (F.getName().str() == BUG_Func) {
                 getFuncBoundary(&F, func_bound);
+                errs() << "Found target function";
                 if (func_bound[0] > BUG_Vul_Line)
                     BUG_in_header = true;
                 for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I) {
-                    auto dbgloc = (*I).getDebugLoc();
-                    if (!BUG_in_header && (!dbgloc or !dbgloc->getLine()))
+                    llvm::DebugLoc dbgloc = (*I).getDebugLoc();
+                    if (!BUG_in_header && !dbgloc)
                         continue;
                     int curLine = dbgloc->getLine();
-                    //errs() << dbgloc->getFilename().str() << ":" << curLine << "\n";
-                    //errs() << (*I) << "\n";
+                    if (!curLine)
+                        continue;
+                    errs() << dbgloc->getFilename().str() << ":" << curLine << "\n";
+                    errs() << (*I) << "\n";
                     if (curLine >= func_bound[0] && curLine <= func_bound[1]) {
                         if (curLine > BUG_Func_Line && basePointer != NULL)
                             break;

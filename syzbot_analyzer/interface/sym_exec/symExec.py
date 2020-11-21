@@ -1,4 +1,5 @@
 import logging
+from math import e
 import time
 import angr
 import math
@@ -9,8 +10,8 @@ from syzbot_analyzer.interface.vm import VM
 from .mem_instrument import MemInstrument
 
 class SymExec(MemInstrument):
-    def __init__(self, sections=None, logger=None, debug=False):
-        MemInstrument.__init__(self, logger)
+    def __init__(self, index, sections=None, logger=None, debug=False):
+        MemInstrument.__init__(self, index, logger)
         self.debug = debug
         self.vul_mem_offset = None
         self.vul_mem_size = None
@@ -26,17 +27,22 @@ class SymExec(MemInstrument):
         self.simgr = None
         self._branch = None
         self._init_state = None
+        self._timeout=None
         self.cus_sections = sections
         if logger == None:
             self.logger = logging
         else:
             self.logger = logger
 
-    def setup_vm(self, linux, arch, port, image, gdb_port, mon_port, proj_path='/tmp/', mem="2G", cpu="2", key=None, opts=None, log_name="vm.log"):
+    def setup_vm(self, linux, arch, port, image, gdb_port, mon_port, proj_path='/tmp/', mem="2G", cpu="2", key=None, opts=None, log_name="vm.log", logger=None, timeout=None):
         self.gdb_port = gdb_port
         self.mon_port = mon_port
-        self.vm = VM(linux=linux, arch=arch, port=port, image=image, proj_path=proj_path, mem=mem, cpu=cpu, key=key, gdb_port=gdb_port, mon_port=mon_port, opts=opts, log_name=log_name, debug=self.debug)
+        self.vm = VM(linux=linux, arch=arch, port=port, image=image, proj_path=proj_path, mem=mem, cpu=cpu, key=key, gdb_port=gdb_port, mon_port=mon_port, opts=opts, log_name=log_name, debug=self.debug, timeout=timeout, logger=logger)
     
+    def cleanup(self):
+        if self.vm != None:
+            self.vm.kill()
+
     def setup_bug_capture(self, offset, size, vuln_site=None, target_site=None, path = [], extra_noisy_func=None):
         self.vul_mem_offset = offset
         self.vul_mem_size = size
@@ -53,13 +59,18 @@ class SymExec(MemInstrument):
         p = self.vm.run()
         # connect qemu with gdb, set breakpoint at kasan_report()
         self.vm.gdb_connect(self.gdb_port)
-        self.vm.mon_connect(self.mon_port)
-        self.vm.set_checkpoint()
+        if not self.vm.set_checkpoint():
+            return None
         self.proj = self.vm.kernel.proj
+        self.logger.info("Waiting for qemu launching")
         while True:
             if self.vm.qemu_ready:
                 break
+            poll = p.poll()
+            if poll != None:
+                return None
             time.sleep(1)
+        self.vm.mon_connect(self.mon_port)
         """
         with p.stdout:
             for line in iter(p.stdout.readline, b''):
@@ -73,7 +84,8 @@ class SymExec(MemInstrument):
         """
         return p
 
-    def run_sym(self, sym_tracing=False):
+    def run_sym(self, sym_tracing=False, timeout=60*10):
+        self._timeout = timeout
         if self.vm == None:
             self.logger.error("Call setup_vm() to initialize the vm first")
             return
@@ -81,11 +93,10 @@ class SymExec(MemInstrument):
             self.logger.error("Call setup_bug_capture() to initialize vulnerability information")
             return
         #self.vm.lock_thread()
-        rdi_val = self.vm.read_reg('rdi')
-        if rdi_val == None:
-            self.logger.error("rdi is None")
-            return
-        vul_mem = int(rdi_val, 16)
+        vul_mem = self._read_vul_mem()
+        if vul_mem == None:
+            self.logger.error("vulnerable oject addr is incorrect: {}".format(vul_mem))
+            return   
         self.vul_mem_start = vul_mem - self.vul_mem_offset
         self.vul_mem_end = self.vul_mem_start + self.vul_mem_size
         self.logger.info("Vuln mem: {} to {}".format(hex(self.vul_mem_start), hex(self.vul_mem_end)))
@@ -107,6 +118,8 @@ class SymExec(MemInstrument):
         self._restore_memory()
         self._restore_registers()
         self._symbolize_vuln_mem(sym_tracing)
+        if len(self._init_state.globals['sym']) == 0:
+            return None
         self._hookup_path(path)
         ret = self._explore(target_site, sym_tracing)
         return ret
@@ -123,7 +136,7 @@ class SymExec(MemInstrument):
         #self._init_state.inspect.b('mem_write', when=angr.BP_AFTER, action=self.track_mem_write_after)
         self._init_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.track_instruction, instruction=0xffffffff821b7e49)
         self._init_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.track_instruction, instruction=0xffffffff821b7e5d)
-        self._init_state.inspect.b('symbolic_variable', when=angr.BP_AFTER, action=self.track_symbolic_variable)
+        #self._init_state.inspect.b('symbolic_variable', when=angr.BP_AFTER, action=self.track_symbolic_variable)
         #self._init_state.inspect.b('irsb', when=angr.BP_BEFORE, action=self.track_irsb)
 
         self.setup_current_state(self._init_state)
@@ -132,30 +145,39 @@ class SymExec(MemInstrument):
             self.logger.error(err)
             return
 
+        start_time = time.time()
+
         while True:
+            if self._timeout != None:
+                current_time = time.time()
+                #self.logger.info("time left: {}".format(current_time - start_time))
+                if current_time - start_time > self._timeout:
+                    self.logger.info("Timeout, stop symbolic execution")
+                    return self._collect_propogating_results()
+
             if len(self.simgr.active) == 1:
                 cur_state = self.get_state_index(self.get_current_state())
                 if last_state != cur_state:
                     self.logger.info("Switch state {} to state {}".format(last_state, cur_state))
                     last_state = cur_state
 
+            #try:
             self.simgr.step(successor_func=self._my_successor_func)
+            #except Exception as e:
+            #    self.logger.info("Unexpected error occur")
+            #    print("Thread-{}: Unexpected error".format(self.index), e)
+            #    return
             
             
             if self.debug and len(self.simgr.active) > 0:
-                self.logger.info("=======dump========")
+                #self.logger.info("=======dump========")
                 insns = self.proj.factory.block(self.simgr.active[0].addr).capstone.insns
                 n = len(insns)
                 self.vm.inspect_code(self.simgr.active[0].addr, n)
             
             if len(self.simgr.active) == 0 and len(self.simgr.deferred) == 0:
                 self.logger.info("No active states")
-                self.logger.info("Dump symbolic propagations")
-                for each in self.ppg_handler.get_symbolic_propagation():
-                    if type(each) == int:
-                        self.logger.info("addr: {}\n".format(hex(each)))
-                self.vm.kill()
-                return self.ppg_handler.get_symbolic_propagation()
+                return self._collect_propogating_results()
             if self.simgr.unconstrained:
                 for each_state in self.simgr.unconstrained:
                     if each_state.regs.rip.symbolic and each_state.satisfiable():
@@ -164,7 +186,21 @@ class SymExec(MemInstrument):
                             size = each_state.globals['sym'][addr]
                             bv = each_state.memory.load(addr, size=size, inspect=False, endness=archinfo.Endness.LE)
                             self.logger.info("addr {} eval to {}".format(hex(addr), hex(each_state.solver.eval(bv))))
+                            
         return
+    
+    def _collect_propogating_results(self):
+        self.logger.info("Dump symbolic propagations")
+        ret = self.ppg_handler.get_symbolic_propagation()
+        for each in ret:
+            if type(each) == dict:
+                self.logger.info("index: {}  pc: {}  addr: {}".format(each['kasan_write_index'], hex(each['pc']), hex(each['write_to_mem'])))
+                t = self.vm.inspect_code(each['pc'], 1)
+                self.logger.info(t)
+                self.logger.info("stack:")
+                for s in each['stack']:
+                    self.logger.info(s)
+        return ret
     
     def _hookup_path(self, path):
         self._branch = {}
@@ -188,57 +224,113 @@ class SymExec(MemInstrument):
         self._init_state.globals['mem'] = {}
         self._init_state.globals['sym'] = {}
         for i in range(0, self.vul_mem_size):
-            self._init_state.globals['mem'][self.vul_mem_start + i] = 0
-            self._init_state.globals['sym'][self.vul_mem_start + i] = 1
-            self.make_symbolic(self._init_state, self.vul_mem_start + i, 1, "s_obj_{}".format(i))
             if sym_tracing:
-                bv = self._init_state.memory.load(self.vul_mem_start + i, size=1, inspect=False)
-                if not bv.symbolic:
-                    self.logger.info("Vulnerable memory ({}) is not symbolic".format(hex(self.vul_mem_start + i)))
-                    continue
                 val = self.vm.read_mem(self.vul_mem_start + i, 1)
                 if len(val) == 1:
-                    self._init_state.solver.add(bv == int(val[0], 16))
+                    self.make_symbolic(self._init_state, self.vul_mem_start + i, 1, "s_obj_{}".format(i))
+                    bv = self._init_state.memory.load(self.vul_mem_start + i, size=1, inspect=False)
+                    if not bv.symbolic:
+                        self.logger.info("Vulnerable memory ({}) is not symbolic".format(hex(self.vul_mem_start + i)))
+                        continue
+                    self._init_state.solver.add(bv == val[0])
+                    self._init_state.globals['mem'][self.vul_mem_start + i] = 0
+                    self._init_state.globals['sym'][self.vul_mem_start + i] = 1
                 else:
                     self.logger.info("Vulnerable memory has strange data: {}".format(val))
+                    return
     
     def _restore_registers(self):
         regs = self.vm.read_regs()
-        self._init_state.regs.rax = self._init_state.solver.BVV(int(regs['rax'], 16), 64)
-        self._init_state.regs.rbx = self._init_state.solver.BVV(int(regs['rbx'], 16), 64)
-        self._init_state.regs.rcx = self._init_state.solver.BVV(int(regs['rcx'], 16), 64)
-        self._init_state.regs.rdx = self._init_state.solver.BVV(int(regs['rdx'], 16), 64)
-        self._init_state.regs.rsi = self._init_state.solver.BVV(int(regs['rsi'], 16), 64)
-        self._init_state.regs.rdi = self._init_state.solver.BVV(int(regs['rdi'], 16), 64)
-        self._init_state.regs.rsp = self._init_state.solver.BVV(int(regs['rsp'], 16), 64)
-        self._init_state.regs.rbp = self._init_state.solver.BVV(int(regs['rbp'], 16), 64)
-        self._init_state.regs.r8 = self._init_state.solver.BVV(int(regs['r8'], 16), 64)
-        self._init_state.regs.r9 = self._init_state.solver.BVV(int(regs['r9'], 16), 64)
-        self._init_state.regs.r10 = self._init_state.solver.BVV(int(regs['r10'], 16), 64)
-        self._init_state.regs.r11 = self._init_state.solver.BVV(int(regs['r11'], 16), 64)
-        self._init_state.regs.r12 = self._init_state.solver.BVV(int(regs['r12'], 16), 64)
-        self._init_state.regs.r13 = self._init_state.solver.BVV(int(regs['r13'], 16), 64)
-        self._init_state.regs.r14 = self._init_state.solver.BVV(int(regs['r14'], 16), 64)
-        self._init_state.regs.r15 = self._init_state.solver.BVV(int(regs['r15'], 16), 64)
-        self._init_state.regs.rip = self._init_state.solver.BVV(int(regs['rip'], 16), 64)
-        self._init_state.regs.gs = self._init_state.solver.BVV(self.get_segment_base('gs'), 64)
-        #self._init_state.regs.cs = self._init_state.solver.BVV(int(regs['cs'], 16), 32)
-        #self._init_state.regs.ss = self._init_state.solver.BVV(int(regs['ss'], 16), 32)
-        #self._init_state.regs.ds = self._init_state.solver.BVV(int(regs['ds'], 16), 32)
-        self._init_state.regs.fs = self._init_state.solver.BVV(self.get_segment_base('fs'), 64)
-        #self._init_state.regs.es = self._init_state.solver.BVV(int(regs['es'], 16), 32)
-        self._init_state.regs.eflags = self._init_state.solver.BVV(int(regs['eflags'], 16), 32)
+        if self.vm.addr_bytes == 8:
+            self._init_state.regs.gs = self._init_state.solver.BVV(self.get_segment_base('gs'), 64)
+            #self._init_state.regs.cs = self._init_state.solver.BVV(regs['cs'], 32)
+            #self._init_state.regs.ss = self._init_state.solver.BVV(regs['ss'], 32)
+            #self._init_state.regs.ds = self._init_state.solver.BVV(regs['ds'], 32)
+            self._init_state.regs.fs = self._init_state.solver.BVV(self.get_segment_base('fs'), 64)
+            #self._init_state.regs.es = self._init_state.solver.BVV(regs['es'], 32)
+            self._init_state.regs.eflags = self._init_state.solver.BVV(regs['eflags'], 32)
+            self._init_state.regs.cr0 = self._init_state.solver.BVV(self.vm.read_reg('cr0'), 32)
+            self._init_state.regs.cr2 = self._init_state.solver.BVV(self.vm.read_reg('cr2'), 64)
+            self._init_state.regs.cr3 = self._init_state.solver.BVV(self.vm.read_reg('cr3'), 64)
+            self._init_state.regs.cr4 = self._init_state.solver.BVV(self.vm.read_reg('cr4'), 32)
+            self._init_state.regs.cr8 = self._init_state.solver.BVV(self.vm.read_reg('cr8'), 64)
+            if self.vm.addr_bytes == 8:
+                self._init_state.regs.rax = self._init_state.solver.BVV(regs['rax'], 64)
+                self._init_state.regs.rbx = self._init_state.solver.BVV(regs['rbx'], 64)
+                self._init_state.regs.rcx = self._init_state.solver.BVV(regs['rcx'], 64)
+                self._init_state.regs.rdx = self._init_state.solver.BVV(regs['rdx'], 64)
+                self._init_state.regs.rsi = self._init_state.solver.BVV(regs['rsi'], 64)
+                self._init_state.regs.rdi = self._init_state.solver.BVV(regs['rdi'], 64)
+                self._init_state.regs.rsp = self._init_state.solver.BVV(regs['rsp'], 64)
+                self._init_state.regs.rbp = self._init_state.solver.BVV(regs['rbp'], 64)
+                self._init_state.regs.r8 = self._init_state.solver.BVV(regs['r8'], 64)
+                self._init_state.regs.r9 = self._init_state.solver.BVV(regs['r9'], 64)
+                self._init_state.regs.r10 = self._init_state.solver.BVV(regs['r10'], 64)
+                self._init_state.regs.r11 = self._init_state.solver.BVV(regs['r11'], 64)
+                self._init_state.regs.r12 = self._init_state.solver.BVV(regs['r12'], 64)
+                self._init_state.regs.r13 = self._init_state.solver.BVV(regs['r13'], 64)
+                self._init_state.regs.r14 = self._init_state.solver.BVV(regs['r14'], 64)
+                self._init_state.regs.r15 = self._init_state.solver.BVV(regs['r15'], 64)
+                self._init_state.regs.rip = self._init_state.solver.BVV(regs['rip'], 64)
+                self._init_state.regs.xmm0 = self._init_state.solver.BVV(self.vm.read_reg('xmm00'), 128)
+                self._init_state.regs.xmm1 = self._init_state.solver.BVV(self.vm.read_reg('xmm01'), 128)
+                self._init_state.regs.xmm2 = self._init_state.solver.BVV(self.vm.read_reg('xmm02'), 128)
+                self._init_state.regs.xmm3 = self._init_state.solver.BVV(self.vm.read_reg('xmm03'), 128)
+                self._init_state.regs.xmm4 = self._init_state.solver.BVV(self.vm.read_reg('xmm04'), 128)
+                self._init_state.regs.xmm5 = self._init_state.solver.BVV(self.vm.read_reg('xmm05'), 128)
+                self._init_state.regs.xmm6 = self._init_state.solver.BVV(self.vm.read_reg('xmm06'), 128)
+                self._init_state.regs.xmm7 = self._init_state.solver.BVV(self.vm.read_reg('xmm07'), 128)
+                self._init_state.regs.xmm8 = self._init_state.solver.BVV(self.vm.read_reg('xmm08'), 128)
+                self._init_state.regs.xmm9 = self._init_state.solver.BVV(self.vm.read_reg('xmm09'), 128)
+                self._init_state.regs.xmm10 = self._init_state.solver.BVV(self.vm.read_reg('xmm10'), 128)
+                self._init_state.regs.xmm11 = self._init_state.solver.BVV(self.vm.read_reg('xmm11'), 128)
+                self._init_state.regs.xmm12 = self._init_state.solver.BVV(self.vm.read_reg('xmm12'), 128)
+                self._init_state.regs.xmm13 = self._init_state.solver.BVV(self.vm.read_reg('xmm13'), 128)
+                self._init_state.regs.xmm14 = self._init_state.solver.BVV(self.vm.read_reg('xmm14'), 128)
+                self._init_state.regs.xmm15 = self._init_state.solver.BVV(self.vm.read_reg('xmm15'), 128)
+            if self.vm.addr_bytes == 4:
+                self._init_state.regs.eax = self._init_state.solver.BVV(regs['eax'], 64)
+                self._init_state.regs.ebx = self._init_state.solver.BVV(regs['ebx'], 64)
+                self._init_state.regs.ecx = self._init_state.solver.BVV(regs['ecx'], 64)
+                self._init_state.regs.edx = self._init_state.solver.BVV(regs['edx'], 64)
+                self._init_state.regs.esi = self._init_state.solver.BVV(regs['esi'], 64)
+                self._init_state.regs.edi = self._init_state.solver.BVV(regs['edi'], 64)
+                self._init_state.regs.esp = self._init_state.solver.BVV(regs['esp'], 64)
+                self._init_state.regs.ebp = self._init_state.solver.BVV(regs['ebp'], 64)
+                self._init_state.regs.eip = self._init_state.solver.BVV(regs['eip'], 64)
 
     def _prepare_context(self):
-        pc = int(self.vm.read_reg('rip'), 16)
+        pc = 0
+        val = self.vm.read_reg('rip')
+        if val != None:
+            pc = val
         if self.vm.addr_bytes == 4:
-            pc = int(self.vm.read_reg('eip'), 16)
+            val = self.vm.read_reg('eip')
+            if val != None:
+                pc = val
+        if pc == 0:
+            return
         self.vm.prepare_context(pc)
 
     def _restore_memory(self):
         self.setup_sections(self.cus_sections)
         self.setup_segment_base()
-        self.vm.read_stack_range()
+        #self.vm.read_stack_range()
+    
+    def skip_unexpected_opcode(self, addr):
+        error_opcode = ['ud2', 'rdtsc', 'in', 'out']
+        insns = self.proj.factory.block(addr).capstone.insns
+        if len(insns) == 0:
+            self.logger.error("No instruction in {}".format(hex(addr)))
+            self.dump_state(self.get_current_state())
+            return
+        offset = 0
+        for inst in insns:
+            opcode = inst.mnemonic
+            if opcode in error_opcode:
+                if not self.proj.is_hooked(addr+offset):
+                    self.skip_insn(addr+offset, inst.size)
+            offset += inst.size
 
     def _is_vul_mem(self, addr):
         if addr >= self.vul_mem_start and addr <= self.vul_mem_end:
@@ -247,6 +339,7 @@ class SymExec(MemInstrument):
     
     def _my_successor_func(self, state):
         self.setup_current_state(state)
+        self.skip_unexpected_opcode(state.addr)
         succ = state.step()
         if self.cur_state_dead():
             self.logger.warning("current state is dead")
@@ -277,3 +370,9 @@ class SymExec(MemInstrument):
                     succ.all_successors.remove(each)
         self.cur_cond_jmp = 0
         return succ
+    
+    def _read_vul_mem(self):
+        self.vm.gdb.waitfor("Continuing", timeout=300)
+        self.vm.gdb.waitfor("pwndbg>")
+        rdi_val = self.vm.gdb.get_register('rdi')
+        return rdi_val

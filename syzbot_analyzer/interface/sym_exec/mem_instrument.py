@@ -13,8 +13,8 @@ class MemInstrument(StateManager):
     PAGE_SIZE = 0x1000
     CTR_ADDR = 0x40000000
 
-    def __init__(self, logger=None):
-        StateManager.__init__(self)
+    def __init__(self, index, logger=None):
+        StateManager.__init__(self, index)
         self.ppg_handler = PropagationHandler()
         self.cur_cond_jmp = 0
         self.sections = None
@@ -71,29 +71,19 @@ class MemInstrument(StateManager):
         bv_expr = state.inspect.mem_write_expr
         addr = state.solver.eval(bv_addr)
         size = state.solver.eval(state.inspect.mem_write_length)
-        addr = self._write_to_seg_regs(state, addr)
-        if type(bv_addr) != int and bv_addr.symbolic:
+        #addr = self._access_seg_regs(state, addr, True)
+        if self._is_symbolic(bv_addr):
             self.logger.warning("Arbitrary write found")
-        if self.ppg_handler.is_kasan_write(addr):
-            print("Write from vuln mem found")
-            if ((type(bv_addr) != int and not bv_addr.symbolic) or type(bv_addr) == int):
-                if bv_expr.symbolic:
-                    self.ppg_handler.log_symbolic_propagation()
+        if self.symbolic_tracing and self.ppg_handler.is_kasan_write(addr):
+            if self._is_symbolic(bv_expr) and not self._is_symbolic(bv_addr) and state.solver.eval(bv_addr) not in state.globals['sym']:
+                stack = self.dump_stack(state)
+                self.ppg_handler.log_symbolic_propagation(state, stack)
+                    #self.dump_state(state)
         #b = math.ceil(size/8)
         #n = size - b * 8
         for i in range(0, size):
             self.update_states_globals(addr+i, 0, StateManager.G_MEM)
         #self.dump_state(state)
-    
-    def track_mem_write_after(self, state):
-        bv_addr = state.inspect.mem_write_address
-        bv_expr = state.inspect.mem_write_expr
-        addr = state.solver.eval(bv_addr)
-        size = state.solver.eval(state.inspect.mem_write_length)
-        addr = self._write_to_seg_regs(state, addr)
-        t = state.memory.load(addr, 1, endness=archinfo.Endness.LE, inspect=False)
-        if t.uninitialized:
-            print("still uninitialized after writing")
     
     def track_call(self, state):
         if state.regs.rip.symbolic:
@@ -108,7 +98,8 @@ class MemInstrument(StateManager):
     
     def track_symbolic_variable(self, state):
         self.logger.warning("A new symbolic data: {} size: {} bit".format(state.inspect.symbolic_name, state.inspect.symbolic_size))
-    
+        #self.dump_state(state)
+
     def track_irsb(self, state):
         n = 0
         addr = state.scratch.ins_addr
@@ -142,25 +133,51 @@ class MemInstrument(StateManager):
         self.logger.info("r15: is_symbolic: {} {}".format(state.regs.r15.symbolic, hex(state.solver.eval(state.regs.r15))))
         self.logger.info("rip: is_symbolic: {} {}".format(state.regs.rip.symbolic, hex(state.solver.eval(state.regs.rip))))
         self.logger.info("gs: is_symbolic: {} {}".format(state.regs.gs.symbolic, hex(state.solver.eval(state.regs.gs))))
-        cap = self.proj.factory.block(state.scratch.ins_addr).capstone
-        cap.pp()
+        self.logger.info("================Thread-{} dump_state====================".format(self.index))
+        insns = self.proj.factory.block(state.scratch.ins_addr).capstone.insns
+        n = len(insns)
+        t = self.vm.inspect_code(state.scratch.ins_addr, n)
+        self.logger.info(t)
+        #cap = self.proj.factory.block(state.scratch.ins_addr).capstone
+        #cap.pp()
     
     def dump_stack(self, state):
-        stack = state.solver.eval(state.regs.rsp)
-        frame = state.solver.eval(state.regs.rbp)
+        ret = []
+        callstack = state.callstack
+        func_name = self.vm.get_func_name(callstack.state.addr)
+        file, line = self.vm.get_dbg_info(callstack.state.addr)
+        ret.append("{}\n{}:{}".format(func_name, file, line))
+        while True:
+            if callstack.next == None:
+                func_name = self.vm.get_func_name(callstack.state.addr)
+                file, line = self.vm.get_dbg_info(callstack.state.addr)
+                ret.append("{}\n{}:{}".format(func_name, file, line))
+                break
+            func_addr = callstack.current_function_address
+            call_site = callstack.call_site_addr
+            func_name = self.vm.get_func_name(func_addr)
+            file, line = self.vm.get_dbg_info(call_site)
+            ret.append("{}\n{}:{}".format(func_name, file, line))
+            callstack = callstack.next
+        return ret
         
 
     def hook_noisy_func(self, extra):    
-        noisy_func = ["queue_delayed_work_on", "mutex_lock", "mutex_unlock", "__sanitizer_cov_trace_pc", "__sanitizer_cov_trace_switch", \
-            "__sanitizer_cov_trace_const_cmp1", "__sanitizer_cov_trace_const_cmp2", "__sanitizer_cov_trace_const_cmp4", "__sanitizer_cov_trace_const_cmp8", \
-            "__sanitizer_cov_trace_cmp1", "__sanitizer_cov_trace_cmp2", "__sanitizer_cov_trace_cmp4", "__sanitizer_cov_trace_cmp8", \
-            "printk"]
+        """
+        "__sanitizer_cov_trace_pc", "__sanitizer_cov_trace_switch", \
+            "__sanitizer_cov_trace_const_cmp1", "__sanitizer_cov_trace_const_cmp2", "__sanitizer_cov_trace_const_cmp4", "__sanitizer_cov_trace_const_cmp8", 
+            "__sanitizer_cov_trace_cmp1", "__sanitizer_cov_trace_cmp2", "__sanitizer_cov_trace_cmp4", "__sanitizer_cov_trace_cmp8", "wake_up_process" 
+        """
+        noisy_func = ["mutex_lock", "mutex_unlock", "queue_delayed_work_on", "pvclock_read_wallclock", "record_times", "update_rq_clock", "sched_clock_idle_sleep_event", \
+            "printk", "vprintk", "queued_spin_lock_slowpath", "__pv_queued_spin_lock_slowpath", "queued_read_lock_slowpath", "queued_write_lock_slowpath"]
         if type(extra) == list:
             noisy_func.extend(extra)
         if type(extra) == str:
             noisy_func.append(extra)
         for each in noisy_func:
-            self.proj.hook_symbol(each, HookInst())
+            ret = self.proj.hook_symbol(each, HookInst())
+            if ret != None:
+                self.logger.info("Hook {} at {}".format(each, hex(ret)))
         
         stack_addr = self.vm.stack_addr
         
@@ -199,7 +216,11 @@ class MemInstrument(StateManager):
         self.proj.hook_symbol("__asan_load16", kasan_16_r)
         self.proj.hook_symbol("__asan_storeN", kasan_N_w)
         self.proj.hook_symbol("__asan_loadN", kasan_N_r)
-        
+    
+    def skip_insn(self, addr, insn_len):
+        def nothing(state):
+            pass
+        self.proj.hook(addr, nothing, length=insn_len)
     
     def make_symbolic(self, state, addr, size, name=None):
         if (size <= 8):
@@ -230,20 +251,22 @@ class MemInstrument(StateManager):
     def _instrument_mem_read(self, state, bv_addr, size):
         uninitialized = False
         addr = state.solver.eval(bv_addr)
-        addr = self._read_from_seg_regs(state, addr)
-        if type(bv_addr) !=int and bv_addr.symbolic and not self._is_ctr_addr(addr) and self.add_constraints:
-            if self._is_ctr_addr(addr):
-                return
-            try:
-                state.solver.add(bv_addr == MemInstrument.CTR_ADDR)
-                if state.satisfiable():
-                    addr = state.solver.eval(bv_addr)
-                    self._updateCtrAddr()
-                else:
-                    state.se.constraints.pop()
-                    state.se.reload_solver()
-            except:
-                return
+        propagate_addr = False
+        #addr = self._access_seg_regs(state, addr, False)
+        if self._is_symbolic(bv_addr) and not self._is_ctr_addr(addr):
+            if self.add_constraints:
+                try:
+                    state.solver.add(bv_addr == MemInstrument.CTR_ADDR)
+                    if state.satisfiable():
+                        addr = state.solver.eval(bv_addr)
+                        self._updateCtrAddr()
+                    else:
+                        state.se.constraints.pop()
+                        state.se.reload_solver()
+                except:
+                    return
+            else:
+                propagate_addr = True
 
         #if self.is_section(addr):
         #    return
@@ -269,18 +292,33 @@ class MemInstrument(StateManager):
                 val = self.vm.read_mem(addr, size)
                 #self.logger.info('Store at', hex(addr), ' with value ', val)
                 if len(val) > 0:
-                    state.memory.store(addr, state.solver.BVV(int(val[0], 16), size*8), endness=archinfo.Endness.LE)
+                    if not propagate_addr:
+                        for each in val:
+                            group = len(val)
+                            state.memory.store(addr, state.solver.BVV(each, round(size/group)*8), endness=archinfo.Endness.LE)
+
+                    else:
+                        self.make_symbolic(state, addr, size)
+                        self.update_states_globals(addr, size, StateManager.G_SYM)
+                        bv = state.memory.load(addr, size, inspect=False)
+                        state.solver.add(bv == val[0])
                     #self.dump_state(state)
                 elif not self._is_ctr_addr(addr):
-                    print("Dump last site")
+                    self.logger.warning("Dump last site")
+                    if self._is_symbolic(bv_addr):
+                        self.logger.info("read from a symbolic address")
                     self.dump_state(state)
+                    #self.dump_stack(state)
 
                     self.logger.warning("page fault occur when access {}".format(hex(addr)))
                     self.purge_current_state()
                     #bv = state.memory.load(addr, size, inspect=False, endness=archinfo.Endness.LE)
                     #self.logger.info(hex(state.solver.eval(bv)))
     
-    def _read_from_seg_regs(self, state, addr):
+    def _is_symbolic(self, bv):
+        return type(bv) != int and bv.symbolic
+
+    def _access_seg_regs(self, state, addr, is_write):
         if self.vm == None:
             return False
         seg_regs = [X86_REG_GS, X86_REG_CS, X86_REG_DS, X86_REG_ES, X86_REG_FS, X86_REG_SS]
@@ -290,10 +328,12 @@ class MemInstrument(StateManager):
         if len(inst.operands) == 0:
             return addr
         operands = inst.operands
-        if len(inst.operands) > 1:
+        if len(operands) > 1:
             operands = inst.operands[1:]
             if len(inst.operands) == 3:
                 print("3 operands found")
+        if is_write:
+            operands = inst.operands[:1]
         for op in operands:
             if op.type == X86_OP_MEM:
                 if op.value.reg in seg_regs:
@@ -315,52 +355,12 @@ class MemInstrument(StateManager):
                         bv = getattr(state.regs, reg)
                         val = state.solver.eval(bv)
                         if val != None:
-                            offset += val
+                            offset += val * op.mem.scale
                             if reg == 'rip' or reg == 'eip':
                                 offset += inst.size
                     offset += op.mem.disp
                     addr = base + (offset % (0xffffffffffffffff + 1))
                     
-        return addr
-    
-    def _write_to_seg_regs(self, state, addr):
-        if self.vm == None:
-            return False
-        seg_regs = [X86_REG_GS, X86_REG_CS, X86_REG_DS, X86_REG_ES, X86_REG_FS, X86_REG_SS]
-        ins_addr = state.scratch.ins_addr
-        insns = self.proj.factory.block(ins_addr).capstone.insns
-        if len(insns) == 0:
-            return addr
-        inst = insns[0]
-        if len(inst.operands) == 0:
-            return addr
-        op = inst.operands[0]
-        if op.type == X86_OP_MEM:
-            if op.value.reg in seg_regs:
-                base = 0
-                offset = 0
-                reg = inst.reg_name(op.value.reg)
-                if reg != None:
-                    base += self.get_segment_base(reg)
-                reg = inst.reg_name(op.mem.base)
-                if  reg != None:
-                    bv = getattr(state.regs, reg)
-                    val = state.solver.eval(bv)
-                    if val != None:
-                        offset += val
-                        if reg == 'rip' or reg == 'eip':
-                            offset += inst.size
-                reg = inst.reg_name(op.mem.index)
-                if  reg != None:
-                    bv = getattr(state.regs, reg)
-                    val = state.solver.eval(bv)
-                    if val != None:
-                        offset += val
-                        if reg == 'rip' or reg == 'eip':
-                            offset += inst.size
-                offset += op.mem.disp
-                addr = base + (offset % (0xffffffffffffffff + 1))
-                
         return addr
 
     def _is_ctr_addr(self, addr):
@@ -392,7 +392,7 @@ class HookInst(SimProcedure):
         SimProcedure.__init__(self)
 
     def run(self):
-        pass
+        return
 
 class KasanAccess(HookInst):
     READ = 0
@@ -413,26 +413,26 @@ class KasanAccess(HookInst):
         self.kasan_access(addr)
     
     def is_on_stack(self, addr):
-        if self.stack_addr[0] == 0 and self.stack_addr[1] == 0:
-            self.logger.info("Stack range is unclear")
-            return False
-        return addr >= self.stack_addr[0] and addr <= self.stack_addr[1]
+        stack = self.state.solver.eval(self.state.regs.rsp)
+        frame = self.state.solver.eval(self.state.regs.rbp)
+        if self.mem.vm.addr_bytes == 4:
+            stack = self.state.solver.eval(self.state.regs.esp)
+            frame = self.state.solver.eval(self.state.regs.ebp)
+        return addr >= stack-0x1000 and addr <= frame+0x1000
 
     def kasan_access(self, addr):
         self.mem.add_constraints = True
-        if self.is_write:
-            if type(addr) != int and not addr.symbolic and not self.is_on_stack(self.state.solver.eval(addr)) \
-                or type(addr) == int and not self.is_on_stack(addr):
+        if self.is_write and self.mem.symbolic_tracing:
+            if not self.mem._is_symbolic(addr) and not self.is_on_stack(self.state.solver.eval(addr)):
                 if type(addr) != int:
                     addr = self.state.solver.eval(addr)
                 self.mem.ppg_handler.log_kasan_write(addr)
         #self._instrument_mem_read(addr, self.size)
             #print("kasan write inspect {} with {} bytes".format(hex(self.state.solver.eval(addr)), size))
-        else:
             #self.mem._instrument_mem_read(self.state, addr, self.size)
             #if type(addr) != int:
             #    addr = self.state.solver.eval(addr)
-            print("kasan read inspect {} with {} bytes".format(hex(self.state.solver.eval(addr)), self.size))
+            #self.logger.info("kasan read inspect {} with {} bytes".format(hex(self.state.solver.eval(addr)), self.size))
         self.mem.add_constraints = False
 
 class KasanRead(KasanAccess):
