@@ -1,4 +1,5 @@
 import argparse, os, stat, sys
+import json
 import threading, re
 
 sys.path.append(os.getcwd())
@@ -56,6 +57,9 @@ def args_parse():
     parser.add_argument('--static-analysis',
                         action='store_true',
                         help='Run static analysis before fuzzing')
+    parser.add_argument('--use-cache',
+                        action='store_true',
+                        help='Read cases from cache, this will overwrite the --input feild')
     parser.add_argument('--disable-symbolic-tracing',
                         action='store_false',
                         help='Disable symbolic tracing before fuzzing')
@@ -65,6 +69,9 @@ def args_parse():
     parser.add_argument('--qemu-monitor', nargs='?',
                         default='9700',
                         help='Default port of qemu monitor')
+    parser.add_argument('--max-compiling-kernel', nargs='?',
+                        default='-1',
+                        help='maximum of kernel that compiling at the same time. Default is unlimited.')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug mode')
 
@@ -104,6 +111,23 @@ def check_kvm():
     r = call([check_kvm_path], shell=False)
     if r == 1:
         exit(0)
+
+def cache_cases(cases):
+    work_path = os.getcwd()
+    cases_json_path = os.path.join(work_path, "work/cases.json")
+    with open(cases_json_path, 'w') as f:
+        json.dump(cases, f)
+        f.close()
+
+def read_cases_from_cache():
+    cases = {}
+    work_path = os.getcwd()
+    cases_json_path = os.path.join(work_path, "work/cases.json")
+    if os.path.exists(cases_json_path):
+        with open(cases_json_path, 'r') as f:
+            cases = json.load(f)
+            f.close()
+    return cases
 
 def deploy_one_case(index):
     while(1):
@@ -154,7 +178,9 @@ if __name__ == '__main__':
             for line in text:
                 line = line.strip('\n')
                 ignore.append(line)
-
+    if args.input != None and args.use_cache:
+        print("Can not use cache when specifying inputs")
+        sys.exit(1)
     crawler = Crawler(url=args.url, keyword=args.key, max_retrieve=int(args.max), debug=args.debug)
     if args.replay != None:
         for url in urlsOfCases(args.replay):
@@ -169,8 +195,13 @@ if __name__ == '__main__':
                     line = line.strip('\n')
                     crawler.run_one_case(line)
     else:
-        crawler.run()
+        if args.use_cache:
+            crawler.cases = read_cases_from_cache()
+        else:
+            crawler.run()
     install_requirments()
+    if not args.use_cache:
+        cache_cases(crawler.cases)
     deployer = []
     parallel_max = int(args.parallel_max)
     parallel_count = 0
@@ -178,6 +209,6 @@ if __name__ == '__main__':
     l = list(crawler.cases.keys())
     total = len(l)
     for i in range(0,min(parallel_max,len(crawler.cases))):
-        deployer.append(Deployer(index=i, debug=args.debug, force=args.force, port=int(args.syzkaller_port), replay=args.replay, linux_index=int(args.linux), time=int(args.time), force_fuzz=args.force_fuzz, alert=args.alert, static_analysis=args.static_analysis, symbolic_tracing=args.disable_symbolic_tracing, gdb_port=int(args.gdb), qemu_monitor_port=int(args.qemu_monitor)))
-        x = threading.Thread(target=deploy_one_case, args=(i,))
+        deployer.append(Deployer(index=i, debug=args.debug, force=args.force, port=int(args.syzkaller_port), replay=args.replay, linux_index=int(args.linux), time=int(args.time), force_fuzz=args.force_fuzz, alert=args.alert, static_analysis=args.static_analysis, symbolic_tracing=args.disable_symbolic_tracing, gdb_port=int(args.gdb), qemu_monitor_port=int(args.qemu_monitor), max_compiling_kernel=int(args.max_compiling_kernel)))
+        x = threading.Thread(target=deploy_one_case, args=(i,), name="lord-{}".format(i))
         x.start()

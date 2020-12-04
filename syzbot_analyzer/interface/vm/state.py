@@ -9,12 +9,13 @@ class VMState:
     ADDRESS = 1
     INITIAL = 0
 
-    def __init__(self, linux, gdb_port, arch, debug=False):
+    def __init__(self, linux, gdb_port, arch, proj_path=None, debug=False):
         self.linux = os.path.join(linux, "vmlinux")
         self.gdb_port = gdb_port
         self.vm = None
         self._kasan_report = 0
         self._kasan_ret = 0
+        self._proj_path = proj_path
         self.kernel = None
         self.addr_bytes = 8
         self.gdb = None
@@ -32,7 +33,7 @@ class VMState:
             return
         if self.debug:
             print("Loading kernel, this process may take a while")
-        self.kernel = Kernel(self.linux, self.addr_bytes, self.debug)
+        self.kernel = Kernel(self.linux, self.addr_bytes, self._proj_path, self.debug)
         self.gdb = self.kernel.gdbhelper
         self.waitfor_pwndbg()
         self.gdb.connect(port)
@@ -40,7 +41,7 @@ class VMState:
     def mon_connect(self, port):
         if self.__check_initialization():
             return
-        self.mon = Monitor(port, self.addr_bytes, self.debug)
+        self.mon = Monitor(port, self.addr_bytes, self._proj_path, self.debug)
         self.mon.connect()
     
     def set_checkpoint(self):

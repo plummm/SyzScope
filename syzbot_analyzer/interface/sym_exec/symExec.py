@@ -1,13 +1,16 @@
 import logging
-from math import e
 import time
 import angr
 import math
+import threading
 import archinfo
 import syzbot_analyzer.interface.utilities as utilities
 
 from syzbot_analyzer.interface.vm import VM
+from math import e
+from syzbot_analyzer.interface.vm.error import QemuIsDead
 from .mem_instrument import MemInstrument
+from .error import VulnerabilityNotTrigger, ExecutionError, AbnormalGDBBehavior
 
 class SymExec(MemInstrument):
     def __init__(self, index, sections=None, logger=None, debug=False):
@@ -34,10 +37,10 @@ class SymExec(MemInstrument):
         else:
             self.logger = logger
 
-    def setup_vm(self, linux, arch, port, image, gdb_port, mon_port, proj_path='/tmp/', mem="2G", cpu="2", key=None, opts=None, log_name="vm.log", logger=None, timeout=None):
+    def setup_vm(self, linux, arch, port, image, gdb_port, mon_port, proj_path='/tmp/', mem="2G", cpu="2", key=None, opts=None, log_name="vm.log", logger=None, hash_tag=None, timeout=None):
         self.gdb_port = gdb_port
         self.mon_port = mon_port
-        self.vm = VM(linux=linux, arch=arch, port=port, image=image, proj_path=proj_path, mem=mem, cpu=cpu, key=key, gdb_port=gdb_port, mon_port=mon_port, opts=opts, log_name=log_name, debug=self.debug, timeout=timeout, logger=logger)
+        self.vm = VM(linux=linux, arch=arch, port=port, image=image, proj_path=proj_path, mem=mem, cpu=cpu, key=key, gdb_port=gdb_port, mon_port=mon_port, opts=opts, log_name=log_name, hash_tag=hash_tag, debug=self.debug, timeout=timeout, logger=logger)
     
     def cleanup(self):
         if self.vm != None:
@@ -58,9 +61,14 @@ class SymExec(MemInstrument):
         # launch qemu
         p = self.vm.run()
         # connect qemu with gdb, set breakpoint at kasan_report()
+        self.logger.info("Loading kernel into angr")
         self.vm.gdb_connect(self.gdb_port)
         if not self.vm.set_checkpoint():
+            self.logger.error("No kasan_report() found")
             return None
+        if self.vm.timeout != None:
+            x = threading.Thread(target=self.vm.monitor_execution, name="{} qemu killer".format(self.vm.hash_tag))
+            x.start()
         self.proj = self.vm.kernel.proj
         self.logger.info("Waiting for qemu launching")
         while True:
@@ -68,7 +76,7 @@ class SymExec(MemInstrument):
                 break
             poll = p.poll()
             if poll != None:
-                return None
+                raise QemuIsDead
             time.sleep(1)
         self.vm.mon_connect(self.mon_port)
         """
@@ -88,15 +96,15 @@ class SymExec(MemInstrument):
         self._timeout = timeout
         if self.vm == None:
             self.logger.error("Call setup_vm() to initialize the vm first")
-            return
+            raise VulnerabilityNotTrigger
         if self.vul_mem_offset == None:
             self.logger.error("Call setup_bug_capture() to initialize vulnerability information")
-            return
+            raise VulnerabilityNotTrigger
         #self.vm.lock_thread()
         vul_mem = self._read_vul_mem()
         if vul_mem == None:
             self.logger.error("vulnerable oject addr is incorrect: {}".format(vul_mem))
-            return   
+            raise VulnerabilityNotTrigger   
         self.vul_mem_start = vul_mem - self.vul_mem_offset
         self.vul_mem_end = self.vul_mem_start + self.vul_mem_size
         self.logger.info("Vuln mem: {} to {}".format(hex(self.vul_mem_start), hex(self.vul_mem_end)))
@@ -114,6 +122,7 @@ class SymExec(MemInstrument):
                   angr.options.REGION_MAPPING,
                   angr.options.ZERO_FILL_UNCONSTRAINED_REGISTERS}
         self._init_state = self.proj.factory.blank_state(addr=0, add_options=extras)
+        self._after_gdb_resume(300)
         self._prepare_context()
         self._restore_memory()
         self._restore_registers()
@@ -161,13 +170,11 @@ class SymExec(MemInstrument):
                     self.logger.info("Switch state {} to state {}".format(last_state, cur_state))
                     last_state = cur_state
 
-            #try:
-            self.simgr.step(successor_func=self._my_successor_func)
-            #except Exception as e:
-            #    self.logger.info("Unexpected error occur")
-            #    print("Thread-{}: Unexpected error".format(self.index), e)
-            #    return
-            
+            try:
+                self.simgr.step(successor_func=self._my_successor_func)
+            except Exception as e:
+                self.logger.info("Unexpected error occur: {}".format(str(e)))
+                raise ExecutionError
             
             if self.debug and len(self.simgr.active) > 0:
                 #self.logger.info("=======dump========")
@@ -248,7 +255,10 @@ class SymExec(MemInstrument):
             #self._init_state.regs.ds = self._init_state.solver.BVV(regs['ds'], 32)
             self._init_state.regs.fs = self._init_state.solver.BVV(self.get_segment_base('fs'), 64)
             #self._init_state.regs.es = self._init_state.solver.BVV(regs['es'], 32)
-            self._init_state.regs.eflags = self._init_state.solver.BVV(regs['eflags'], 32)
+            if 'eflags' in regs:
+                self._init_state.regs.eflags = self._init_state.solver.BVV(regs['eflags'], 32)
+            else:
+                raise AbnormalGDBBehavior
             self._init_state.regs.cr0 = self._init_state.solver.BVV(self.vm.read_reg('cr0'), 32)
             self._init_state.regs.cr2 = self._init_state.solver.BVV(self.vm.read_reg('cr2'), 64)
             self._init_state.regs.cr3 = self._init_state.solver.BVV(self.vm.read_reg('cr3'), 64)
@@ -371,8 +381,11 @@ class SymExec(MemInstrument):
         self.cur_cond_jmp = 0
         return succ
     
+    def _after_gdb_resume(self, timeout):
+        self.vm.gdb.waitfor("Continuing")
+        self.vm.gdb.waitfor("pwndbg>", timeout=timeout)
+
     def _read_vul_mem(self):
-        self.vm.gdb.waitfor("Continuing", timeout=300)
-        self.vm.gdb.waitfor("pwndbg>")
+        self._after_gdb_resume(300)
         rdi_val = self.vm.gdb.get_register('rdi')
         return rdi_val

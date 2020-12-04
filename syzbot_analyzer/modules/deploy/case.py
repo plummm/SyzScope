@@ -7,9 +7,10 @@ stamp_build_syzkaller = "BUILD_SYZKALLER"
 stamp_build_kernel = "BUILD_KERNEL"
 stamp_reproduce_ori_poc = "REPRO_ORI_POC"
 stamp_symbolic_tracing = "FINISH_SYM_TRACING"
+stamp_static_analysis = "FINISH_STATIC_ANALYSIS"
 
 class Case:
-    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False, symbolic_tracing=True, gdb_port=1235, qemu_monitor_port=9700):
+    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False, symbolic_tracing=True, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1):
         self.linux_folder = "linux"
         self.project_path = ""
         self.package_path = None
@@ -31,6 +32,7 @@ class Case:
         self.alert = alert
         self.static_analysis = static_analysis
         self.symbolic_tracing = symbolic_tracing
+        self.max_compiling_kernel = max_compiling_kernel
         self.sa = None
         if replay == None:
             self.replay = False
@@ -67,5 +69,5 @@ class Case:
     
     def setup_hash(self, hash_val):
         self.hash_val = hash_val
-        self.init_logger(self.debug, self.hash_val)
+        self.init_logger(self.debug, self.hash_val[:7])
         

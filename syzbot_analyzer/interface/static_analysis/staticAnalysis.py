@@ -46,6 +46,7 @@ class StaticAnalysis:
         vul_site = ''
         func_site = ''
         func = ''
+        inline_func = ''
         offset = -1
         report_list = report.split('\n')
         trace = utilities.extrace_call_trace(report_list)
@@ -53,14 +54,15 @@ class StaticAnalysis:
             if vul_site == '':
                 vul_site = utilities.extract_debug_info(each)
             if utilities.isInline(each):
+                inline_func = utilities.extract_func_name(each)
                 continue
             func = utilities.extract_func_name(each)
+            if func == inline_func:
+                continue
             func_site = utilities.extract_debug_info(each)
             break
         
-        offset, size = utilities.extract_vul_obj_offset_and_size(report_list)
-        self.saveCallTrace2File(trace, vul_site)
-        return vul_site, func_site, func, offset, size
+        return vul_site, func_site, func
     
     def saveCallTrace2File(self, trace, vul_site):
         text = []
@@ -70,8 +72,14 @@ class StaticAnalysis:
                 flag_record ^= 1
             if flag_record:
                 func = utilities.extract_func_name(each)
+                if 'SYS' in func:
+                    # system call entrance is not included
+                    break
                 site = utilities.extract_debug_info(each)
                 t = "{} {}".format(func, site)
+                file, _ = site.split(':')
+                s, e = self.getFuncBounds(func, file)
+                t += " {} {}".format(s, e)
                 if utilities.isInline(each):
                     t += " [inline]"
                 text.append(t)
@@ -79,14 +87,55 @@ class StaticAnalysis:
         f = open(path, "w")
         f.writelines("\n".join(text))
     
-    def run_static_analysis(self, vul_site, func_site, func, offset):
+    def getFuncBounds(self, func, file):
+        s = 0
+        e = 0
+        base = os.path.join(self.case_path, "linux")
+        src_file_path = os.path.join(base, file)
+        with open(src_file_path, 'r') as f:
+            lines = f.readlines()
+            text = "".join(lines)
+            func_list = utilities.regx_getall(utilities.kernel_func_def_regx, text)
+            for each in func_list:
+                expr = each[0]
+                func_name = each[11]
+                if func_name == func:
+                    tmp = text
+                    idx = 0
+                    while True:
+                        try:
+                            n = tmp.index(expr)
+                        except ValueError:
+                            break
+                        if tmp[n+len(expr)+1] != '{':
+                            tmp = tmp[n+len(expr)+1:]
+                            idx += n+len(expr)+1
+                        else:
+                            idx += n
+                            break
+                    head = text[:idx]
+                    s = len(head.split('\n'))
+                    n = 0
+                    for line in text[idx:].split('\n'):
+                        if line == '}':
+                            e = s+n
+                            break
+                        n += 1
+                    return s, e
+        return s, e
+
+    
+    def run_static_analysis(self, vul_site, func_site, func, offset, size):
         vul_file, vul_line = vul_site.split(':')
         func_file, func_line = func_site.split(':')
+        calltrace = os.path.join(self.case_path, 'CallTrace')
         cmd = ["opt", "-load", "{}/llvm_passes/build/generateInput/libgenerateInput.so".format(self.package_path), 
-                "-generateInput", "-disable-output", "{}/llvm_linux/built-in.o.bc".format(self.proj_path),
+                "-generateInput", "-disable-output", "{}/one.bc".format(self.case_path),
+                "-CalltraceFile={}".format(calltrace),
                 "-VulFile={}".format(vul_file), "-VulLine={}".format(vul_line), 
                 "-FuncFile={}".format(func_file), "-FuncLine={}".format(func_line),
-                "-Func={}".format(func), "-Offset={}".format(offset)]
+                "-Func={}".format(func), "-Offset={}".format(offset), "-Size={}".format(size)]
+        self.case_logger.info(" ".join(cmd))
         p = Popen(cmd,
                   stdout=PIPE,
                   stderr=STDOUT
@@ -94,6 +143,7 @@ class StaticAnalysis:
         with p.stdout:
             self.__log_subprocess_output(p.stdout, logging.INFO)
         exitcode = p.wait()
+        return exitcode
         
     def __log_subprocess_output(self, pipe, log_level):
         for line in iter(pipe.readline, b''):

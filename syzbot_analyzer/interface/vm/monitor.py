@@ -1,10 +1,12 @@
 import syzbot_analyzer.interface.utilities as utilities
 import math
+import logging
 
 from pwn import *
+from .error import QemuIsDead
 
 class Monitor:
-    def __init__(self, port, addr_bytes, debug=False):
+    def __init__(self, port, addr_bytes, log_path=None, debug=False):
         self.mon_inst = None
         self.s_mem = 'g'
         self.s_group = 8
@@ -13,13 +15,27 @@ class Monitor:
             self.s_group = 4
         self._port = port
         self._debug = debug
+        self.logger = self._init_logger(log_path)
+    
+    def _init_logger(self, log_path):
+        logger = logging.getLogger(__name__+"-{}".format(self._port))
+        if len(logger.handlers) == 0: 
+            handler = logging.FileHandler("{}/mon.log".format(log_path))
+            format = logging.Formatter('%(asctime)s %(message)s')
+            handler.setFormatter(format)
+            logger.setLevel(logging.INFO)
+            logger.addHandler(handler)
+        logger.propagate = False
+        if self._debug:
+            logger.setLevel(logging.DEBUG)
+        return logger
     
     def connect(self):
         #context.log_level = 'error'
         try:
             self.mon_inst = remote('127.0.0.1', self._port)
         except:
-            return
+            raise QemuIsDead
         self.waitfor("(qemu)")
     
     def get_registers(self):
@@ -127,7 +143,11 @@ class Monitor:
         return raw
     
     def waitfor(self, pattern):
-        text = self.mon_inst.recvuntil(pattern)
+        try:
+            text = self.mon_inst.recvuntil(pattern)
+        except EOFError:
+            raise QemuIsDead
+        self.logger.info(text.decode("utf-8"))
         if self._debug:
             print(text.decode("utf-8"))
         return text.decode("utf-8")

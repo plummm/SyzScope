@@ -1,13 +1,26 @@
 #!/bin/bash
 # Xiaochen Zou 2020, University of California-Riverside
 #
-# Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image arch gcc_version kasan_patch
+# Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image arch gcc_version kasan_patch max_compiling_kernel
 
 set -ex
 
 echo "running deploy.sh"
 
 LATEST="9b1f3e6"
+
+function wait_for_other_compiling() {
+  # sometime a process may strave to a long time, seems ok if every case has the same weight
+  n=`ps aux | grep "make -j16" | wc -l`
+  echo "Wait for other compiling"
+  set +x
+  while [ $n -ge $(($MAX_COMPILING_KERNEL+1)) ]
+  do
+    sleep 10
+    n=`ps aux | grep "make -j16" | wc -l`
+  done
+  set -x
+}
 
 function config_disable() {
   key=$1
@@ -71,8 +84,8 @@ function retrieve_proper_patch() {
   git rev-list 9b1f3e6 | grep $(git rev-parse HEAD) || cp $PATCHES_PATH/syzkaller-9b1f3e6.patch ./syzkaller.patch
 }
 
-if [ $# -ne 12 ]; then
-  echo "Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image arch gcc_version kasan_patch"
+if [ $# -ne 13 ]; then
+  echo "Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image arch gcc_version kasan_patch max_compiling_kernel"
   exit 1
 fi
 
@@ -87,6 +100,7 @@ IMAGE=$9
 ARCH=${10}
 COMPILER_VERSION=${11}
 KASAN_PATCH=${12}
+MAX_COMPILING_KERNEL=${13}
 PROJECT_PATH="$(pwd)"
 PKG_NAME="syzbot_analyzer"
 CASE_PATH=$PROJECT_PATH/work/$CATALOG/$HASH
@@ -182,7 +196,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
     exit 1
   fi
   git stash
-  git clean -d -f -e THIS_KERNEL_IS_BEING_USED
+  git clean -fdX -e THIS_KERNEL_IS_BEING_USED
   #make clean CC=$COMPILER
   #git stash --all || set_git_config
   git checkout -f $COMMIT || (git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1 && git checkout -f $COMMIT)
@@ -245,7 +259,11 @@ CONFIG_KCOV_INSTRUMENT_ALL
   done
 
   make olddefconfig CC=$COMPILER
+  if [ $MAX_COMPILING_KERNEL != "-1" ]; then
+    wait_for_other_compiling
+  fi 
   make -j16 CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
+  cp .config $CASE_PATH/config
   touch THIS_KERNEL_IS_BEING_USED
   touch $CASE_PATH/.stamp/BUILD_KERNEL
 fi

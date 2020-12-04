@@ -39,8 +39,8 @@ syz_config_template="""
 }}"""
 
 class Deployer(Workers):
-    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False, symbolic_tracing=True, gdb_port=1235, qemu_monitor_port=9700):
-        Workers.__init__(self, index, debug, force, port, replay, linux_index, time, force_fuzz, alert, static_analysis, symbolic_tracing, gdb_port, qemu_monitor_port)
+    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False, symbolic_tracing=True, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1):
+        Workers.__init__(self, index, debug, force, port, replay, linux_index, time, force_fuzz, alert, static_analysis, symbolic_tracing, gdb_port, qemu_monitor_port, max_compiling_kernel)
         self.clone_linux()
     
     def init_replay_crash(self, hash_val):
@@ -81,8 +81,10 @@ class Deployer(Workers):
             if utilities.regx_match(r'386', case["manager"]):
                 i386 = True
 
-            if (self.static_analysis):
-                self.do_static_analysis(case)
+            if self.static_analysis:
+                if not self.finished_static_analysis(hash_val, 'incomplete'):
+                    self.do_static_analysis(case)
+                return
 
             need_patch = 0
             if self.__need_kasan_patch(case['title']):
@@ -97,7 +99,6 @@ class Deployer(Workers):
                         self.__save_error(hash_val)
                         return
                     self.do_symbolic_tracing(case, i386)
-                return
             ### DEBUG SYMEXEC ###
 
             r = self.__run_delopy_script(hash_val[:7], case, need_patch)
@@ -270,6 +271,9 @@ class Deployer(Workers):
             return False
         for file_name in os.listdir(dst):
             if file_name.endswith(ends):
+                print(file_name)
+                if file_name == "socket_netlink_route_sched.txt":
+                    print('break')
                 find_it = False
                 start = 0
                 end = 0
@@ -278,7 +282,7 @@ class Deployer(Workers):
                 f.close()
                 for i in range(0, len(text)):
                     line = text[i]
-                    if line.find(pattern) != -1:
+                    if utilities.regx_match(pattern, line):
                         start = i
                         find_it = True
                         continue
@@ -424,7 +428,7 @@ class Deployer(Workers):
         chmodX(target)
         index = str(self.index)
         self.logger.info("run: scripts/deploy.sh")
-        p = Popen([target, self.linux_folder, hash_val, commit, syzkaller, config, testcase, index, self.catalog, image, self.arch, self.compiler, str(kasan_patch)],
+        p = Popen([target, self.linux_folder, hash_val, commit, syzkaller, config, testcase, index, self.catalog, image, self.arch, self.compiler, str(kasan_patch), str(self.max_compiling_kernel)],
                 stdout=PIPE,
                 stderr=STDOUT
                 )
@@ -752,7 +756,7 @@ class Deployer(Workers):
 
     def __init_case_logger(self, logger_name):
         handler = logging.FileHandler("{}/log".format(self.current_case_path))
-        format = logging.Formatter('[{}] %(message)s'.format(self.index))
+        format = logging.Formatter('%(asctime)s [{}] %(message)s'.format(self.index))
         handler.setFormatter(format)
         logger = logging.getLogger(logger_name)
         logger.setLevel(self.logger.level)

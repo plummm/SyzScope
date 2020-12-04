@@ -5,12 +5,11 @@
 
 set -ex
 
-echo "running deploy.sh"
+echo "running deploy-bc.sh"
 
 function copy_log_then_exit() {
   LOG=$1
-  cp $LOG $CASE_PATH/$LOG-wllvm
-  exit 1
+  cp $LOG $CASE_PATH/wllvm-$LOG
 }
 
 function config_disable() {
@@ -72,7 +71,16 @@ export LLVM_COMPILER=clang
 export LLVM_COMPILER_PATH=$PROJECT_PATH/tools/llvm/build/bin/
 pip list | grep wllvm || pip install wllvm
 make olddefconfig CC=wllvm
-make -j16 CC=wllvm > make.log 2>&1 || copy_log_then_exit make.log
-
-#build bc
-extract-bc vmlinux
+ERROR=0
+make -j16 CC=wllvm > make.log 2>&1 || ERROR=1 && copy_log_then_exit make.log
+if [ $ERROR == "0" ]; then
+  #build bc
+  extract-bc vmlinux
+  mv vmlinux $CASE_PATH/one.bc
+else
+  echo "error occur at compiling...try to extract specific bc file"
+  cd $BC_PATH
+  llvm-link -o one.bc `find ./ -name "*.bc"` || exit 1
+  mv one.bc $CASE_PATH
+fi
+exit 0

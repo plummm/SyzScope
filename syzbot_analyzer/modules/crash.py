@@ -43,13 +43,13 @@ class CrashChecker:
         self.case_path = case_path
         self.image_path = "{}/img".format(self.case_path)
         self.linux_path = "{}/linux".format(self.case_path)
-        self.case_logger = self.__init_case_logger("{}-info".format(case_path))
         self.ssh_port = ssh_port+offset*qemu_num
         self.kasan_func_list = self.read_kasan_funcs()
         self.debug = debug
         self.compiler = compiler
         self.kill_qemu = False
         self.queue = queue.Queue()
+        self.case_logger = self.__init_case_logger("{}-info".format(case_path))
 
     def run(self, syz_repro, syz_commit, log=None, linux_commit=None, config=None, c_repro=None, i386=None):
         self.case_logger.info("=============================crash.run=============================")
@@ -228,7 +228,7 @@ class CrashChecker:
         else:
             self.case_logger.info("=============================crash.read_crash=============================")
             for i in range(0, qemu_num):
-                x = threading.Thread(target=self.trigger_ori_crash, args=(syz_repro, syz_commit, c_repro, i386, i, fixed,))
+                x = threading.Thread(target=self.trigger_ori_crash, args=(syz_repro, syz_commit, c_repro, i386, i, fixed,), name="trigger_ori_crash-{}".format(i))
                 x.start()
                 if self.debug:
                     x.join()
@@ -338,11 +338,11 @@ class CrashChecker:
                 self.logger.info("Failed to parse repro {}".format(syz_repro))
         else:
             c_hash = syz_commit + "-ori"
-        qemu = VM(linux=self.linux_path, port=self.ssh_port+th_index, image=self.image_path, proj_path="{}/poc/".format(self.case_path) ,log_name="qemu-{}-{}.log".format(c_hash, th_index))
-        qemu.log.write("QEMU-{} launched. Fixed={}\n".format(th_index, fixed))
+        qemu = VM(linux=self.linux_path, port=self.ssh_port+th_index, image=self.image_path, proj_path="{}/poc/".format(self.case_path) ,log_name="qemu-{}-{}.log".format(c_hash, th_index), timeout=10*60)
+        qemu.qemu_logger.info("QEMU-{} launched. Fixed={}\n".format(th_index, fixed))
         p = qemu.run()
-        x = threading.Thread(target=self.monitor_execution, args=(p,))
-        x.start()
+        #x = threading.Thread(target=self.monitor_execution, args=(p,))
+        #x.start()
         with p.stdout:
             extract_report = False
             record_flag = 0
@@ -357,7 +357,7 @@ class CrashChecker:
                     continue
                 if utilities.regx_match(reboot_regx, line) or utilities.regx_match(port_error_regx, line):
                     self.case_logger.error("Thread {}: Booting qemu-{} failed".format(th_index, th_index))
-                qemu.log.write(line+"\n")
+                #qemu.log.write(line+"\n")
                 if self.debug:
                     print(line)
                 if utilities.regx_match(startup_regx, line):
@@ -366,13 +366,13 @@ class CrashChecker:
                         p.kill()
                         break
                     for line in output:
-                        qemu.log.write(line+"\n")
+                        qemu.qemu_logger.info(line)
                     ok, output = self.run_exp(syz_repro, self.ssh_port+th_index, repro_type, ok, i386, th_index)
                     if not ok:
                         p.kill()
                         break
                     for line in output:
-                        qemu.log.write(line+"\n")
+                        qemu.qemu_logger.info(line)
                     extract_report=True
                 if extract_report:
                     if utilities.regx_match(call_trace_regx, line) or \
@@ -597,6 +597,9 @@ class CrashChecker:
         logger = logging.getLogger(logger_name)
         logger.setLevel(self.logger.level)
         logger.addHandler(handler)
+        logger.propagate = False
+        if self.debug:
+            logger.propagate = True
         return logger
     
     def __log_subprocess_output(self, pipe, log_level):

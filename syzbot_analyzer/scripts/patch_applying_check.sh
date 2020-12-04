@@ -9,7 +9,7 @@ echo "running patch_applying_check.sh"
 
 function jump_to_the_patch() {
     git stash
-    git clean -d -f -e THIS_KERNEL_IS_BEING_USED
+    git clean -fdX -e THIS_KERNEL_IS_BEING_USED
     #make clean CC=$COMPILER
     #git stash --all
     git checkout -f $PATCH
@@ -43,7 +43,7 @@ cd linux
 CURRENT_HEAD=`git rev-parse HEAD`
 git stash
 if [ "$CURRENT_HEAD" != "$COMMIT" ]; then
-    git clean -d -f -e THIS_KERNEL_IS_BEING_USED
+    git clean -fdX -e THIS_KERNEL_IS_BEING_USED
     #make clean CC=$COMPILER
     #git stash --all
     git checkout -f $COMMIT || (git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1 && git checkout -f $COMMIT)

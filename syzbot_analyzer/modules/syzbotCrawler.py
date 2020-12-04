@@ -181,10 +181,6 @@ class Crawler:
                             r = request_get(report)
                             report_list = r.text.split('\n')
                             offset, size = extract_vul_obj_offset_and_size(report_list)
-                            if offset == None or size == None:
-                                print("offset or size is None")
-                                # Test symbolic tracing only
-                                break
                             try:
                                 syz_repro = syzbot_host_url + repros[2].next.attrs['href']
                                 self.logger.debug("Testcase URL: {}".format(syz_repro))

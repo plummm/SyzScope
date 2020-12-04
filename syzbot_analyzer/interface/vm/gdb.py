@@ -1,25 +1,41 @@
-from subprocess import Popen, PIPE, STDOUT, TimeoutExpired
-from pwn import *
-
+import logging
 import time
 import pexpect
 import math
 import syzbot_analyzer.interface.utilities as utilities
 
+from subprocess import Popen, PIPE, STDOUT, TimeoutExpired
+from pwn import *
+from .error import QemuIsDead
 
 class GDBHelper:
-    def __init__(self, vmlinux, addr_bytes, debug=False):
+    def __init__(self, vmlinux, addr_bytes, log_path = None,debug=False):
         self._vmlinux = vmlinux
         self._prompt = "gdbbot"
+        self.gdb_inst = None
         self.s_mem = 'g'
         self.s_group = 8
-        self.debug = debug
+        self._debug = debug
         if addr_bytes == 4:
             self.s_mem = 'w'
             self.s_group = 4
         #log.propagate = debug
         #context.log_level = 'error'
         self.gdb_inst = process(["gdb", self._vmlinux])
+        self.logger = self._init_logger(log_path)
+    
+    def _init_logger(self, log_path):
+        logger = logging.getLogger(__name__+"-{}".format(self._vmlinux))
+        if len(logger.handlers) == 0:
+            handler = logging.FileHandler("{}/gdb.log".format(log_path))
+            format = logging.Formatter('%(asctime)s %(message)s')
+            handler.setFormatter(format)
+            logger.setLevel(logging.INFO)
+            logger.addHandler(handler)
+        logger.propagate = False
+        if self._debug:
+            logger.setLevel(logging.DEBUG)
+        return logger
     
     def connect(self, port):
         self.sendline('target remote :{}'.format(port))
@@ -32,8 +48,12 @@ class GDBHelper:
         #print("QEMU is running")
     
     def waitfor(self, pattern, timeout=5):
-        text = self.gdb_inst.recvuntil(pattern, timeout=timeout)
-        if self.debug:
+        try:
+            text = self.gdb_inst.recvuntil(pattern, timeout=timeout)
+        except EOFError:
+            raise QemuIsDead
+        self.logger.info(text.decode("utf-8"))
+        if self._debug:
             print(text.decode("utf-8"))
         return text.decode("utf-8")
     
@@ -206,38 +226,3 @@ class GDBHelper:
         except TimeoutExpired:
             self.gdb.kill()
         return ret
-
-    def commands(self, cmds):
-        ret = list()
-        try:
-            init = [
-                "gdb", self._vmlinux, "-ex",
-                "\"set prompt %s\"" % self._prompt
-            ]
-            gdb = pexpect.spawn(' '.join(init))
-            gdb.expect(self._prompt)
-            for cmd in cmds:
-                gdb.sendline(cmd)
-                gdb.expect(self._prompt)
-            outs = gdb.before
-            gdb.close()
-            for line in outs.decode().split("\n"):
-                ret.append(line.strip())
-        except pexpect.TIMEOUT:
-            gdb.close()
-        return ret
-
-    def commandstr(self, cmd):
-        ret = self.command(cmd)
-        return ''.join(ret)
-
-
-if __name__ == '__main__':
-    gdb = GDBHelper(
-        "/media/weiteng/ubuntu/Workspace/syzkaller/linux/linux-next/vmlinux")
-    # out = gdb.command("p &((struct task_struct *)0)->xxxx")
-    # out = gdb.commands(["b crypto/dh_helper.c:21", "info b"])
-    out = gdb.commandstr(
-        "python print([hex(x.pc) for x in gdb.decode_line(\"crypto/dh_helper.c:21\")[1]])"
-    )
-    print(out)

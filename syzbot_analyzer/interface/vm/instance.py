@@ -10,7 +10,7 @@ from subprocess import Popen, PIPE, STDOUT, call
 
 class VMInstance:
 
-    def __init__(self, proj_path='/tmp/', log_name='vm.log', logger=None, debug=False):
+    def __init__(self, proj_path='/tmp/', log_name='vm.log', logger=None, hash_tag=None, debug=False):
         self.proj_path = proj_path
         self.port = None
         self.image = None
@@ -22,6 +22,7 @@ class VMInstance:
         self.qemu_logger = None
         self.qemu_ready = False
         self.kill_qemu = False
+        self.hash_tag = hash_tag
         self.def_opts = ["kasan_multi_shot=1", "earlyprintk=serial", "oops=panic", "nmi_watchdog=panic", "panic=1", \
                         "ftrace_dump_on_oops=orig_cpu", "rodata=n", "vsyscall=native", "net.ifnames=0", \
                         "biosdevname=0", "kvm-intel.nested=1", \
@@ -77,13 +78,10 @@ class VMInstance:
         
     def run(self):
         p = Popen(self.cmd_launch, stdout=PIPE, stderr=STDOUT)
-        x1 = threading.Thread(target=self.__log_qemu, args=(p.stdout,))
+        self._qemu = p
+        x1 = threading.Thread(target=self.__log_qemu, args=(p.stdout,), name="{} qemu logger".format(self.hash_tag))
         x1.start()
 
-        if self.timeout != None:
-            x2 = threading.Thread(target=self.monitor_execution, args=(p,))
-            x2.start()
-        self._qemu = p
         return p
 
     def kill_vm(self):
@@ -116,30 +114,33 @@ class VMInstance:
         "-v", "root@localhost", "".format(cmds)]
         p = Popen(cmd, stdout=PIPE, stderr=STDOUT)
     
-    def monitor_execution(self, p):
+    def monitor_execution(self):
         count = 0
         while (count <self.timeout/10):
             if self.kill_qemu:
                 self.case_logger.info('Signal kill qemu received.')
-                p.kill()
+                self._qemu.kill()
                 return
             count += 1
             time.sleep(10)
-            poll = p.poll()
+            poll = self._qemu.poll()
             if poll != None:
                 return
         self.case_logger.info('Time out, kill qemu')
-        p.kill()
+        self._qemu.kill()
     
     def __log_qemu(self, pipe):
         try:
+            self.qemu_logger.info("pid: {}".format(self._qemu.pid))
             for line in iter(pipe.readline, b''):
                 line = line.decode("utf-8").strip('\n').strip('\r')
                 if utilities.regx_match(r'Debian GNU\/Linux \d+ syzkaller ttyS\d+', line):
                     self.qemu_ready = True
-                self.qemu_logger.info(line+'\n')
+                self.qemu_logger.info(line)
                 if self.debug:
                     print(line)
+                if self._qemu.poll() != None:
+                    return
         except:
             # Qemu may crash and makes pipe NULL
             return

@@ -1,0 +1,2 @@
+class QemuIsDead(Exception):
+    pass
