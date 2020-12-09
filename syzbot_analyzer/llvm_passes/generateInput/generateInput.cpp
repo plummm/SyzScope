@@ -73,6 +73,10 @@ struct thisPass : public ModulePass {
         parseCalltrace(&M);
         minDistance = MAX_DISTANCE * calltrace.size();
         CalltraceItem *item = calltrace.back();
+        if (item->F == NULL) {
+            errs() << "Can not find function " << item->funcName << " in one.bc\n";
+            return NULL;
+        }
         auto F = item->F;
         if (item->funcName == BUG_Func) {
             errs() << "Found target function: " << item->F->getName().str() << "\n";
@@ -86,21 +90,28 @@ struct thisPass : public ModulePass {
                     continue;
                 }
                 int curLine = 0;
-                try {
-                    curLine = dbgloc->getLine();
+                string fileName;
+                     //else  {
+                    int curLine1 = 0;
+                    string fileName1;
+                    try {
+                    curLine1 = dbgloc->getLine();
                     if (!curLine) {
                         //errs() << "90 "<< (*I) << "\n";
                         if (isLoadInst(I))
-                            inspectLoadInst(I, basePointer, &offset);
+                            inspectLoadInst(I, basePointer, &offset, dbgloc);
+                        //continue;
+                    }
+                    } catch(...) {
+                        //errs() << "96 " << (*I) << "\n";
+                        if (isLoadInst(I))
+                                inspectLoadInst(I, basePointer, &offset, dbgloc);
                         continue;
-                }
-                } catch(...) {
-                    //errs() << "96 " << (*I) << "\n";
-                    if (isLoadInst(I))
-                            inspectLoadInst(I, basePointer, &offset);
-                    continue;
-                }
-                errs() << dbgloc->getFilename().str() << ":" << curLine << "\n";
+                    }
+                    fileName1 = dbgloc->getFilename().str();
+                    //errs() << fileName << ":" << curLine << "\n";
+                //}
+                errs() << fileName1 << ":" << curLine1 << "\n";
                 //errs() << (*I) << "\n";
                 /*if (curLine >= func_bound[0] && curLine <= func_bound[1]) {
                     if (curLine < BUG_Func_Line && basePointer != NULL)
@@ -108,16 +119,16 @@ struct thisPass : public ModulePass {
                 }*/
                 if (BUG_in_header) {
                     if (isLoadInst(I))
-                        inspectLoadInst(I, basePointer, &offset);
+                        inspectLoadInst(I, basePointer, &offset, dbgloc);
                     continue;
                 }
-                if (isInCallTrace(dbgloc->getFilename().str(), curLine)) {
+                if (isInCallTrace(fileName, curLine)) {
                     //if ((curLine == BUG_Vul_Line && stripFileName(dbgloc->getFilename().str()) == BUG_Vul_File)) {
                      //   errs() << "target site found: " << (*I) << "\n";
                         //if (isGEPInst(I))
                         //    inspectGEPInst(I);
                         if (isLoadInst(I))
-                            inspectLoadInst(I, basePointer, &offset);
+                            inspectLoadInst(I, basePointer, &offset, dbgloc);
                     //}
                 }
             }
@@ -141,11 +152,11 @@ struct thisPass : public ModulePass {
         return false;
     }
 
-    void inspectLoadInst(inst_iterator I, llvm::Value *basePointer, int64_t *offset) {
+    void inspectLoadInst(inst_iterator I, llvm::Value *basePointer, int64_t *offset, llvm::DebugLoc dbgloc) {
         if(LoadInst *load = dyn_cast<LoadInst>(&(*I))) {
             errs() << (*I) << "\n";
             errs() << "Found a Load instruction\n"; 
-            int curDistance = accumulateDistance();
+            int curDistance = accumulateDistance(dbgloc);
             if (minDistance > curDistance) {
                 minDistance = curDistance;
                 llvm::Value *op = load->getPointerOperand();
@@ -157,7 +168,7 @@ struct thisPass : public ModulePass {
                 errs() << "offset to base obj is " << *offset << "\n";
             }
             errs() << "Current min distance: " << minDistance << "\n";
-            printDistance();
+            //printDistance();
         }
     }
 
@@ -168,7 +179,7 @@ struct thisPass : public ModulePass {
         }
     }
 
-    int accumulateDistance() {
+    int accumulateDistance(llvm::DebugLoc dbgloc) {
         int ret = 0;
         for (vector<CalltraceItem*>::iterator it = calltrace.begin(); it != calltrace.end(); it++) {
             if ((*it)->distance > 0)
@@ -176,6 +187,23 @@ struct thisPass : public ModulePass {
             else
                 ret -= (*it)->distance;
         }
+        while(1) {
+        auto inlineDbg = dbgloc->getInlinedAt();
+        if (inlineDbg != NULL) {
+            int curLine = inlineDbg->getLine();
+            string fileName = inlineDbg->getFilename().str();
+            errs() << "--> " << fileName << ":" << curLine << "\n";
+            /*for (vector<CalltraceItem*>::iterator it = calltrace.begin(); it != calltrace.end(); it++) {
+                if ((*it)->filePath == stripFileName(fileName) && \
+                        curLine >= (*it)->funcBound[0] && curLine <= (*it)->funcBound[1]) {
+                    (*it)->distance = (*it)->line - curLine;
+                    ret = true;
+                }
+            }*/
+        } else
+            break;
+        dbgloc = inlineDbg;
+    }
         return ret;
     }
 
@@ -225,6 +253,7 @@ struct thisPass : public ModulePass {
             item->line = stoi(pathlist[1], nullptr);
             item->isInline = false;
             item->distance = MAX_DISTANCE;
+            item->F = NULL;
             if (strlist.size() == 5)
                 item->isInline = true;
             calltrace.push_back(item);
