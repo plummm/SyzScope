@@ -132,4 +132,5 @@ fi
 
 #BUG: If multiple instances are running, may clean up others' flag
 echo "[+] Clean unfinished jobs"
+rm linux-*/.git/index.lock || echo "Removing index.lock"
 rm linux-*/THIS_KERNEL_IS_BEING_USED || echo "All set"

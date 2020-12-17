@@ -196,7 +196,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
     exit 1
   fi
   git stash
-  git clean -fdX -e THIS_KERNEL_IS_BEING_USED
+  git clean -fdx -e THIS_KERNEL_IS_BEING_USED > /dev/null
   #make clean CC=$COMPILER
   #git stash --all || set_git_config
   git checkout -f $COMMIT || (git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1 && git checkout -f $COMMIT)

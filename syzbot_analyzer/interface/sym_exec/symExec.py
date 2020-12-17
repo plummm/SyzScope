@@ -92,7 +92,7 @@ class SymExec(MemInstrument):
         """
         return p
 
-    def run_sym(self, sym_tracing=False, timeout=60*10):
+    def run_sym(self, raw_tracing=False, timeout=60*10):
         self._timeout = timeout
         if self.vm == None:
             self.logger.error("Call setup_vm() to initialize the vm first")
@@ -100,7 +100,7 @@ class SymExec(MemInstrument):
         if self.vul_mem_offset == None:
             self.logger.error("Call setup_bug_capture() to initialize vulnerability information")
             raise VulnerabilityNotTrigger
-        #self.vm.lock_thread()
+        self.vm.lock_thread()
         vul_mem = self._read_vul_mem()
         if vul_mem == None:
             self.logger.error("vulnerable oject addr is incorrect: {}".format(vul_mem))
@@ -111,9 +111,9 @@ class SymExec(MemInstrument):
         # set a breakpoint at vulnerable site, resume the qemu
         # self.vm.reach_vul_site(self.vuln_site)
         self.vm.back_to_kasan_ret()
-        return self.symbolic_execute(self.target_site, self.path, sym_tracing)
+        return self.symbolic_execute(self.target_site, self.path, raw_tracing)
     
-    def symbolic_execute(self, target_site, path, sym_tracing=False):
+    def symbolic_execute(self, target_site, path, raw_tracing=False):
         extras = {angr.options.REVERSE_MEMORY_NAME_MAP,
                   angr.options.TRACK_ACTION_HISTORY,
                   #angr.options.CONSERVATIVE_READ_STRATEGY,
@@ -126,14 +126,14 @@ class SymExec(MemInstrument):
         self._prepare_context()
         self._restore_memory()
         self._restore_registers()
-        self._symbolize_vuln_mem(sym_tracing)
+        self._symbolize_vuln_mem()
         if len(self._init_state.globals['sym']) == 0:
             return None
         self._hookup_path(path)
-        ret = self._explore(target_site, sym_tracing)
+        ret = self._explore(target_site, raw_tracing)
         return ret
 
-    def _explore(self, target_site, sym_tracing):
+    def _explore(self, target_site, raw_tracing):
         self.logger.info("Initial state explore at {}".format(hex(self._init_state.addr)))
         self.hook_noisy_func(self.extra_noisy_func)
 
@@ -149,7 +149,7 @@ class SymExec(MemInstrument):
         #self._init_state.inspect.b('irsb', when=angr.BP_BEFORE, action=self.track_irsb)
 
         self.setup_current_state(self._init_state)
-        ok, err = self.init_simgr(sym_tracing)
+        ok, err = self.init_simgr(raw_tracing)
         if not ok:
             self.logger.error(err)
             return
@@ -227,24 +227,23 @@ class SymExec(MemInstrument):
                 self._init_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.instrument_correct_path, instruction=correct_path)
                 hooked.append(correct_path)"""
 
-    def _symbolize_vuln_mem(self, sym_tracing):
+    def _symbolize_vuln_mem(self):
         self._init_state.globals['mem'] = {}
         self._init_state.globals['sym'] = {}
         for i in range(0, self.vul_mem_size):
-            if sym_tracing:
-                val = self.vm.read_mem(self.vul_mem_start + i, 1)
-                if len(val) == 1:
-                    self.make_symbolic(self._init_state, self.vul_mem_start + i, 1, "s_obj_{}".format(i))
-                    bv = self._init_state.memory.load(self.vul_mem_start + i, size=1, inspect=False)
-                    if not bv.symbolic:
-                        self.logger.info("Vulnerable memory ({}) is not symbolic".format(hex(self.vul_mem_start + i)))
-                        continue
-                    self._init_state.solver.add(bv == val[0])
-                    self._init_state.globals['mem'][self.vul_mem_start + i] = 0
-                    self._init_state.globals['sym'][self.vul_mem_start + i] = 1
-                else:
-                    self.logger.info("Vulnerable memory has strange data: {}".format(val))
-                    return
+            val = self.vm.read_mem(self.vul_mem_start + i, 1)
+            if len(val) == 1:
+                self.make_symbolic(self._init_state, self.vul_mem_start + i, 1, "s_obj_{}".format(i))
+                bv = self._init_state.memory.load(self.vul_mem_start + i, size=1, inspect=False)
+                if not bv.symbolic:
+                    self.logger.info("Vulnerable memory ({}) is not symbolic".format(hex(self.vul_mem_start + i)))
+                    continue
+                self._init_state.solver.add(bv == val[0])
+                self._init_state.globals['mem'][self.vul_mem_start + i] = 0
+                self._init_state.globals['sym'][self.vul_mem_start + i] = 1
+            else:
+                self.logger.info("Vulnerable memory has strange data: {}".format(val))
+                return
     
     def _restore_registers(self):
         regs = self.vm.read_regs()

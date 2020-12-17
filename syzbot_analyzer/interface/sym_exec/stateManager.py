@@ -25,7 +25,7 @@ class StateManager:
         self.update_states(self._current_state, False)
         self.simgr = self.proj.factory.simgr(self._current_state, save_unconstrained=True)
         if not symbolic_tracing:
-            #self.add_constraints = True
+            self.add_constraints = True
             legth_limiter = angr.exploration_techniques.LengthLimiter(max_length=1000, drop=True)
             self.simgr.use_technique(legth_limiter)
         dfs = angr.exploration_techniques.DFS()

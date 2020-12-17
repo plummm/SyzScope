@@ -1,5 +1,6 @@
 import re
 import os, stat, sys
+from syzbot_analyzer.interface.static_analysis.error import CompilingError
 import requests
 import shutil
 import logging
@@ -83,7 +84,11 @@ class Deployer(Workers):
 
             if self.static_analysis:
                 if not self.finished_static_analysis(hash_val, 'incomplete'):
-                    self.do_static_analysis(case)
+                    try:
+                        self.do_static_analysis(case)
+                    except CompilingError:
+                        self.logger.error("Encounter an error when doing static analysis")
+                        return
                 return
 
             need_patch = 0
@@ -99,6 +104,7 @@ class Deployer(Workers):
                         self.__save_error(hash_val)
                         return
                     self.do_symbolic_tracing(case, i386)
+                    return
             ### DEBUG SYMEXEC ###
 
             r = self.__run_delopy_script(hash_val[:7], case, need_patch)

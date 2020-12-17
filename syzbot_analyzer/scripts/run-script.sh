@@ -16,6 +16,8 @@ IMAGE_PATH=$3
 CASE_PATH=$4
 
 RAW_COMMAND=`echo $COMMAND | sed -E "s/ -enable=[a-z_]+(,[a-z_]+)*//g"`
+NON_REPEAT_COMMAND=`echo $COMMAND | sed -E "s/ -repeat=0/ -repeat=1/g; s/ -procs=[0-9]+/ -procs=1/g"`
+NON_REPEAT_RAW_COMMAND=`echo $RAW_COMMAND | sed -E "s/ -repeat=0/ -repeat=1/g; s/ -procs=[0-9]+/ -procs=1/g"`
 
 cd $CASE_PATH/poc || exit 1
 cat << EOF > run.sh
@@ -29,6 +31,10 @@ set -ex
 
 for i in {1..10}
 do
+    # some crashes may be triggered after current process exit
+    ${NON_REPEAT_COMMAND} || ${NON_REPEAT_RAW_COMMAND}
+
+    # some crashes need race-condition or multiple executions
     ${COMMAND} || ${RAW_COMMAND}
     
     #Sometimes the testcase is not required to repeat, but we still give a shot

@@ -1,83 +1,55 @@
-#include "llvm/Pass.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/IR/LegacyPassManager.h"
-#include "llvm/Transforms/IPO/PassManagerBuilder.h"
-#include "llvm/IR/DebugInfo.h"
-#include "llvm/IR/Type.h"
-#include "llvm/IR/Operator.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/IR/InstIterator.h"
-
-#include <string>
-#include <unordered_map>
-#include <unordered_set>
-#include <iostream>
-#include <fstream>
-#include <stdio.h>
-#include <vector>
-
-#define MAX_DISTANCE 1000000
+#include "InstHandler.h"
 
 using namespace llvm;
 using namespace llvm::sys;
 using namespace std;
 
-static cl::opt<string> BUG_Vul_File ("VulFile", cl::desc("The file that UAF/OOB occurs"), cl::init(""));
-static cl::opt<string> BUG_Func_File ("FuncFile", cl::desc("The bug may occur in an inline function, this argument indicate the file of first non-inline caller"), cl::init(""));
-static cl::opt<string> BUG_Func ("Func", cl::desc("The function that UAF/OOB occurs"), cl::init(""));
-static cl::opt<string> Calltrace_File ("CalltraceFile", cl::desc("The path of a calltrace"), cl::init(""));
-static cl::opt<int> BUG_Vul_Line ("VulLine", cl::desc("Which line of the vulerable function that UAF/OOB occur"), cl::init(0));
-static cl::opt<int> BUG_Func_Line ("FuncLine", cl::desc("Which line of the caller that UAF/OOB occur"), cl::init(0));
-static cl::opt<int> BUG_Offset ("Offset", cl::desc("Offset from base pointer that trigger OOB/UAF"), cl::init(0));
-static cl::opt<int> BUG_Size ("Size", cl::desc("Size of vulnerable object"), cl::init(0));
-
-struct Input {
-    llvm::Value *basePointer;
-    int64_t offset;
-    uint64_t size;
-};
-
-struct CalltraceItem {
-    string funcName;
-    string filePath;
-    int line;
-    bool isInline;
-    int funcBound[2];
-    llvm::Function *F;
-    int distance;
-};
-
-static vector<CalltraceItem*> calltrace;
-static int minDistance;
 struct thisPass : public ModulePass {
     static char ID;
-    llvm::DataLayout *dl;
     thisPass() : ModulePass(ID) {}
 
     bool runOnModule(Module &M) override {
-        struct Input *input = locatePointerAndOffset(M);
+        struct Input *input = getInput(M);
+        for (struct Input *i = input; i != NULL; i=i->next) {
+            errs() << "basePointer: " << i->basePointer << " offset: " << i->offset << " distance: " << i->distance << "\n";
+        }
         //typeMatchFunc(M, input);
         return true;
     }
 
-    struct Input *locatePointerAndOffset(Module &M) {
-        llvm::Value *basePointer = NULL;
-        int64_t offset = 0;
+    struct Input *getInput(Module &M) {
+        locatePointerAndOffset(M);
+        for (struct Input *i = input; i != NULL; i=i->next) {
+            if (i->distance > minDistance) {
+                struct Input *next = i->next;
+                struct Input *prev = i->prev;
+                if (next != NULL)
+                    next->prev = prev;
+                if (prev != NULL)
+                    prev->next = next;
+                free(i);
+            }
+        }
+        return input;
+    }
+
+    void locatePointerAndOffset(Module &M) {
         uint64_t size = BUG_Size;
         dl = new llvm::DataLayout(&M);
         bool BUG_in_header = false;
         parseCalltrace(&M);
         minDistance = MAX_DISTANCE * calltrace.size();
-        CalltraceItem *item = calltrace.back();
+        CalltraceItem *item = getFirstValidItemInCalltrace();
+        if (item == NULL) {
+            errs() << "calltrace is empty\n";
+            return;
+        }
         if (item->F == NULL) {
             errs() << "Can not find function " << item->funcName << " in one.bc\n";
-            return NULL;
+            return;
         }
         auto F = item->F;
+        errs() << "item->funcName: " << item->funcName << "\n";
         if (item->funcName == BUG_Func) {
             errs() << "Found target function: " << item->F->getName().str() << "\n";
             if (item->funcBound[0] > BUG_Func_Line)
@@ -91,35 +63,23 @@ struct thisPass : public ModulePass {
                 }
                 int curLine = 0;
                 string fileName;
-                     //else  {
-                    int curLine1 = 0;
-                    string fileName1;
-                    try {
-                    curLine1 = dbgloc->getLine();
-                    if (!curLine) {
-                        //errs() << "90 "<< (*I) << "\n";
-                        if (isLoadInst(I))
-                            inspectLoadInst(I, basePointer, &offset, dbgloc);
-                        //continue;
-                    }
-                    } catch(...) {
-                        //errs() << "96 " << (*I) << "\n";
-                        if (isLoadInst(I))
-                                inspectLoadInst(I, basePointer, &offset, dbgloc);
-                        continue;
-                    }
-                    fileName1 = dbgloc->getFilename().str();
-                    //errs() << fileName << ":" << curLine << "\n";
-                //}
-                errs() << fileName1 << ":" << curLine1 << "\n";
-                //errs() << (*I) << "\n";
+                // dbgloc.get() is used to check the existance of dbg info
+                if (!dbgloc.get() || !dbgloc->getLine()) {
+                    if (isInst<LoadInst>(&(*I)))
+                        inspectInst<LoadInst, Load>(&(*I), dbgloc, NULL, 0);
+                    continue;
+                }
+                fileName = dbgloc->getFilename().str();
+                curLine = dbgloc->getLine();
+                errs() << fileName << ":" << curLine << "\n";
+                errs() << (*I) << "\n";
                 /*if (curLine >= func_bound[0] && curLine <= func_bound[1]) {
                     if (curLine < BUG_Func_Line && basePointer != NULL)
                         break;
                 }*/
                 if (BUG_in_header) {
-                    if (isLoadInst(I))
-                        inspectLoadInst(I, basePointer, &offset, dbgloc);
+                    if (isInst<LoadInst>(&(*I)))
+                        inspectInst<LoadInst, Load>(&(*I), dbgloc, NULL, 0);
                     continue;
                 }
                 if (isInCallTrace(fileName, curLine)) {
@@ -127,49 +87,125 @@ struct thisPass : public ModulePass {
                      //   errs() << "target site found: " << (*I) << "\n";
                         //if (isGEPInst(I))
                         //    inspectGEPInst(I);
-                        if (isLoadInst(I))
-                            inspectLoadInst(I, basePointer, &offset, dbgloc);
+                        if (isInst<CallInst>(&(*I)))
+                            inspectInst<CallInst, Call>(&(*I), dbgloc, NULL, 0);
+                        if (isInst<LoadInst>(&(*I)))
+                            inspectInst<LoadInst, Load>(&(*I), dbgloc, NULL, 0);
                     //}
                 }
             }
         }
+        errs() << "the end\n";
+        return;
+    }
+
+    CalltraceItem *getFirstValidItemInCalltrace() {
+        for (auto it = calltrace.begin(); it != calltrace.end(); it++)
+            if ((*it)->numDuplication == 1) {
+                return *it;
+            }
+        return NULL;
+    }
+
+    template <class T>
+    bool isInst(Instruction *I) {
+        if (T *load = dyn_cast<T>(I))
+            return true;
+        return false;
+    }
+
+    //void inspectCallInst(llvm::Instruction *I, llvm::DebugLoc dbgloc) {
+    //    dbglocMatch(dbgloc, )
+    //}
+
+    template <class InstType, class T>
+    void inspectInst(llvm::Instruction *I, llvm::DebugLoc dbgloc, InstType *realSrc, int deep) {
+        bool match = false;
+        int index = 0;
+        T::printSloganHeader(I);
+        if (dbgloc->getLine() == 0) {
+            PHINode *phi = nullptr;
+            auto block = (*I).getParent();
+            // If load inst doesn't have a valid dbg info, 
+            // it means this load inst may belongs to a phi inst
+            // we check out phi inst before load inst to eliminate 
+            // the incorrectness of dbg info
+            for (Instruction &I1 : *block) {
+                if (isa<PHINode>(I1)) {
+                    phi = dyn_cast<PHINode>(&(I1));
+                    break;
+                }
+                if (&I1 == &(*I))
+                    break;
+            }
+            if (phi != nullptr and deep < 3) {
+                int n = phi->getNumIncomingValues();
+                for (int i=0; i<n; i++) {
+                    auto v = phi->getIncomingValue(i);
+                    llvm::Instruction *incomingI = dyn_cast<Instruction>(v);
+                    if (incomingI == nullptr)
+                        continue;
+                    // No Matryoshka doll
+                    if (incomingI == I)
+                        continue;
+                    if (isa<Instruction>(incomingI)) {
+                        auto icomDbgloc = incomingI->getDebugLoc();
+                        if (!icomDbgloc)
+                            continue;
+                        errs() << "one of the phi incoming\n";
+                        if (realSrc == NULL) {
+                            realSrc = T::convertType(I);                          
+                        }
+                        inspectInst<InstType, T>(incomingI, icomDbgloc, realSrc, deep+1);
+                        //errs() << dbgloc->getFilename().str() << ":" << dbgloc->getLine() << "\n";
+                        //match = matchCalltrace(dbgloc, &index);
+                        //if (index >= 0 && match)
+                            //match = matchLastCaller(index, dbgloc);
+                    }
+                }
+            }
+        }
+        match = matchCalltrace(dbgloc, &index);
+        if (index >= 0 && match)
+            match = matchLastCaller(index, dbgloc);
+        if (match) {
+            if (realSrc) {
+                if (T::isInst(realSrc))
+                    T::handleInst(realSrc);
+            } else {
+                if (T::isInst(I)) {
+                    InstType *inst = T::convertType(I);
+                    T::handleInst(inst);
+                }
+            }
+        }
+        //printDistance();
+        T::printSloganTail();
+    }
+
+    void handleLoadInst(LoadInst *load) {
+        llvm::Value *op = load->getPointerOperand();
+        APInt ap_offset(64, 0, true);
+        llvm::Value *basePointer = op->stripAndAccumulateConstantOffsets(*dl, ap_offset, true);
+        int64_t offset = ap_offset.getSExtValue();
+        offset -= BUG_Offset;
         struct Input *ret = (struct Input *)malloc(sizeof(struct Input));
         ret->basePointer = basePointer;
         ret->offset = offset;
-        ret->size = size;
-        return ret;
-    }
-
-    bool isLoadInst(inst_iterator I) {
-        if (LoadInst *load = dyn_cast<LoadInst>(&(*I)))
-            return true;
-        return false;
-    }
-
-    bool isGEPInst(inst_iterator I) {
-        if (GetElementPtrInst *gep = dyn_cast<GetElementPtrInst>(&(*I)))
-            return true;
-        return false;
-    }
-
-    void inspectLoadInst(inst_iterator I, llvm::Value *basePointer, int64_t *offset, llvm::DebugLoc dbgloc) {
-        if(LoadInst *load = dyn_cast<LoadInst>(&(*I))) {
-            errs() << (*I) << "\n";
-            errs() << "Found a Load instruction\n"; 
-            int curDistance = accumulateDistance(dbgloc);
-            if (minDistance > curDistance) {
-                minDistance = curDistance;
-                llvm::Value *op = load->getPointerOperand();
-                APInt ap_offset(64, 0, true);
-                basePointer = op->stripAndAccumulateConstantOffsets(*dl, ap_offset, true);
-                *offset = ap_offset.getSExtValue();
-                //errs() << "offset to base obj is " << offset << "\n";
-                *offset -= BUG_Offset;
-                errs() << "offset to base obj is " << *offset << "\n";
-            }
-            errs() << "Current min distance: " << minDistance << "\n";
-            //printDistance();
+        ret->size = BUG_Size;
+        ret->distance = minDistance;
+        ret->prev = NULL;
+        ret->next = NULL;
+        if (input == NULL) {
+            input = ret;
+        } else {
+            input->prev = ret;
+            ret->next = input;
+            input = ret;
         }
+        errs() << "-----------------------------------\n";
+        errs() << "offset to base obj is " << offset << "\n";
+        errs() << "-----------------------------------\n";
     }
 
     void inspectGEPInst(inst_iterator I) {
@@ -179,7 +215,7 @@ struct thisPass : public ModulePass {
         }
     }
 
-    int accumulateDistance(llvm::DebugLoc dbgloc) {
+    int accumulateDistance() {
         int ret = 0;
         for (vector<CalltraceItem*>::iterator it = calltrace.begin(); it != calltrace.end(); it++) {
             if ((*it)->distance > 0)
@@ -187,23 +223,62 @@ struct thisPass : public ModulePass {
             else
                 ret -= (*it)->distance;
         }
-        while(1) {
-        auto inlineDbg = dbgloc->getInlinedAt();
-        if (inlineDbg != NULL) {
-            int curLine = inlineDbg->getLine();
-            string fileName = inlineDbg->getFilename().str();
-            errs() << "--> " << fileName << ":" << curLine << "\n";
-            /*for (vector<CalltraceItem*>::iterator it = calltrace.begin(); it != calltrace.end(); it++) {
-                if ((*it)->filePath == stripFileName(fileName) && \
-                        curLine >= (*it)->funcBound[0] && curLine <= (*it)->funcBound[1]) {
-                    (*it)->distance = (*it)->line - curLine;
-                    ret = true;
-                }
-            }*/
-        } else
-            break;
-        dbgloc = inlineDbg;
+        return ret;
     }
+
+    bool matchLastCaller(int index, llvm::DebugLoc dbgloc) {
+        bool match;
+        string fileName = stripFileName(dbgloc->getFilename().str());
+        int line = dbgloc->getLine();
+        errs() << index;
+        match = calltrace[index]->filePath == fileName && \
+                    calltrace[index]->line == line;
+        if (match) {
+            match = true;
+            minDistance = 0;
+            errs() << "--> " << calltrace[index]->filePath << ":" << calltrace[index]->line << " True" << "\n";
+        } else {
+            int tmp = abs(calltrace[index]->line - line);
+            match = false;
+            if (tmp <= minDistance) {
+                minDistance = tmp;
+                match = true;
+            }
+            errs() << "--> " << calltrace[index]->filePath << ":" << calltrace[index]->line << " False" << "\n";
+        }
+        errs() << fileName << ":" << line << " " << calltrace[index]->filePath << ":" << calltrace[index]->line <<"\n";
+        return match;
+    }
+
+    bool matchCalltrace(llvm::DebugLoc dbgloc, int *index) {
+        bool ret = false;
+        auto inlineDbg = dbgloc->getInlinedAt();
+        if (inlineDbg == NULL) {
+            return true;
+        }
+        (*index)++;
+        int curLine = inlineDbg->getLine();
+        string fileName = inlineDbg->getFilename().str();
+        /*for (vector<CalltraceItem*>::iterator it = calltrace.begin(); it != calltrace.end(); it++) {
+            if ((*it)->filePath == stripFileName(fileName) && \
+                    curLine >= (*it)->funcBound[0] && curLine <= (*it)->funcBound[1]) {
+                (*it)->distance = (*it)->line - curLine;
+                ret = true;
+            }
+        }*/
+        ret = matchCalltrace(inlineDbg, index);
+        if (*index >= 0 && ret) {
+            auto item = calltrace[*index];
+            errs() << *index;
+            ret = item->filePath == stripFileName(fileName) && item->line == curLine;
+            if (ret) {
+                errs() << "--> " << fileName << ":" << curLine << " True" << "\n";
+            } else {
+                errs() << "--> " << fileName << ":" << curLine << " False" << "\n";
+            }
+            (*index)--;
+            errs() << stripFileName(fileName) << ":" << curLine << " " << item->filePath << ":" << item->line  <<"\n";
+        }
         return ret;
     }
 
@@ -242,8 +317,6 @@ struct thisPass : public ModulePass {
             }
             CalltraceItem *item = new CalltraceItem;
             item->funcName = strlist[0];
-            item->funcBound[0] = stoi(strlist[2], nullptr);
-            item->funcBound[1] = stoi(strlist[3], nullptr);
             vector<string> pathlist = splitBy(strlist[1], ":");
             if (pathlist.size() != 2) {
                 errs() << "size of pathlist is not two: " << strlist[1] << "\n";
@@ -254,18 +327,89 @@ struct thisPass : public ModulePass {
             item->isInline = false;
             item->distance = MAX_DISTANCE;
             item->F = NULL;
+            item->numDuplication = 0;
+            item->funcBound[0] = stoi(strlist[2], nullptr);
+            item->funcBound[1] = stoi(strlist[3], nullptr);
             if (strlist.size() == 5)
                 item->isInline = true;
             calltrace.push_back(item);
             //errs() << "funcName:" << item->funcName << " filePath:" << item->filePath << " isInline:" << item->isInline << " line:" << item->line <<"\n";
-            if (item->funcName == BUG_Func)
+        }
+        CalltraceItem *item;
+        map<string, llvm::Function*> func_contexts;
+        for (int i=0; i<calltrace.size(); i++) {
+            item = calltrace[i];
+            string func_regx = item->funcName + "(\\.\\d+)?";
+            for(auto &F : (*M)){
+                if (F.isIntrinsic())
+                    continue;
+                if (regex_match(F.getName().str(), regex(func_regx))) {
+                    func_contexts[F.getName().str()] = &F;
+                    item->F = &F;
+                    item->numDuplication++;
+                    //break;
+                }
+            }
+            if (item->numDuplication == 1)
                 break;
         }
-        CalltraceItem *item = calltrace.back();
-        for(auto &F : (*M)){
-            if (F.getName().str() == item->funcName) {
-                item->F = &F;
+        for (int i=0; i < calltrace.size(); i++) {
+            errs() << calltrace[i]->funcName << " has " << calltrace[i]->numDuplication <<  " duplications\n";
+            if (calltrace[i]->numDuplication == 1) {
+                determineCorrectContext(i, func_contexts);
                 break;
+            }
+        }
+    }
+
+    bool dbglocMatch(llvm::DebugLoc dbgloc, string fileName, int line) {
+        string dbgFileName = stripFileName(dbgloc->getFilename().str());
+        int dbgLine = dbgloc->getLine();
+        return fileName == dbgFileName && line == dbgLine;
+    }
+
+    void determineCorrectContext(int n, map<string, llvm::Function*> func_contexts) {
+        for (int i=n; i>0; i--) {
+            CalltraceItem *nextItem;
+            int offset = 1;
+            bool flagStop = false;
+            do {
+                if (i-offset < 0) {
+                    flagStop = true;
+                    break;
+                }
+                nextItem = calltrace[i-offset];
+                offset++;
+                if (nextItem->numDuplication > 1)
+                    break;
+            } while(true);
+            if (flagStop)
+                break;
+            CalltraceItem *item = calltrace[i];
+            auto F = item->F;
+            inst_iterator I = inst_begin(*F), E = inst_end(*F);
+            errs() << item->filePath << ":" << item->line << "\n";
+            for (; I != E; ++I) {
+                llvm::DebugLoc dbgloc = (*I).getDebugLoc();
+                if (!dbgloc)
+                    continue;
+                //errs() << (*I) << "\n";
+                //errs() << dbgloc->getFilename().str() << ":" << dbgloc->getLine() << "\n";
+                if (isInst<CallInst>(&(*I)) && dbglocMatch(dbgloc, item->filePath, item->line)) {
+                    CallInst *call = dyn_cast<CallInst>(&(*I));
+                    llvm::Function *callee = call->getCalledFunction();
+                    if (!callee)
+                        continue;
+                    errs() << "callee " << callee->getName().str() << "\n";
+                    string func_regx = nextItem->funcName + "(\\.\\d+)?";
+                    if (regex_match(callee->getName().str(), regex(func_regx))) {
+                        errs() << nextItem->funcName << "=" << callee->getName().str() << "\n";
+                        nextItem->F = func_contexts[callee->getName().str()];
+                        nextItem->numDuplication = 1;
+                        errs() << nextItem->funcName << "\'s context has been determined\n";
+                        break;
+                    }
+                }
             }
         }
     }

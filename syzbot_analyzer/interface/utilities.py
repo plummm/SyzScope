@@ -31,7 +31,7 @@ bug_desc_begin_regx = r'The buggy address belongs to the object at'
 bug_desc_end_regx = r'The buggy address belongs to the page'
 offset_desc_regx = r'The buggy address is located (\d+) bytes ((inside)|(to the right)|(to the left)) of'
 size_desc_regx = r'which belongs to the cache [a-z0-9\-_]+ of size (\d+)'
-kernel_func_def_regx= r'(^(static )?(__always_inline |const )?(struct )?\w+( )?(\*)?( |\n)(([a-zA-Z0-9:_]*( |\n))?(\*)?)?([a-zA-Z0-9:_]+)\([a-zA-Z0-9*_,\-\n\t ]*\))'
+kernel_func_def_regx= r'(^(static )?(__always_inline |const |inline )?(struct )?\w+( )?(\*)?( |\n)(([a-zA-Z0-9:_]*( |\n))?(\*)*)?([a-zA-Z0-9:_]+)\([a-zA-Z0-9*_,\(\)\[\]<>&\-\n\t ]*\))'
 
 def get_hash_from_log(path):
     with open(path, "r") as f:
@@ -81,7 +81,8 @@ def extract_func_name(line):
     res = regx_kasan_line(line)
     if res == None:
         return res
-    return res[0]
+    func = strip_part_funcs(res[0])
+    return func
 
 def is_kasan_func(source_path):
     if source_path == None:
@@ -104,7 +105,7 @@ def extract_allocated_section(report):
         return res[:-2]
     
 def extrace_call_trace(report):
-    call_trace_end = [r"entry_SYSENTER", r"entry_SYSCALL", r"ret_from_fork"]
+    call_trace_end = [r"entry_SYSENTER", r"entry_SYSCALL", r"ret_from_fork", r"bpf_prog_[a-z0-9]{16}\+"]
     res = []
     record_flag = 0
     implicit_call_regx = r'\[.+\]  \?.*'
@@ -200,6 +201,10 @@ def extract_vul_obj_offset_and_size(report):
         if rel_type == 1:
             size = None
     return offset, size
+
+def strip_part_funcs(func):
+    l = func.split('.')
+    return l[0]
 
 def urlsOfCases(dirOfCases, type=FOLDER):
     res = []

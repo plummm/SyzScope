@@ -1,8 +1,10 @@
 import os, stat
 import logging
+import shutil
 import syzbot_analyzer.interface.utilities as utilities
 
-from subprocess import Popen, PIPE, STDOUT
+from subprocess import Popen, PIPE, STDOUT, TimeoutExpired, call
+from .error import CompilingError
 
 class StaticAnalysis:
     def __init__(self, logger, proj_path, index, case_path, linux_folder):
@@ -27,21 +29,98 @@ class StaticAnalysis:
             for i in range(0, min(len(dir_list1), len(dir_list2)) - 1):
                 if dir_list1[i] == dir_list2[i]:
                     bc_path += dir_list1[i] + '/'
-
+        
         script_path = os.path.join(self.package_path, "scripts/deploy-bc.sh")
         utilities.chmodX(script_path)
         index = str(self.index)
-        self.case_logger.info("run: scripts/deploy-bc.sh".format(index))
-        p = Popen([script_path, self.linux_folder, index, self.case_path, commit, config, bc_path],
+        self.case_logger.info("run: scripts/deploy-bc.sh")
+        p = Popen([script_path, self.linux_folder, index, self.case_path, commit, config, bc_path, "0"],
                 stdout=PIPE,
                 stderr=STDOUT
                 )
         with p.stdout:
             self.__log_subprocess_output(p.stdout, logging.INFO)
         exitcode = p.wait()
+        self.adjust_kernel_for_clang()
+
+        p = Popen([script_path, self.linux_folder, index, self.case_path, commit, config, bc_path, "1"],
+                stdout=PIPE,
+                stderr=STDOUT
+                )
+        with p.stdout:
+            self.__log_subprocess_output(p.stdout, logging.INFO)
+        exitcode = p.wait()
+
         self.case_logger.info("script/deploy-bc.sh is done with exitcode {}".format(exitcode))
         return exitcode
     
+    def adjust_kernel_for_clang(self):
+        opts = ["-fno-inline-functions", "-fno-builtin-bcmp"]
+        self._fix_asm_volatile_goto()
+        self._add_extra_options(opts)
+    
+    def compile_bc_extra(self):
+        regx = r'echo \'[ \t]*CC[ \t]*(([A-Za-z0-9_\-.]+\/)+([A-Za-z0-9_.\-]+))\';'
+        base = os.path.join(self.case_path, 'linux')
+        path = os.path.join(base, 'wllvm_log')
+        with open(path, 'r') as f:
+            lines = f.readlines()
+            procs = []
+            for line in lines:
+                p2obj = utilities.regx_get(regx, line, 0)
+                obj = utilities.regx_get(regx, line, 2)
+                if p2obj == None or obj == None:
+                    """cmds = line.split(';')
+                    for e in cmds:
+                        call(e, cwd=base)"""
+                    continue
+                if 'arch/x86/' in p2obj:
+                    continue
+                #print("CC {}".format(p2obj))
+                new_cmd = []
+                try:
+                    idx1 = line.index('wllvm')
+                    idx2 = line[idx1:].index(';')
+                    cmd = line[idx1:idx1+idx2].split(' ')
+                    if cmd[0] == 'wllvm':
+                        new_cmd.append('{}/tools/llvm/build/bin/clang'.format(self.proj_path))
+                        new_cmd.append('-emit-llvm')
+                    new_cmd.extend(cmd[1:])
+                except ValueError:
+                    self.case_logger.error('No \'wllvm\' or \';\' found in \'{}\''.format(line))
+                    raise CompilingError
+                idx_obj = len(new_cmd)-2
+                st = new_cmd[idx_obj]
+                if st[len(st)-1] == 'o':
+                    new_cmd[idx_obj] = st[:len(st)-1] + 'bc'
+                else:
+                    self.case_logger.error("{} is not end with .o".format(new_cmd[idx_obj]))
+                    continue
+                # Somehow Popen(cmd) stuck sometime for unknow reason
+                if len(procs) >= 16:
+                    for p in procs:
+                        if p.poll() != None:
+                            procs.remove(p)
+                procs.append(Popen(['/bin/bash','-c'," ".join(new_cmd)], cwd=base, stdout=PIPE, stderr=PIPE))
+                #call(new_cmd, cwd=base)
+            for p in procs:
+                try:
+                    p.wait(timeout=5)
+                except TimeoutExpired:
+                    self.case_logger.info("It takes too long to compile, skip thic bc")
+                    p.kill()
+            self.case_logger.info("About to link bc")
+            if os.path.exists(os.path.join(self.case_path,'one.bc')):
+                os.remove(os.path.join(self.case_path,'one.bc'))
+            link_cmd = '{}/tools/llvm/build/bin/llvm-link -o one.bc `find ./ -name "*.bc" ! -name "timeconst.bc"` && mv one.bc {}'.format(self.proj_path, self.case_path)
+            p = Popen(['/bin/bash','-c', link_cmd], stdout=PIPE, stderr=PIPE, cwd=base)
+            with p.stdout:
+                self.__log_subprocess_output(p.stdout, logging.INFO)
+            exitcode = p.wait()
+            if exitcode != 0:
+                self.case_logger.error("Fail to construct a monolithic bc")
+            return exitcode
+
     def KasanVulnChecker(self, report):
         vul_site = ''
         func_site = ''
@@ -51,43 +130,66 @@ class StaticAnalysis:
         report_list = report.split('\n')
         trace = utilities.extrace_call_trace(report_list)
         for each in trace:
-            if vul_site == '':
+            """if vul_site == '':
                 vul_site = utilities.extract_debug_info(each)
             if utilities.isInline(each):
                 inline_func = utilities.extract_func_name(each)
                 continue
             func = utilities.extract_func_name(each)
             if func == inline_func:
-                continue
-            func_site = utilities.extract_debug_info(each)
+                continue"""
+            # See if it works after we disabled inline function
+            vul_site = utilities.extract_debug_info(each)
+            func = utilities.extract_func_name(each)
+            if func == 'fail_dump':
+                func = None
+            func_site = vul_site
             break
         
         return vul_site, func_site, func
     
     def saveCallTrace2File(self, trace, vul_site):
+        syscall_entrance = [r'SYS', r'_sys_', r'^sys_', r'entry_SYSENTER', r'entry_SYSCALL', r'ret_from_fork', r'bpf_prog_[a-z0-9]{16}']
         text = []
         flag_record = 0
+        last_inline = ''
+        flag_stop = False
         for each in trace:
             if utilities.extract_debug_info(each) == vul_site:
                 flag_record ^= 1
             if flag_record:
                 func = utilities.extract_func_name(each)
-                if 'SYS' in func:
-                    # system call entrance is not included
+                for entrance in syscall_entrance:
+                    if utilities.regx_match(entrance, func):
+                        # system call entrance is not included
+                        flag_stop = True
+                        break
+                if flag_stop:
                     break
                 site = utilities.extract_debug_info(each)
+                if site == None:
+                    continue
                 t = "{} {}".format(func, site)
-                file, _ = site.split(':')
-                s, e = self.getFuncBounds(func, file)
+                file, line = site.split(':')
+                s, e = self.getFuncBounds(func, file, int(line))
+                if s == 0 and e == 0:
+                    break
                 t += " {} {}".format(s, e)
+                # We disabled inline function
                 if utilities.isInline(each):
-                    t += " [inline]"
+                    last_inline = func
+                    #t += " [inline]
                 text.append(t)
+                # Sometimes an inline function will appear at the next line of calltrace as a non-inlined function
+                if not utilities.isInline(each) and last_inline == func:
+                    text.pop()
         path = os.path.join(self.case_path, "CallTrace")
         f = open(path, "w")
         f.writelines("\n".join(text))
+        f.truncate()
+        f.close()
     
-    def getFuncBounds(self, func, file):
+    def getFuncBounds(self, func, file, lo_line):
         s = 0
         e = 0
         base = os.path.join(self.case_path, "linux")
@@ -95,24 +197,45 @@ class StaticAnalysis:
         with open(src_file_path, 'r') as f:
             lines = f.readlines()
             text = "".join(lines)
+            tmp = []
+            for i in range(lo_line-1, 0, -1):
+                tmp.insert(0,lines[i])
+                expr = utilities.regx_get(utilities.kernel_func_def_regx, "".join(tmp), 0)
+                if expr == None:
+                    continue
+                n = text.index(expr)
+                left_bracket = n+len(expr)+1
+                s = i+1
+                for j in range(lo_line, len(lines)):
+                    line = lines[j]
+                    if line == '}\n':
+                        e = j+1
+                        return s, e
+                self.case_logger.error("Incorrect range of {}()".format(func))
+            """
             func_list = utilities.regx_getall(utilities.kernel_func_def_regx, text)
-            for each in func_list:
+            for each in func_list[::-1]:
                 expr = each[0]
                 func_name = each[11]
-                if func_name == func:
+                try:
+                    n = text.index(expr)
+                    if text[n+len(expr)] == ';':
+                        n += len(expr) + text[n+len(expr):].index(expr)
+                    left_bracket = n+len(expr)+1
+                except ValueError:
+                    continue
+                # if the left bracket is before target line,
+                # current function must be the function that contain target line
+                # We don't use func_name because function name in source file may
+                # not be the name in Kasan report
+                if len(text[:left_bracket].split('\n')) < lo_line or func_name == func:
                     tmp = text
                     idx = 0
-                    while True:
-                        try:
-                            n = tmp.index(expr)
-                        except ValueError:
-                            break
-                        if tmp[n+len(expr)+1] != '{':
-                            tmp = tmp[n+len(expr)+1:]
-                            idx += n+len(expr)+1
-                        else:
-                            idx += n
-                            break
+
+                    if tmp[left_bracket] != '{':
+                        continue
+                    else:
+                        idx += n
                     head = text[:idx]
                     s = len(head.split('\n'))
                     n = 0
@@ -121,8 +244,12 @@ class StaticAnalysis:
                             e = s+n
                             break
                         n += 1
-                    return s, e
-        return s, e
+                    if s > lo_line or e < lo_line:
+                        self.case_logger.error("Incorrect range of {}()".format(func))
+                        return 0, 0
+                    return s, e"""
+        return s ,e
+
 
     
     def run_static_analysis(self, vul_site, func_site, func, offset, size):
@@ -134,7 +261,9 @@ class StaticAnalysis:
                 "-CalltraceFile={}".format(calltrace),
                 "-VulFile={}".format(vul_file), "-VulLine={}".format(vul_line), 
                 "-FuncFile={}".format(func_file), "-FuncLine={}".format(func_line),
-                "-Func={}".format(func), "-Offset={}".format(offset), "-Size={}".format(size)]
+                "-Func={}".format(func), "-Offset={}".format(offset)]
+        if size != None:
+            cmd.append("-Size={}".format(size))
         self.case_logger.info(" ".join(cmd))
         p = Popen(cmd,
                   stdout=PIPE,
@@ -144,6 +273,49 @@ class StaticAnalysis:
             self.__log_subprocess_output(p.stdout, logging.INFO)
         exitcode = p.wait()
         return exitcode
+    
+    def _fix_asm_volatile_goto(self):
+        regx = r'#define asm_volatile_goto'
+        linux_repo = os.path.join(self.case_path, "linux")
+        compiler_gcc = os.path.join(linux_repo, "include/linux/compiler-gcc.h")
+        buf = ''
+        if os.path.exists(compiler_gcc):
+            with open(compiler_gcc, 'r') as f_gcc:
+                lines = f_gcc.readlines()
+                for line in lines:
+                    if utilities.regx_match(regx, line):
+                        buf = line
+                        break
+            if buf != '':
+                compiler_clang = os.path.join(linux_repo, "include/linux/compiler-clang.h")
+                with open(compiler_clang, 'r+') as f_clang:
+                    lines = f_clang.readlines()
+                    data = [buf]
+                    data.extend(lines)
+                    f_clang.seek(0)
+                    f_clang.writelines(data)
+                    f_clang.truncate()
+        return
+
+    def _add_extra_options(self, opts):
+        regx = r'KBUILD_CFLAGS[ \t]+:='
+        linux_repo = os.path.join(self.case_path, "linux")
+        makefile = os.path.join(linux_repo, "Makefile")
+        data = []
+        with open(makefile, 'r+') as f:
+            lines = f.readlines()
+            for i in range(0, len(lines)):
+                line = lines[i]
+                if utilities.regx_match(regx, line):
+                    parts = line.split(':=')
+                    opts_str = " ".join(opts)
+                    data.extend(lines[:i])
+                    data.append(parts[0] + ":= " + opts_str + " " + parts[1])
+                    data.extend(lines[i+1:])
+                    f.seek(0)
+                    f.writelines(data)
+                    f.truncate()
+                    break
         
     def __log_subprocess_output(self, pipe, log_level):
         for line in iter(pipe.readline, b''):

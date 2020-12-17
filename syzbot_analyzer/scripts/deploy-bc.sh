@@ -19,8 +19,15 @@ function config_disable() {
   sed -i "s/$key=y/# $key is not set/g" .config
 }
 
-if [ $# -ne 6 ]; then
-  echo "Usage ./deploy-bc.sh linux_clone_path index case_path commit config bc_path"
+function config_enable() {
+  key=$1
+  sed -i "s/$key=n/# $key is not set/g" .config
+  sed -i "s/$key=m/# $key is not set/g" .config
+  sed -i "s/# $key is not set/$key=y/g" .config
+}
+
+if [ $# -ne 7 ]; then
+  echo "Usage ./deploy-bc.sh linux_clone_path index case_path commit config bc_path compile"
   exit 1
 fi
 
@@ -29,6 +36,7 @@ CASE_PATH=$3
 COMMIT=$4
 CONFIG=$5
 BC_PATH=$6
+COMPILE=$7
 PROJECT_PATH="$(pwd)"
 
 cd $CASE_PATH
@@ -49,8 +57,12 @@ if [ -f "THIS_KERNEL_IS_BEING_USED" ]; then
     echo "This kernel is using by other thread"
     exit 1
 fi
+
+if [ "$COMPILE" != "1" ]; then
 git stash
-git clean -d -f -e THIS_KERNEL_IS_BEING_USED
+# do not delete kernel/time/timeconst.bc
+find -type f -name '.*.bc' -delete
+git clean -fdx -e THIS_KERNEL_IS_BEING_USED > /dev/null || echo "cleanning interrupt"
 git checkout -f $COMMIT || (git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1 && git checkout -f $COMMIT)
 
 #Add a rejection detector in future
@@ -67,6 +79,8 @@ do
     config_disable $key
 done
 
+else
+
 export LLVM_COMPILER=clang
 export LLVM_COMPILER_PATH=$PROJECT_PATH/tools/llvm/build/bin/
 pip list | grep wllvm || pip install wllvm
@@ -76,11 +90,15 @@ make -j16 CC=wllvm > make.log 2>&1 || ERROR=1 && copy_log_then_exit make.log
 if [ $ERROR == "0" ]; then
   #build bc
   extract-bc vmlinux
-  mv vmlinux $CASE_PATH/one.bc
+  mv vmlinux.bc $CASE_PATH/one.bc
 else
   echo "error occur at compiling...try to extract specific bc file"
-  cd $BC_PATH
-  llvm-link -o one.bc `find ./ -name "*.bc"` || exit 1
-  mv one.bc $CASE_PATH
+  make clean CC=wllvm
+  make -n CC=wllvm > wllvm_log || find -type f -name '.*.bc' -delete
+  exit 1
+  #cd $BC_PATH
+  #llvm-link -o one.bc `find ./ -name "*.bc" ! -name "timeconst.bc"` || exit 1
+  #mv one.bc $CASE_PATH
 fi
 exit 0
+fi

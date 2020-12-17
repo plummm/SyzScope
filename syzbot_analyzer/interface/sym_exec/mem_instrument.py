@@ -421,7 +421,7 @@ class KasanAccess(HookInst):
         return addr >= stack-0x1000 and addr <= frame+0x1000
 
     def kasan_access(self, addr):
-        self.mem.add_constraints = True
+        #self.mem.add_constraints = True
         if self.is_write and self.mem.symbolic_tracing:
             if not self.mem._is_symbolic(addr) and not self.is_on_stack(self.state.solver.eval(addr)):
                 if type(addr) != int:
@@ -433,7 +433,7 @@ class KasanAccess(HookInst):
             #if type(addr) != int:
             #    addr = self.state.solver.eval(addr)
             #self.logger.info("kasan read inspect {} with {} bytes".format(hex(self.state.solver.eval(addr)), self.size))
-        self.mem.add_constraints = False
+        #self.mem.add_constraints = False
 
 class KasanRead(KasanAccess):
     def __init__(self, size, stack_addr :list, mem_handler):

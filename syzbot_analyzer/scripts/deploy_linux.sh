@@ -61,7 +61,7 @@ fi
 if [ $# -eq 7 ]; then
   if [ "$FIXED" != "1" ]; then
     git stash
-    git clean -fdX -e THIS_KERNEL_IS_BEING_USED
+    git clean -fdx -e THIS_KERNEL_IS_BEING_USED > /dev/null
     CURRENT_HEAD=`git rev-parse HEAD`
     if [ "$CURRENT_HEAD" != "$COMMIT" ]; then
       #make clean CC=$COMPILER

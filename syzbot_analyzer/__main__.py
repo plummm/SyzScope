@@ -161,8 +161,10 @@ def install_requirments():
 
 def args_dependencies():
     if args.debug:
+        print("debug mode runs on single thread")
         args.parallel_max = '1'
     if args.linux != '-1':
+        print("specifying a linux repo runs on single thread")
         args.parallel_max = '1'
 
 if __name__ == '__main__':

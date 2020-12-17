@@ -484,10 +484,7 @@ class CrashChecker:
                 else:
                     command += "-procs=" + str(pm["procs"]) + " "
                 if "repeat" in pm and pm["repeat"] != "":
-                    if str(pm["repeat"]).lower() == 'true':
-                        command += "-repeat=" + "0 "
-                    else:
-                        command += "-repeat=" + "1 "
+                    command += "-repeat=" + "1 "
                 #It makes no sense that limiting the features of syz-execrpog, just enable them all
                 
                 if support_enable_features != 2:

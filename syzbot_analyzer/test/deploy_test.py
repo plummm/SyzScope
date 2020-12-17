@@ -1,6 +1,4 @@
-import deploy
-import syzbotCrawler
-import crash
+from syzbot_analyzer.modules import deploy, syzbotCrawler, crash
 import os
 
 project_path = "/home/xzou017/projects/SyzbotAnalyzer"
@@ -9,9 +7,9 @@ def getMinimalDeployer(case_path):
     force = True
     d = deploy.Deployer(0, debug=True)
     d.project_path = project_path
-    d.image_path = os.path.join(project_path, "img")
-    d.kernel_path = os.path.join(project_path, "linux")
     d.current_case_path = os.path.join(project_path, case_path)
+    d.image_path = os.path.join(d.current_case_path, "img")
+    d.kernel_path = os.path.join(d.current_case_path, "linux")
     d.crash_checker = crash.CrashChecker(
         d.project_path,
         d.current_case_path,
