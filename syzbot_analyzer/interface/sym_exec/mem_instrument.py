@@ -73,7 +73,23 @@ class MemInstrument(StateManager):
         size = state.solver.eval(state.inspect.mem_write_length)
         #addr = self._access_seg_regs(state, addr, True)
         if self._is_symbolic(bv_addr):
-            self.logger.warning("Arbitrary write found")
+            if self.is_under_constrained(bv_addr):
+                self.state_privilege |= StateManager.FINITE_ADDR_WRITE
+                self.logger.warning("Finite address write found")
+            else:
+                self.state_privilege |= StateManager.ARBITRARY_ADDR_WRITE
+                self.logger.warning("Arbitrary address write found")
+            self.dump_state(state)
+            self.dump_stack(state)
+        if self._is_symbolic(bv_expr):
+            if self.is_under_constrained(bv_expr):
+                self.state_privilege |= StateManager.FINITE_VALUE_WRITE
+                self.logger.warning("Finite value write found")
+            else:
+                self.state_privilege |= StateManager.ARBITRARY_VALUE_WRITE
+                self.logger.warning("Arbitrary value write found")
+            self.dump_state(state)
+            self.dump_stack(state)
         if self.symbolic_tracing and self.ppg_handler.is_kasan_write(addr):
             if self._is_symbolic(bv_expr) and not self._is_symbolic(bv_addr) and state.solver.eval(bv_addr) not in state.globals['sym']:
                 stack = self.dump_stack(state)
@@ -87,10 +103,9 @@ class MemInstrument(StateManager):
     
     def track_call(self, state):
         if state.regs.rip.symbolic:
-            self.logger.warning("Control flow hijack")
+            self.state_privilege |= StateManager.CONTROL_FLOW_HIJACK
+            self.logger.warning("Control flow hijack found!")
             return
-        addr = state.solver.eval(state.inspect.function_address)
-        #print("call func ",hex(addr))
 
     def track_instruction(self, state):
         self.logger.warning("trace_instruction")
@@ -163,21 +178,22 @@ class MemInstrument(StateManager):
         
 
     def hook_noisy_func(self, extra):    
-        """
-        "__sanitizer_cov_trace_pc", "__sanitizer_cov_trace_switch", \
+        kcov_funcs = ["__sanitizer_cov_trace_pc", "__sanitizer_cov_trace_switch", \
             "__sanitizer_cov_trace_const_cmp1", "__sanitizer_cov_trace_const_cmp2", "__sanitizer_cov_trace_const_cmp4", "__sanitizer_cov_trace_const_cmp8", 
-            "__sanitizer_cov_trace_cmp1", "__sanitizer_cov_trace_cmp2", "__sanitizer_cov_trace_cmp4", "__sanitizer_cov_trace_cmp8", "wake_up_process" 
-        """
-        noisy_func = ["mutex_lock", "mutex_unlock", "queue_delayed_work_on", "pvclock_read_wallclock", "record_times", "update_rq_clock", "sched_clock_idle_sleep_event", \
+            "__sanitizer_cov_trace_cmp1", "__sanitizer_cov_trace_cmp2", "__sanitizer_cov_trace_cmp4", "__sanitizer_cov_trace_cmp8"] 
+        noisy_func = ["kasan_check_read", "kasan_check_write","mutex_lock", "mutex_unlock", "queue_delayed_work_on", "pvclock_read_wallclock", "record_times", "update_rq_clock", "sched_clock_idle_sleep_event", \
             "printk", "vprintk", "queued_spin_lock_slowpath", "__pv_queued_spin_lock_slowpath", "queued_read_lock_slowpath", "queued_write_lock_slowpath"]
+        noisy_func.extend(kcov_funcs)
+        
         if type(extra) == list:
             noisy_func.extend(extra)
         if type(extra) == str:
             noisy_func.append(extra)
         for each in noisy_func:
-            ret = self.proj.hook_symbol(each, HookInst())
-            if ret != None:
-                self.logger.info("Hook {} at {}".format(each, hex(ret)))
+            if self.proj.loader.find_symbol(each, True) != None:
+                ret = self.proj.hook_symbol(each, HookInst())
+                if ret != None:
+                    self.logger.info("Hook {} at {}".format(each, hex(ret)))
         
         stack_addr = self.vm.stack_addr
         
@@ -185,10 +201,14 @@ class MemInstrument(StateManager):
 
         if self.proj.loader.find_symbol("kasan_report", True) != None:
             kasan_func_name = "kasan_report"
-            self.proj.hook_symbol(kasan_func_name, kasan)
+            ret = self.proj.hook_symbol(kasan_func_name, kasan)
+            if ret != None:
+                self.logger.info("Hook {} at {}".format(kasan_func_name, hex(ret)))
         if self.proj.loader.find_symbol("__kasan_report", True) != None:
             kasan_func_name = "__kasan_report"
-            self.proj.hook_symbol(kasan_func_name, kasan)
+            ret = self.proj.hook_symbol(kasan_func_name, kasan)
+            if ret != None:
+                self.logger.info("Hook {} at {}".format(kasan_func_name, hex(ret)))
         
         
         kasan_1_r = KasanRead(size=1, stack_addr=stack_addr, mem_handler=self)
@@ -226,7 +246,7 @@ class MemInstrument(StateManager):
         if (size <= 8):
             if name == None:
                 name = "s_{}".format(hex(addr))
-            sym = state.solver.BVS(name, size * 8)
+            sym = state.solver.BVS(name, size * 8, inspect=False)
             state.memory.store(addr, sym)
         else:
             index = 0
@@ -237,32 +257,44 @@ class MemInstrument(StateManager):
                     name = "{}_{}".format(name, math.ceil(index / 8))
                 if index + 8 > size:
                     size -= index
-                sym = state.solver.BVS(name, size * 8)
+                sym = state.solver.BVS(name, size * 8, inspect=False)
                 state.memory.store(addr, sym)
                 index += 8
     
     def transfer_state_globals(self, state, successors):
         if len(successors) == 1:
-            successors[0].globals = state.globals
+            successors[0].globals['mem'] = state.globals['mem'].copy()
+            successors[0].globals['sym'] = state.globals['sym'].copy()
         if len(successors) == 2:
-            successors[0].globals = state.globals
-            successors[1].globals = state.globals
+            successors[0].globals['mem'] = state.globals['mem'].copy()
+            successors[0].globals['sym'] = state.globals['sym'].copy()
+            successors[1].globals['mem'] = state.globals['mem'].copy()
+            successors[1].globals['sym'] = state.globals['sym'].copy()
     
     def _instrument_mem_read(self, state, bv_addr, size):
         uninitialized = False
         addr = state.solver.eval(bv_addr)
         propagate_addr = False
         #addr = self._access_seg_regs(state, addr, False)
-        if self._is_symbolic(bv_addr) and not self._is_ctr_addr(addr):
+        if self._is_symbolic(bv_addr):
             if self.add_constraints:
                 try:
-                    state.solver.add(bv_addr == MemInstrument.CTR_ADDR)
-                    if state.satisfiable():
-                        addr = state.solver.eval(bv_addr)
-                        self._updateCtrAddr()
+                    if self._is_ctr_addr(addr):
+                        state.solver.add(bv_addr == addr)
                     else:
-                        state.se.constraints.pop()
-                        state.se.reload_solver()
+                        state.solver.add(bv_addr == MemInstrument.CTR_ADDR)
+                        if state.satisfiable():
+                            addr = state.solver.eval(bv_addr)
+                            self._updateCtrAddr()
+                        else:
+                            state.se.constraints.pop()
+                            state.se.reload_solver()
+                            state.solver.add(bv_addr == addr)
+                            #print("Symbolic data invoke")
+                            # if a symbolic value has more than 1 solution
+                            # current concrete value may not be the one used for reading
+                            # this leads to an angr warning which is annoying
+                            # Probably we can fix this by listing all the solution of this symbolic value
                 except:
                     return
             else:
@@ -312,6 +344,9 @@ class MemInstrument(StateManager):
 
                     self.logger.warning("page fault occur when access {}".format(hex(addr)))
                     self.purge_current_state()
+
+                    # In case that unconstrained symbolic variable pop up
+                    self.make_symbolic(state, addr, size)
                     #bv = state.memory.load(addr, size, inspect=False, endness=archinfo.Endness.LE)
                     #self.logger.info(hex(state.solver.eval(bv)))
     

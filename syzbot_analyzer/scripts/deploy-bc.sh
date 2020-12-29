@@ -93,8 +93,12 @@ if [ $ERROR == "0" ]; then
   mv vmlinux.bc $CASE_PATH/one.bc
 else
   echo "error occur at compiling...try to extract specific bc file"
-  make clean CC=wllvm
-  make -n CC=wllvm > wllvm_log || find -type f -name '.*.bc' -delete
+  #make clean CC=wllvm
+  find -type f -name '*.o' -delete
+  find -type f -name '*.bc' -delete
+  # restore some kernel files end with .o or .bc 
+  git stash
+  make -n CC=wllvm > wllvm_log || find -type f -name '*.bc' -delete
   exit 1
   #cd $BC_PATH
   #llvm-link -o one.bc `find ./ -name "*.bc" ! -name "timeconst.bc"` || exit 1

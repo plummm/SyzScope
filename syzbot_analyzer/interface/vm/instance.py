@@ -10,7 +10,7 @@ from subprocess import Popen, PIPE, STDOUT, call
 
 class VMInstance:
 
-    def __init__(self, proj_path='/tmp/', log_name='vm.log', logger=None, hash_tag=None, debug=False):
+    def __init__(self, proj_path='/tmp/', log_name='vm.log', log_suffix="", logger=None, hash_tag=None, debug=False):
         self.proj_path = proj_path
         self.port = None
         self.image = None
@@ -31,6 +31,7 @@ class VMInstance:
                         "kvm-intel.vpid=1", "kvm-intel.emulate_invalid_guest_state=1", \
                         "kvm-intel.eptad=1", "kvm-intel.enable_shadow_vmcs=1", "kvm-intel.pml=1", \
                         "kvm-intel.enable_apicv=1"]
+        log_name += log_suffix
         self.qemu_logger = self.init_logger(os.path.join(proj_path, log_name))
         if logger != None:
             self.case_logger = logger

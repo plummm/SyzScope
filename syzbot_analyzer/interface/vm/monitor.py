@@ -6,25 +6,28 @@ from pwn import *
 from .error import QemuIsDead
 
 class Monitor:
-    def __init__(self, port, addr_bytes, log_path=None, debug=False):
+    def __init__(self, port, addr_bytes, log_path=None, log_suffix="", debug=False):
         self.mon_inst = None
         self.s_mem = 'g'
         self.s_group = 8
         if addr_bytes == 4:
             self.s_mem = 'w'
             self.s_group = 4
+        self._log_suffix = log_suffix
         self._port = port
         self._debug = debug
         self.logger = self._init_logger(log_path)
     
     def _init_logger(self, log_path):
-        logger = logging.getLogger(__name__+"-{}".format(self._port))
-        if len(logger.handlers) == 0: 
-            handler = logging.FileHandler("{}/mon.log".format(log_path))
-            format = logging.Formatter('%(asctime)s %(message)s')
-            handler.setFormatter(format)
-            logger.setLevel(logging.INFO)
-            logger.addHandler(handler)
+        logger = logging.getLogger(__name__+"-mon-{}".format(self._port))
+        if len(logger.handlers) != 0:
+            for each_handler in logger.handlers:
+                logger.removeHandler(each_handler)
+        handler = logging.FileHandler("{}/sym/mon.log{}".format(log_path, self._log_suffix))
+        format = logging.Formatter('%(asctime)s %(message)s')
+        handler.setFormatter(format)
+        logger.setLevel(logging.INFO)
+        logger.addHandler(handler)
         logger.propagate = False
         if self._debug:
             logger.setLevel(logging.DEBUG)

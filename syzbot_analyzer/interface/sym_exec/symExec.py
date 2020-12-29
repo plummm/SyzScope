@@ -1,4 +1,5 @@
 import logging
+from syzbot_analyzer.interface.sym_exec.stateManager import StateManager
 import time
 import angr
 import math
@@ -37,10 +38,12 @@ class SymExec(MemInstrument):
         else:
             self.logger = logger
 
-    def setup_vm(self, linux, arch, port, image, gdb_port, mon_port, proj_path='/tmp/', mem="2G", cpu="2", key=None, opts=None, log_name="vm.log", logger=None, hash_tag=None, timeout=None):
+    def setup_vm(self, linux, arch, port, image, gdb_port, mon_port, proj_path='/tmp/', mem="2G", cpu="2", key=None, opts=None, log_name="vm.log", log_suffix="", logger=None, hash_tag=None, timeout=None):
         self.gdb_port = gdb_port
         self.mon_port = mon_port
-        self.vm = VM(linux=linux, arch=arch, port=port, image=image, proj_path=proj_path, mem=mem, cpu=cpu, key=key, gdb_port=gdb_port, mon_port=mon_port, opts=opts, log_name=log_name, hash_tag=hash_tag, debug=self.debug, timeout=timeout, logger=logger)
+        if timeout != None:
+            self._timeout = timeout
+        self.vm = VM(linux=linux, arch=arch, port=port, image=image, proj_path=proj_path, mem=mem, cpu=cpu, key=key, gdb_port=gdb_port, mon_port=mon_port, opts=opts, log_name=log_name, log_suffix=log_suffix, hash_tag=hash_tag, debug=self.debug, timeout=timeout, logger=logger)
     
     def cleanup(self):
         if self.vm != None:
@@ -93,6 +96,8 @@ class SymExec(MemInstrument):
         return p
 
     def run_sym(self, raw_tracing=False, timeout=60*10):
+        if timeout > self._timeout:
+            self.logger.warning("Timeout of symbolic execution is longer than timeout of qemu")
         self._timeout = timeout
         if self.vm == None:
             self.logger.error("Call setup_vm() to initialize the vm first")
@@ -126,7 +131,7 @@ class SymExec(MemInstrument):
         self._prepare_context()
         self._restore_memory()
         self._restore_registers()
-        self._symbolize_vuln_mem()
+        self._symbolize_vuln_mem(raw_tracing)
         if len(self._init_state.globals['sym']) == 0:
             return None
         self._hookup_path(path)
@@ -138,21 +143,21 @@ class SymExec(MemInstrument):
         self.hook_noisy_func(self.extra_noisy_func)
 
         last_state = 0
+        flag_stop = False
         if target_site != None:
             self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.trace_instruction, instruction=target_site)
         self._init_state.inspect.b('mem_read', when=angr.BP_BEFORE, action=self.track_mem_read)
         self._init_state.inspect.b('mem_write', when=angr.BP_BEFORE, action=self.track_mem_write)
         #self._init_state.inspect.b('mem_write', when=angr.BP_AFTER, action=self.track_mem_write_after)
-        self._init_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.track_instruction, instruction=0xffffffff821b7e49)
-        self._init_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.track_instruction, instruction=0xffffffff821b7e5d)
-        #self._init_state.inspect.b('symbolic_variable', when=angr.BP_AFTER, action=self.track_symbolic_variable)
+        self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff84179a80)
+        self._init_state.inspect.b('symbolic_variable', when=angr.BP_AFTER, action=self.track_symbolic_variable)
         #self._init_state.inspect.b('irsb', when=angr.BP_BEFORE, action=self.track_irsb)
 
         self.setup_current_state(self._init_state)
         ok, err = self.init_simgr(raw_tracing)
         if not ok:
             self.logger.error(err)
-            return
+            return self.state_privilege
 
         start_time = time.time()
 
@@ -162,7 +167,7 @@ class SymExec(MemInstrument):
                 #self.logger.info("time left: {}".format(current_time - start_time))
                 if current_time - start_time > self._timeout:
                     self.logger.info("Timeout, stop symbolic execution")
-                    return self._collect_propogating_results()
+                    return self.state_privilege
 
             if len(self.simgr.active) == 1:
                 cur_state = self.get_state_index(self.get_current_state())
@@ -170,11 +175,11 @@ class SymExec(MemInstrument):
                     self.logger.info("Switch state {} to state {}".format(last_state, cur_state))
                     last_state = cur_state
 
-            try:
+            #try:
                 self.simgr.step(successor_func=self._my_successor_func)
-            except Exception as e:
-                self.logger.info("Unexpected error occur: {}".format(str(e)))
-                raise ExecutionError
+            #except Exception as e:
+             #   self.logger.info("Unexpected error occur: {}".format(str(e)))
+              #  raise ExecutionError
             
             if self.debug and len(self.simgr.active) > 0:
                 #self.logger.info("=======dump========")
@@ -182,19 +187,26 @@ class SymExec(MemInstrument):
                 n = len(insns)
                 self.vm.inspect_code(self.simgr.active[0].addr, n)
             
-            if len(self.simgr.active) == 0 and len(self.simgr.deferred) == 0:
-                self.logger.info("No active states")
-                return self._collect_propogating_results()
+            if len(self.simgr.active) == 0:
+                if len(self.simgr.deferred) == 0:
+                    self.logger.info("No active states")
+                    return self.state_privilege
+
             if self.simgr.unconstrained:
                 for each_state in self.simgr.unconstrained:
                     if each_state.regs.rip.symbolic and each_state.satisfiable():
-                        self.logger.info("Reach target site")
+                        self.state_privilege |= StateManager.CONTROL_FLOW_HIJACK
+                        self.logger.warning("Control flow hijack found!")
                         for addr in each_state.globals['sym']:
                             size = each_state.globals['sym'][addr]
                             bv = each_state.memory.load(addr, size=size, inspect=False, endness=archinfo.Endness.LE)
                             self.logger.info("addr {} eval to {}".format(hex(addr), hex(each_state.solver.eval(bv))))
-                            
-        return
+                        self.dump_state(each_state)
+                        self.dump_stack(each_state)
+                        flag_stop = True
+            
+            if flag_stop:
+                return self.state_privilege
     
     def _collect_propogating_results(self):
         self.logger.info("Dump symbolic propagations")
@@ -227,18 +239,19 @@ class SymExec(MemInstrument):
                 self._init_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.instrument_correct_path, instruction=correct_path)
                 hooked.append(correct_path)"""
 
-    def _symbolize_vuln_mem(self):
+    def _symbolize_vuln_mem(self, raw_tracing):
         self._init_state.globals['mem'] = {}
         self._init_state.globals['sym'] = {}
         for i in range(0, self.vul_mem_size):
             val = self.vm.read_mem(self.vul_mem_start + i, 1)
             if len(val) == 1:
                 self.make_symbolic(self._init_state, self.vul_mem_start + i, 1, "s_obj_{}".format(i))
-                bv = self._init_state.memory.load(self.vul_mem_start + i, size=1, inspect=False)
-                if not bv.symbolic:
-                    self.logger.info("Vulnerable memory ({}) is not symbolic".format(hex(self.vul_mem_start + i)))
-                    continue
-                self._init_state.solver.add(bv == val[0])
+                if raw_tracing:
+                    bv = self._init_state.memory.load(self.vul_mem_start + i, size=1, inspect=False)
+                    if not bv.symbolic:
+                        self.logger.info("Vulnerable memory ({}) is not symbolic".format(hex(self.vul_mem_start + i)))
+                        continue
+                    self._init_state.solver.add(bv == val[0])
                 self._init_state.globals['mem'][self.vul_mem_start + i] = 0
                 self._init_state.globals['sym'][self.vul_mem_start + i] = 1
             else:
@@ -310,11 +323,11 @@ class SymExec(MemInstrument):
 
     def _prepare_context(self):
         pc = 0
-        val = self.vm.read_reg('rip')
+        val = self.vm.gdb.get_register('rip')
         if val != None:
             pc = val
         if self.vm.addr_bytes == 4:
-            val = self.vm.read_reg('eip')
+            val = self.vm.gdb.get_register('rip')
             if val != None:
                 pc = val
         if pc == 0:
@@ -358,11 +371,11 @@ class SymExec(MemInstrument):
         successors = succ.successors
         self.transfer_state_globals(state, successors)
         if len(succ.successors) == 1:
-            self.update_states(successors[0], False)
+            self.update_states(successors[0], self.get_state_index(state))
         if len(succ.successors) == 2:
-            self.update_states(successors[1], True)
-            self.update_states(successors[0], False)
-            self.logger.info("state {} fork state {}({}) at {} ".format(self.get_state_index(state), self.state_counter, hex(successors[1].addr), hex(state.addr)))
+            self.update_states(successors[0], self.get_state_index(state))
+            self.update_states(successors[1], None)  # sym will go this way first
+            self.logger.info("state {}({}) fork state {}({}) at {} ".format(self.get_state_index(state), hex(successors[0].addr), self.state_counter, hex(successors[1].addr), hex(state.addr)))
             #cap = self.proj.factory.block(each.addr).capstone
             #cap.pp()
 
@@ -386,5 +399,6 @@ class SymExec(MemInstrument):
 
     def _read_vul_mem(self):
         self._after_gdb_resume(300)
+        self.vm.gdb.waitfor("pwndbg>")
         rdi_val = self.vm.gdb.get_register('rdi')
         return rdi_val

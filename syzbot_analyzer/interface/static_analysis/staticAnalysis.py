@@ -2,6 +2,8 @@ import os, stat
 import logging
 import shutil
 import syzbot_analyzer.interface.utilities as utilities
+import threading
+import time
 
 from subprocess import Popen, PIPE, STDOUT, TimeoutExpired, call
 from .error import CompilingError
@@ -47,12 +49,25 @@ class StaticAnalysis:
                 stdout=PIPE,
                 stderr=STDOUT
                 )
+        x = threading.Thread(target=self.monitor_execution, args=(p,))
+        x.start()
         with p.stdout:
             self.__log_subprocess_output(p.stdout, logging.INFO)
         exitcode = p.wait()
 
         self.case_logger.info("script/deploy-bc.sh is done with exitcode {}".format(exitcode))
         return exitcode
+    
+    def monitor_execution(self, p):
+        count = 0
+        while (count <180):
+            count += 1
+            time.sleep(10)
+            poll = p.poll()
+            if poll != None:
+                return
+        self.case_logger.info('Time out, kill qemu')
+        p.kill()
     
     def adjust_kernel_for_clang(self):
         opts = ["-fno-inline-functions", "-fno-builtin-bcmp"]

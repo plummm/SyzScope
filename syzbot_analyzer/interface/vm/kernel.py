@@ -79,10 +79,10 @@ class Kernel:
     FUNCNAME = 0
     ADDRESS = 1
 
-    def __init__(self, vmlinux, addr_bytes, proj_path, debug):
+    def __init__(self, vmlinux, addr_bytes, proj_path, log_suffix="", debug=False):
         self.proj = angr.Project(vmlinux,
                                  load_options={"auto_load_libs": False})
-        self.gdbhelper = GDBHelper(vmlinux, addr_bytes, proj_path, debug)
+        self.gdbhelper = GDBHelper(vmlinux, addr_bytes, proj_path, debug, log_suffix)
         # private
         self._kasan_report = 0
         self._kasan_ret = []

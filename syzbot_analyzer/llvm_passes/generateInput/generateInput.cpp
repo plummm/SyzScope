@@ -71,8 +71,8 @@ struct thisPass : public ModulePass {
                 }
                 fileName = dbgloc->getFilename().str();
                 curLine = dbgloc->getLine();
-                errs() << fileName << ":" << curLine << "\n";
-                errs() << (*I) << "\n";
+                //errs() << fileName << ":" << curLine << "\n";
+                //errs() << (*I) << "\n";
                 /*if (curLine >= func_bound[0] && curLine <= func_bound[1]) {
                     if (curLine < BUG_Func_Line && basePointer != NULL)
                         break;
