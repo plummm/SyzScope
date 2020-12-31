@@ -628,11 +628,11 @@ def cmp_case_with_last_day(case):
     return -1
 
 if __name__ == '__main__':
-    res = urlsOfCases("/home/xzou017/projects/SyzbotAnalyzer/work/error/")
-    for each in res:
-        print(each)
-    """
-    crashes = load_cases_from_json('./cases_.json')
+    #res = urlsOfCases("/home/xzou017/projects/SyzbotAnalyzer/work/error/")
+    #for each in res:
+    #    print(each)
+    
+    crashes = load_cases_from_json('/home/xzou017/projects/SyzbotAnalyzer/cases_.json')
     sorted_cases = sorted(crashes, key=cmp_case_with_last_day)
     # libraries
     import numpy as np
@@ -669,6 +669,6 @@ if __name__ == '__main__':
     ax.plot(x, y)
     #ax.fill_between(x, 0, y, alpha=.3)
     ax.set(xlim=(0, len(x) - 1), ylim=(0, None), xticks=x)
-    """
+    
 
     

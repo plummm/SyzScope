@@ -104,7 +104,7 @@ class Deployer(Workers):
                         self.__save_error(hash_val)
                         return
                     self.do_symbolic_tracing(case, i386)
-                    return
+                return
             ### DEBUG SYMEXEC ###
 
             r = self.__run_delopy_script(hash_val[:7], case, need_patch)

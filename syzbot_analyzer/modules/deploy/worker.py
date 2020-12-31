@@ -60,7 +60,7 @@ class Workers(Case):
             sym_logger = self.__init_logger(cur_sym_log)
             sym_logger.info("round {}: symbolic tracing".format(i))
             sym = sym_exec.SymExec(logger=sym_logger, index=self.index, debug=self.debug)
-            sym.setup_vm(linux_path, arch, self.default_port+self.index, self.image_path, self.gdb_port+self.index, self.qemu_monitor_port+self.index, proj_path=self.current_case_path, cpu="2", logger=self.case_logger, hash_tag=self.hash_val[:7], log_name="sym/vm.log", log_suffix="-{}".format(i),  timeout=35*60)
+            sym.setup_vm(linux_path, arch, self.default_port+self.index, self.image_path, self.gdb_port+self.index, self.qemu_monitor_port+self.index, proj_path=self.current_case_path, cpu="2", logger=self.case_logger, hash_tag=self.hash_val[:7], log_name="sym/vm.log", log_suffix="-{}".format(i),  timeout=130*60)
             p = None
             try:
                 p = sym.run_vm()
@@ -97,7 +97,10 @@ class Workers(Case):
             #paths.append({'cond': 0, 'correct_path': 0, 'wrong_path': 0xffffffff8328c7ad})
             sym.setup_bug_capture(offset, size)
             try:
-                ret = sym.run_sym(raw_tracing, timeout=30*60)
+                ret = sym.run_sym(raw_tracing, timeout=120*60)
+                if ret == None:
+                    sym.cleanup()
+                    continue
                 if ret & StateManager.CONTROL_FLOW_HIJACK:
                     self.logger.warning("Control flow hijack found")
                 if ret & StateManager.ARBITRARY_VALUE_WRITE:
@@ -108,6 +111,8 @@ class Workers(Case):
                     self.logger.warning("Arbitrary address write found")
                 if ret & StateManager.FINITE_ADDR_WRITE:
                     self.logger.warning("Finite address write found")
+                sym.cleanup()
+                return
                 #if ret != None and len(ret) > 0:
                 #    is_propagating_global = True
             except VulnerabilityNotTrigger:
@@ -118,8 +123,8 @@ class Workers(Case):
                 sym_logger.warning("Abnormal GDB behavior occured")
             except QemuIsDead:
                 self.logger.error("Error occur when executing symbolic tracing: QemuIsDead")
-            else:
-                sym_logger.error("Unknown exception occur during symboulic execution")
+            #except Exception as e:
+            #    sym_logger.error("Unknown exception occur during symboulic execution: {}".format(e))
             sym.cleanup()
             time.sleep(1)
         if max_round == exception_count:

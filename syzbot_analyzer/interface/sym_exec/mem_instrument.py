@@ -70,7 +70,7 @@ class MemInstrument(StateManager):
         bv_addr = state.inspect.mem_write_address
         bv_expr = state.inspect.mem_write_expr
         addr = state.solver.eval(bv_addr)
-        size = state.solver.eval(state.inspect.mem_write_length)
+        size = len(bv_expr) // 8
         #addr = self._access_seg_regs(state, addr, True)
         if self._is_symbolic(bv_addr):
             if self.is_under_constrained(bv_addr):
@@ -95,11 +95,8 @@ class MemInstrument(StateManager):
                 stack = self.dump_stack(state)
                 self.ppg_handler.log_symbolic_propagation(state, stack)
                     #self.dump_state(state)
-        #b = math.ceil(size/8)
-        #n = size - b * 8
         for i in range(0, size):
             self.update_states_globals(addr+i, 0, StateManager.G_MEM)
-        #self.dump_state(state)
     
     def track_call(self, state):
         if state.regs.rip.symbolic:
@@ -174,7 +171,9 @@ class MemInstrument(StateManager):
             file, line = self.vm.get_dbg_info(call_site)
             ret.append("{}\n{}:{}".format(func_name, file, line))
             callstack = callstack.next
-        return ret
+        for each in ret:
+            self.logger.info(each)
+        return
         
 
     def hook_noisy_func(self, extra):    
@@ -243,11 +242,14 @@ class MemInstrument(StateManager):
         self.proj.hook(addr, nothing, length=insn_len)
     
     def make_symbolic(self, state, addr, size, name=None):
-        if (size <= 8):
+        if size <= 8:
             if name == None:
                 name = "s_{}".format(hex(addr))
             sym = state.solver.BVS(name, size * 8, inspect=False)
-            state.memory.store(addr, sym)
+            self.update_states_globals(addr, size, StateManager.G_SYM)
+            for i in range(0, size):
+                self.update_states_globals(addr+i, 0, StateManager.G_MEM)
+            state.memory.store(addr, sym, inspect=False)
         else:
             index = 0
             while index < size:
@@ -258,7 +260,10 @@ class MemInstrument(StateManager):
                 if index + 8 > size:
                     size -= index
                 sym = state.solver.BVS(name, size * 8, inspect=False)
-                state.memory.store(addr, sym)
+                self.update_states_globals(addr, size, StateManager.G_SYM)
+                for i in range(0, size):
+                    self.update_states_globals(addr+i, 0, StateManager.G_MEM)
+                state.memory.store(addr, sym, inspect=False)
                 index += 8
     
     def transfer_state_globals(self, state, successors):
@@ -319,7 +324,6 @@ class MemInstrument(StateManager):
             if self._is_ctr_addr(addr):
                 self.make_symbolic(state, addr, size)
                 self.logger.info("Make symbolic at {}".format(hex(state.scratch.ins_addr)))
-                self.update_states_globals(addr, size, StateManager.G_SYM)
             else:
                 val = self.vm.read_mem(addr, size)
                 #self.logger.info('Store at', hex(addr), ' with value ', val)
@@ -328,10 +332,8 @@ class MemInstrument(StateManager):
                         for each in val:
                             group = len(val)
                             state.memory.store(addr, state.solver.BVV(each, round(size/group)*8), endness=archinfo.Endness.LE)
-
                     else:
                         self.make_symbolic(state, addr, size)
-                        self.update_states_globals(addr, size, StateManager.G_SYM)
                         bv = state.memory.load(addr, size, inspect=False)
                         state.solver.add(bv == val[0])
                     #self.dump_state(state)

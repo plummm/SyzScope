@@ -1,0 +1,1 @@
+/home/xzou017/tools/llvm-project/build/bin/clang++ -fPIC -g -shared  -o libgenerateInput.so CMakeFiles/generateInput.dir/generateInput.cpp.o 

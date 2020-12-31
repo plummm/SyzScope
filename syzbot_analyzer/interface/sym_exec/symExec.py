@@ -127,6 +127,7 @@ class SymExec(MemInstrument):
                   angr.options.REGION_MAPPING,
                   angr.options.ZERO_FILL_UNCONSTRAINED_REGISTERS}
         self._init_state = self.proj.factory.blank_state(addr=0, add_options=extras)
+        self.setup_current_state(self._init_state)
         self._after_gdb_resume(300)
         self._prepare_context()
         self._restore_memory()
@@ -144,16 +145,11 @@ class SymExec(MemInstrument):
 
         last_state = 0
         flag_stop = False
-        if target_site != None:
-            self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.trace_instruction, instruction=target_site)
-        self._init_state.inspect.b('mem_read', when=angr.BP_BEFORE, action=self.track_mem_read)
-        self._init_state.inspect.b('mem_write', when=angr.BP_BEFORE, action=self.track_mem_write)
-        #self._init_state.inspect.b('mem_write', when=angr.BP_AFTER, action=self.track_mem_write_after)
-        self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff84179a80)
-        self._init_state.inspect.b('symbolic_variable', when=angr.BP_AFTER, action=self.track_symbolic_variable)
-        #self._init_state.inspect.b('irsb', when=angr.BP_BEFORE, action=self.track_irsb)
+        self.get_current_state().inspect.b('mem_read', when=angr.BP_BEFORE, action=self.track_mem_read)
+        self.get_current_state().inspect.b('mem_write', when=angr.BP_BEFORE, action=self.track_mem_write)
+        #self.get_current_state().inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff84179a80)
+        self.get_current_state().inspect.b('symbolic_variable', when=angr.BP_AFTER, action=self.track_symbolic_variable)
 
-        self.setup_current_state(self._init_state)
         ok, err = self.init_simgr(raw_tracing)
         if not ok:
             self.logger.error(err)
@@ -188,9 +184,10 @@ class SymExec(MemInstrument):
                 self.vm.inspect_code(self.simgr.active[0].addr, n)
             
             if len(self.simgr.active) == 0:
-                if len(self.simgr.deferred) == 0:
-                    self.logger.info("No active states")
-                    return self.state_privilege
+                # No dfs no deferred
+                #if len(self.simgr.deferred) == 0:
+                self.logger.info("No active states")
+                return self.state_privilege
 
             if self.simgr.unconstrained:
                 for each_state in self.simgr.unconstrained:
@@ -240,8 +237,6 @@ class SymExec(MemInstrument):
                 hooked.append(correct_path)"""
 
     def _symbolize_vuln_mem(self, raw_tracing):
-        self._init_state.globals['mem'] = {}
-        self._init_state.globals['sym'] = {}
         for i in range(0, self.vul_mem_size):
             val = self.vm.read_mem(self.vul_mem_start + i, 1)
             if len(val) == 1:
@@ -252,8 +247,6 @@ class SymExec(MemInstrument):
                         self.logger.info("Vulnerable memory ({}) is not symbolic".format(hex(self.vul_mem_start + i)))
                         continue
                     self._init_state.solver.add(bv == val[0])
-                self._init_state.globals['mem'][self.vul_mem_start + i] = 0
-                self._init_state.globals['sym'][self.vul_mem_start + i] = 1
             else:
                 self.logger.info("Vulnerable memory has strange data: {}".format(val))
                 return
@@ -343,8 +336,6 @@ class SymExec(MemInstrument):
         error_opcode = ['ud2', 'rdtsc', 'in', 'out']
         insns = self.proj.factory.block(addr).capstone.insns
         if len(insns) == 0:
-            self.logger.error("No instruction in {}".format(hex(addr)))
-            self.dump_state(self.get_current_state())
             return
         offset = 0
         for inst in insns:
