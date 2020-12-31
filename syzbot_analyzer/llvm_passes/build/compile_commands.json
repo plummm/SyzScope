@@ -1,7 +1,0 @@
-[
-{
-  "directory": "/home/xzou017/projects/SyzbotAnalyzer/syzbot_analyzer/llvm_passes/build/generateInput",
-  "command": "/home/xzou017/tools/llvm-project/build/bin/clang++ -DgenerateInput_EXPORTS -I/home/xzou017/tools/llvm-project/llvm/include -I/home/xzou017/tools/llvm-project/build/include -g -fPIC   -D_GNU_SOURCE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -fno-rtti -o CMakeFiles/generateInput.dir/generateInput.cpp.o -c /home/xzou017/projects/SyzbotAnalyzer/syzbot_analyzer/llvm_passes/generateInput/generateInput.cpp",
-  "file": "/home/xzou017/projects/SyzbotAnalyzer/syzbot_analyzer/llvm_passes/generateInput/generateInput.cpp"
-}
-]
