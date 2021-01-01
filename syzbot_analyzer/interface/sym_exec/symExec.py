@@ -185,9 +185,9 @@ class SymExec(MemInstrument):
             
             if len(self.simgr.active) == 0:
                 # No dfs no deferred
-                #if len(self.simgr.deferred) == 0:
-                self.logger.info("No active states")
-                return self.state_privilege
+                if len(self.simgr.deferred) == 0:
+                    self.logger.info("No active states")
+                    return self.state_privilege
 
             if self.simgr.unconstrained:
                 for each_state in self.simgr.unconstrained:

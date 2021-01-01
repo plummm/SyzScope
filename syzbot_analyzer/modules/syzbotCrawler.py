@@ -110,7 +110,9 @@ class Crawler:
                     if title == None:
                         continue
                     for keyword in self.keyword:
-                        if keyword in title.text or keyword=='':
+                        keyword = keyword.lower()
+                        low_case_title = title.text.lower()
+                        if keyword in low_case_title or keyword=='':
                             crash = {}
                             commit_list = case.find('td', {"class": "commit_list"})
                             crash['Title'] = title.text

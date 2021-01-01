@@ -602,15 +602,37 @@ def retrieve_cases_match_regx(dirOfCases, regx):
                 res.append(r)
     
     return res
-"""
+
 def save_cases_as_json(key, max_num):
+    from syzbot_analyzer.modules import Crawler
     crawler = Crawler(keyword=key, max_retrieve=max_num)
     cases = crawler.gather_cases()
     with open('cases_{}.json'.format("-".join(key)), 'w') as f:
         for each in cases:
+            r = request_get(each['Patch'])
+            soup = BeautifulSoup(r.text, "html.parser")
+            commit_info = soup.find_all('table', {'class': 'commit-info'})
+            if len(commit_info) > 0:
+                try:
+                    date_time_str = commit_info[0].contents[1].contents[2].contents[0]
+                except:
+                    print(each, 'has no valid commit date')
+                    continue
+                import datetime
+                date_time_obj = datetime.datetime.strptime(date_time_str, '%Y-%m-%d %H:%M:%S -%f')
+                patched = datetime.datetime.today() - date_time_obj
+                reported = regx_get(r'(\d+)d', each['Reported'], 0)
+                if reported == None:
+                    continue
+                reported = int(reported)
+                if reported > patched.days:
+                    each['how_long_to_fix'] = reported - patched.days
+                else:
+                    each['how_long_to_fix'] = -1
             json.dump(each, f)
             f.write('\n')
-"""
+    return cases
+
 def load_cases_from_json(path):
     res = []
     with open(path, 'r') as f:
@@ -631,8 +653,8 @@ if __name__ == '__main__':
     #res = urlsOfCases("/home/xzou017/projects/SyzbotAnalyzer/work/error/")
     #for each in res:
     #    print(each)
-    
-    crashes = load_cases_from_json('/home/xzou017/projects/SyzbotAnalyzer/cases_.json')
+    crashes = save_cases_as_json([], 999999999)
+    #crashes = load_cases_from_json('/home/xzou017/projects/SyzbotAnalyzer/cases_.json')
     sorted_cases = sorted(crashes, key=cmp_case_with_last_day)
     # libraries
     import numpy as np

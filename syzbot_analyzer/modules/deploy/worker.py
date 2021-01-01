@@ -60,7 +60,7 @@ class Workers(Case):
             sym_logger = self.__init_logger(cur_sym_log)
             sym_logger.info("round {}: symbolic tracing".format(i))
             sym = sym_exec.SymExec(logger=sym_logger, index=self.index, debug=self.debug)
-            sym.setup_vm(linux_path, arch, self.default_port+self.index, self.image_path, self.gdb_port+self.index, self.qemu_monitor_port+self.index, proj_path=self.current_case_path, cpu="2", logger=self.case_logger, hash_tag=self.hash_val[:7], log_name="sym/vm.log", log_suffix="-{}".format(i),  timeout=130*60)
+            sym.setup_vm(linux_path, arch, self.default_port+self.index, self.image_path, self.gdb_port+self.index, self.qemu_monitor_port+self.index, proj_path=self.current_case_path, cpu="2", logger=self.case_logger, hash_tag=self.hash_val[:7], log_name="sym/vm.log", log_suffix="-{}".format(i),  timeout=70*60)
             p = None
             try:
                 p = sym.run_vm()
@@ -68,7 +68,7 @@ class Workers(Case):
                 self.logger.error("Error occur when executing symbolic tracing: QemuIsDead")
             if p == None:
                 self.logger.error("Fail to lauch qemu")
-                sym.cleanup()
+                self.cleanup(sym)
                 continue
             exitcode = p.poll()
             if exitcode != None:
@@ -76,7 +76,7 @@ class Workers(Case):
                 if exitcode == -9:
                     err = 'SIGKILL'
                 self.logger.error('QEMU exit due to: {}'.format(err))
-                sym.cleanup()
+                self.cleanup(sym)
                 continue
             sym_logger.info("Uploading poc and triggering the crash")
             ok, output = self.crash_checker.upload_exp(case["syz_repro"], self.default_port+self.index, case["syzkaller"], utilities.URL, case["c_repro"], i386, 0)
@@ -84,7 +84,7 @@ class Workers(Case):
                 sym_logger.info(line)
             if ok == 0:
                 self.logger.error("Error occur at upload exp")
-                sym.cleanup()
+                self.cleanup(sym)
                 continue
 
             self.crash_checker.run_exp(case["syz_repro"], self.default_port+self.index, utilities.URL, ok, i386, 0)
@@ -97,9 +97,9 @@ class Workers(Case):
             #paths.append({'cond': 0, 'correct_path': 0, 'wrong_path': 0xffffffff8328c7ad})
             sym.setup_bug_capture(offset, size)
             try:
-                ret = sym.run_sym(raw_tracing, timeout=120*60)
+                ret = sym.run_sym(raw_tracing, timeout=60*60)
                 if ret == None:
-                    sym.cleanup()
+                    self.cleanup(sym)
                     continue
                 if ret & StateManager.CONTROL_FLOW_HIJACK:
                     self.logger.warning("Control flow hijack found")
@@ -111,8 +111,10 @@ class Workers(Case):
                     self.logger.warning("Arbitrary address write found")
                 if ret & StateManager.FINITE_ADDR_WRITE:
                     self.logger.warning("Finite address write found")
-                sym.cleanup()
-                return
+                if ret == 0:
+                    self.logger.warning("No additional use")
+                self.cleanup(sym)
+                break
                 #if ret != None and len(ret) > 0:
                 #    is_propagating_global = True
             except VulnerabilityNotTrigger:
@@ -125,7 +127,7 @@ class Workers(Case):
                 self.logger.error("Error occur when executing symbolic tracing: QemuIsDead")
             #except Exception as e:
             #    sym_logger.error("Unknown exception occur during symboulic execution: {}".format(e))
-            sym.cleanup()
+            self.cleanup(sym)
             time.sleep(1)
         if max_round == exception_count:
             self.logger.warning("Can not trigger vulnerability. Abaondoned")
@@ -215,6 +217,10 @@ class Workers(Case):
             self.index,
             compiler=self.compiler)
     
+    def cleanup(self, obj):
+        obj.cleanup()
+        del obj
+
     def reproduced_ori_poc(self, hash_val, folder):
         return self.__check_stamp(stamp_reproduce_ori_poc, hash_val[:7], folder)
     
