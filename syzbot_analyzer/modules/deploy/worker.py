@@ -24,7 +24,7 @@ class Workers(Case):
     def do_symbolic_tracing(self, case, i386, max_round=3, raw_tracing=False):
         self.logger.info("initial environ of symbolic execution")
         self.sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.index, self.current_case_path, self.linux_folder)
-        self.init_crash_checker()
+        self.init_crash_checker(4777)
         r = utilities.request_get(case['report'])
         #_, _, _, offset, size = self.sa.KasanVulnChecker(r.text)
         offset = case["vul_offset"]
@@ -177,7 +177,7 @@ class Workers(Case):
     def do_reproducing_ori_poc(self, case, hash_val, i386):
         self.logger.info("Try to triger the OOB/UAF by running original poc")
         self.case_info_logger.info("compiler: "+self.compiler)
-        self.init_crash_checker()
+        self.init_crash_checker(3777)
         report, trigger = self.crash_checker.read_crash(case["syz_repro"], case["syzkaller"], None, 0, case["c_repro"], i386)
         write_without_mutating, title = self.KasanWriteChecker(report, hash_val)
         self.__create_stamp(stamp_reproduce_ori_poc)
@@ -207,11 +207,11 @@ class Workers(Case):
                         break
         return ret, title
     
-    def init_crash_checker(self):
+    def init_crash_checker(self, port):
         self.crash_checker = CrashChecker(
             self.project_path,
             self.current_case_path,
-            3777,
+            port,
             self.logger,
             self.debug,
             self.index,

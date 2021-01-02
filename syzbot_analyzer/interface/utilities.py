@@ -166,7 +166,7 @@ def extract_vul_obj_offset_and_size(report):
     bug_type = extract_bug_type(report)
     bug_mem_addr = extract_bug_mem_addr(report)
     if bug_mem_addr == None:
-        print("Failed to locate the memory address that trigger UAF/OOB")
+        #print("Failed to locate the memory address that trigger UAF/OOB")
         return offset
     if bug_type == KASAN_NONE:
         return offset
