@@ -60,8 +60,8 @@ fi
 
 if [ "$COMPILE" != "1" ]; then
 git stash
-# do not delete kernel/time/timeconst.bc
-find -type f -name '.*.bc' -delete
+
+find -type f -name '*.bc' ! -name "timeconst.bc" -delete
 git clean -fdx -e THIS_KERNEL_IS_BEING_USED > /dev/null || echo "cleanning interrupt"
 git checkout -f $COMMIT || (git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1 && git checkout -f $COMMIT)
 
@@ -95,10 +95,10 @@ else
   echo "error occur at compiling...try to extract specific bc file"
   #make clean CC=wllvm
   find -type f -name '*.o' -delete
-  find -type f -name '*.bc' -delete
+  find -type f -name '*.bc' ! -name "timeconst.bc" -delete
   # restore some kernel files end with .o or .bc 
-  git stash
-  make -n CC=wllvm > wllvm_log || find -type f -name '*.bc' -delete
+  #git stash
+  make -n CC=wllvm > wllvm_log || find -type f -name '*.bc' ! -name "timeconst.bc" -delete
   exit 1
   #cd $BC_PATH
   #llvm-link -o one.bc `find ./ -name "*.bc" ! -name "timeconst.bc"` || exit 1

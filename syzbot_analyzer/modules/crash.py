@@ -24,16 +24,16 @@ reboot_regx = r'reboot: machine restart'
 port_error_regx = r'Could not set up host forwarding rule'
 magic_regx = r'\?!\?MAGIC\?!\?read->(\w*) size->(\d*)'
 write_regx = r'Write of size (\d+) at addr (\w*)'
+read_regx = r'Read of size (\d+) at addr (\w*)'
 default_port = 3777
 project_path = ""
 NONCRASH = 0
 CONFIRM = 1
 SUSPICIOUS = 2
 thread_fn = None
-qemu_num = 3
 
 class CrashChecker:
-    def __init__(self, project_path, case_path, ssh_port, logger, debug, offset, compiler="gcc-7"):
+    def __init__(self, project_path, case_path, ssh_port, logger, debug, offset, qemu_num, store_read=False, compiler="gcc-7"):
         os.makedirs("{}/poc".format(case_path), exist_ok=True)
         self.kasan_regx = r'KASAN: ([a-z\\-]+) Write in ([a-zA-Z0-9_]+).*'
         self.free_regx = r'KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
@@ -43,9 +43,11 @@ class CrashChecker:
         self.case_path = case_path
         self.image_path = "{}/img".format(self.case_path)
         self.linux_path = "{}/linux".format(self.case_path)
+        self.qemu_num = qemu_num
         self.ssh_port = ssh_port+offset*qemu_num
         self.kasan_func_list = self.read_kasan_funcs()
         self.debug = debug
+        self.store_read = store_read
         self.compiler = compiler
         self.kill_qemu = False
         self.queue = queue.Queue()
@@ -227,13 +229,13 @@ class CrashChecker:
             res = self.read_from_log(log)
         else:
             self.case_logger.info("=============================crash.read_crash=============================")
-            for i in range(0, qemu_num):
+            for i in range(0, self.qemu_num):
                 x = threading.Thread(target=self.trigger_ori_crash, args=(syz_repro, syz_commit, c_repro, i386, i, fixed,), name="trigger_ori_crash-{}".format(i))
                 x.start()
                 if self.debug:
                     x.join()
                 #crashes, trigger = self.trigger_ori_crash(syz_repro, syz_commit, c_repro, i386, fixed)
-            for i in range(0, qemu_num):
+            for i in range(0, self.qemu_num):
                 [crashes, high_risk] = self.queue.get(block=True)
                 if not trigger and high_risk:
                     trigger = high_risk
@@ -326,7 +328,7 @@ class CrashChecker:
 
     def trigger_ori_crash(self, syz_repro, syz_commit, c_repro, i386, th_index,fixed=0):
         res = []
-        trgger_high_risk_bug = False
+        trgger_hunted_bug = False
         repro_type = utilities.CASE
         if utilities.regx_match(r'https:\/\/syzkaller\.appspot\.com\/', syz_repro):
             repro_type = utilities.URL
@@ -338,7 +340,7 @@ class CrashChecker:
                 self.logger.info("Failed to parse repro {}".format(syz_repro))
         else:
             c_hash = syz_commit + "-ori"
-        qemu = VM(linux=self.linux_path, port=self.ssh_port+th_index, image=self.image_path, proj_path="{}/poc/".format(self.case_path) ,log_name="qemu-{}-{}.log".format(c_hash, th_index), timeout=10*60)
+        qemu = VM(hash_tag=syz_commit, linux=self.linux_path, port=self.ssh_port+th_index, image=self.image_path, proj_path="{}/poc/".format(self.case_path) ,log_name="qemu-{}-{}.log".format(c_hash, th_index), timeout=10*60)
         qemu.qemu_logger.info("QEMU-{} launched. Fixed={}\n".format(th_index, fixed))
         p = qemu.run()
         #x = threading.Thread(target=self.monitor_execution, args=(p,))
@@ -348,60 +350,71 @@ class CrashChecker:
             record_flag = 0
             kasan_flag = 0
             write_flag = 0
+            read_flag = 0
             crash = []
-            for line in iter(p.stdout.readline, b''):
-                try:
-                    line = line.decode("utf-8").strip('\n').strip('\r')
-                except:
-                    self.logger.info('bytes array \'{}\' cannot be converted to utf-8'.format(line))
-                    continue
-                if utilities.regx_match(reboot_regx, line) or utilities.regx_match(port_error_regx, line):
-                    self.case_logger.error("Thread {}: Booting qemu-{} failed".format(th_index, th_index))
-                #qemu.log.write(line+"\n")
-                if self.debug:
-                    print(line)
-                if utilities.regx_match(startup_regx, line):
-                    ok, output = self.upload_exp(syz_repro, self.ssh_port+th_index, syz_commit, repro_type, c_repro, i386, fixed)
-                    if not ok:
-                        p.kill()
-                        break
-                    for line in output:
-                        qemu.qemu_logger.info(line)
-                    ok, output = self.run_exp(syz_repro, self.ssh_port+th_index, repro_type, ok, i386, th_index)
-                    if not ok:
-                        p.kill()
-                        break
-                    for line in output:
-                        qemu.qemu_logger.info(line)
-                    extract_report=True
-                if extract_report:
-                    if utilities.regx_match(call_trace_regx, line) or \
-                       utilities.regx_match(message_drop_regx, line):
-                        record_flag = 1
-                    if utilities.regx_match(boundary_regx, line) or \
-                       utilities.regx_match(panic_regx, line):
-                        if record_flag == 1:
-                            res.append(crash)
-                            crash = []
-                            if kasan_flag == 1 and write_flag == 1:
-                                trgger_high_risk_bug = True
-                                self.logger.debug("QEMU threaded {}: OOB/UAF write triggered".format(th_index))
-                                p.kill()
-                                break
-                        record_flag = 1
+            try:
+                for line in iter(p.stdout.readline, b''):
+                    try:
+                        line = line.decode("utf-8").strip('\n').strip('\r')
+                    except:
+                        self.logger.info('bytes array \'{}\' cannot be converted to utf-8'.format(line))
                         continue
-                    if utilities.regx_match(kasan_regx, line) or \
-                       utilities.regx_match(free_regx, line):
-                        kasan_flag = 1
-                    if utilities.regx_match(write_regx, line):
-                        write_flag = 1
-                    if record_flag or kasan_flag:
-                        crash.append(line)
+                    if utilities.regx_match(reboot_regx, line) or utilities.regx_match(port_error_regx, line):
+                        self.case_logger.error("Thread {}: Booting qemu-{} failed".format(th_index, th_index))
+                    #qemu.log.write(line+"\n")
+                    if self.debug:
+                        print(line)
+                    if utilities.regx_match(startup_regx, line):
+                        ok, output = self.upload_exp(syz_repro, self.ssh_port+th_index, syz_commit, repro_type, c_repro, i386, fixed)
+                        if not ok:
+                            p.kill()
+                            break
+                        for line in output:
+                            qemu.qemu_logger.info(line)
+                        ok, output = self.run_exp(syz_repro, self.ssh_port+th_index, repro_type, ok, i386, th_index)
+                        if not ok:
+                            p.kill()
+                            break
+                        for line in output:
+                            qemu.qemu_logger.info(line)
+                        extract_report=True
+                    if extract_report:
+                        if utilities.regx_match(call_trace_regx, line) or \
+                        utilities.regx_match(message_drop_regx, line):
+                            record_flag = 1
+                        if utilities.regx_match(boundary_regx, line) or \
+                        utilities.regx_match(panic_regx, line):
+                            if record_flag == 1:
+                                res.append(crash)
+                                crash = []
+                                if kasan_flag and (write_flag or read_flag):
+                                    trgger_hunted_bug = True
+                                    if write_flag:
+                                        self.logger.debug("QEMU threaded {}: OOB/UAF write triggered".format(th_index))
+                                    if read_flag:
+                                        self.logger.debug("QEMU threaded {}: OOB/UAF read triggered".format(th_index))
+                                    p.kill()
+                                    break
+                            record_flag = 1
+                            continue
+                        if utilities.regx_match(kasan_regx, line) or \
+                        utilities.regx_match(free_regx, line):
+                            kasan_flag = 1
+                        if utilities.regx_match(write_regx, line):
+                            write_flag = 1
+                        if self.store_read and utilities.regx_match(read_regx, line):
+                            read_flag = 1
+                        if record_flag or kasan_flag:
+                            crash.append(line)
+            except Exception as e:
+                self.case_logger.error("Exception occur when reporducing crash: {}".format())
+                if p.poll() == None:
+                    p.kill()
         if not extract_report:
             res = ['QEMU threaded {}: Error occur at booting qemu'.format(th_index)]
             if p.poll() == None:
                 p.kill()
-        self.queue.put([res, trgger_high_risk_bug])
+        self.queue.put([res, trgger_hunted_bug])
         return
 
     def upload_exp(self, syz_repro, port, syz_commit, repro_type, c_repro, i386, fixed):
@@ -670,7 +683,7 @@ def reproduce_with_ori_poc(index):
         logger.info("Running case: {}".format(hash))
         offset = index
         gcc = utilities.set_gcc_version(time_parser.parse(case["time"]))
-        checker = CrashChecker(project_path, case_path, default_port, logger, args.debug, offset, gcc=gcc)
+        checker = CrashChecker(project_path, case_path, default_port, logger, args.debug, offset, 4, gcc=gcc)
         if checker.deploy_linux(commit,config,0) == 1:
             print("Thread {}: running case {}: Error occur in deploy_linux.sh".format(index, hash[:7]))
             continue
@@ -743,7 +756,7 @@ def reproduce_one_case(index):
         logger.info("Running case: {}".format(hash))
         offset = index
         gcc = utilities.set_gcc_version(time_parser.parse(case["time"]))
-        checker = CrashChecker(project_path, case_path, default_port, logger, args.debug, offset, gcc=gcc)
+        checker = CrashChecker(project_path, case_path, default_port, logger, args.debug, offset, 4, gcc=gcc)
         checker.case_logger.info("=============================A reproducing process starts=============================")
         if args.identify_by_trace:
             if args.reproduce:
@@ -788,6 +801,8 @@ def args_parse():
                         '(default value is 3777)')
     parser.add_argument('--identify-by-trace', '-ibt', action='store_true',
                         help='Reproduce on fixed kernel')
+    parser.add_argument('--store-read', action='store_true',
+                        help='Do not ignore memory reading')
     parser.add_argument('--identify-by-patch', '-ibp', action='store_true',
                         help='Reproduce on unfixed kernel')
     parser.add_argument('--test-original-poc', action='store_true',

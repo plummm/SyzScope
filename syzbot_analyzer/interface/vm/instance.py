@@ -10,7 +10,7 @@ from subprocess import Popen, PIPE, STDOUT, call
 
 class VMInstance:
 
-    def __init__(self, proj_path='/tmp/', log_name='vm.log', log_suffix="", logger=None, hash_tag=None, debug=False):
+    def __init__(self, hash_tag, proj_path='/tmp/', log_name='vm.log', log_suffix="", logger=None, debug=False):
         self.proj_path = proj_path
         self.port = None
         self.image = None
@@ -33,6 +33,7 @@ class VMInstance:
                         "kvm-intel.enable_apicv=1"]
         log_name += log_suffix
         self.qemu_logger = self.init_logger(os.path.join(proj_path, log_name))
+        self.case_logger = self.qemu_logger
         if logger != None:
             self.case_logger = logger
         self._qemu = None
@@ -80,6 +81,9 @@ class VMInstance:
     def run(self):
         p = Popen(self.cmd_launch, stdout=PIPE, stderr=STDOUT)
         self._qemu = p
+        if self.timeout != None:
+            x = threading.Thread(target=self.monitor_execution, name="{} qemu killer".format(self.hash_tag))
+            x.start()
         x1 = threading.Thread(target=self.__log_qemu, args=(p.stdout,), name="{} qemu logger".format(self.hash_tag))
         x1.start()
 
@@ -142,6 +146,6 @@ class VMInstance:
                     print(line)
                 if self._qemu.poll() != None:
                     return
-        except:
+        except EOFError:
             # Qemu may crash and makes pipe NULL
             return

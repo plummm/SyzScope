@@ -9,7 +9,6 @@ import syzbot_analyzer.interface.utilities as utilities
 from syzbot_analyzer.modules.syzbotCrawler import syzbot_host_url, syzbot_bug_base_url
 from syzbot_analyzer.interface import s2e, static_analysis, sym_exec
 from subprocess import call, Popen, PIPE, STDOUT
-from syzbot_analyzer.modules.crash import CrashChecker, kasan_regx, free_regx
 from syzbot_analyzer.interface.utilities import chmodX
 from dateutil import parser as time_parser
 from .worker import Workers
@@ -29,7 +28,7 @@ syz_config_template="""
         "analyzer_dir": "{6}",
         "time_limit": "{7}",
         "vm": {{
-                "count": 4,
+                "count": {9},
                 "kernel": "{1}/arch/x86/boot/bzImage",
                 "cpu": 2,
                 "mem": 2048
@@ -92,8 +91,8 @@ class Deployer(Workers):
                 return
 
             need_patch = 0
-            if self.__need_kasan_patch(case['title']):
-                need_patch = 1
+            #if self.__need_kasan_patch(case['title']):
+            #    need_patch = 1
 
             ### DEBUG SYMEXEC ###
             if self.symbolic_tracing:
@@ -116,7 +115,12 @@ class Deployer(Workers):
             need_fuzzing = False
             title = None
             if not self.reproduced_ori_poc(hash_val, 'incomplete'):
-                write_without_mutating, title = self.do_reproducing_ori_poc(case, hash_val, i386)
+                store_read = True
+                if 'use-after-free' in case['title'] or 'out-of-bounds' in case['title']:
+                    store_read = False
+                write_without_mutating, title = self.do_reproducing_ori_poc(case, hash_val, i386, store_read)
+                if store_read:
+                    write_without_mutating = False
 
             if self.force_fuzz or not write_without_mutating:
                 path = None
@@ -458,7 +462,7 @@ class Deployer(Workers):
         new_syscalls.extend(dependent_syscalls)
         new_syscalls = utilities.unique(new_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(new_syscalls) + "\""
-        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash_val, self.default_port+self.index, self.current_case_path, self.time_limit, self.arch)
+        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash_val, self.ssh_port, self.current_case_path, self.time_limit, self.arch, self.max_qemu_for_one_case)
         f = open(os.path.join(self.syzkaller_path, "workdir/{}-poc.cfg".format(hash_val)), "w")
         f.writelines(syz_config)
         f.close()
@@ -473,7 +477,7 @@ class Deployer(Workers):
         new_syscalls.extend(raw_syscalls)
         new_syscalls = utilities.unique(new_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(new_syscalls) + "\""
-        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash_val, self.default_port+self.index, self.current_case_path, self.time_limit, self.arch)
+        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash_val, self.ssh_port, self.current_case_path, self.time_limit, self.arch, self.max_qemu_for_one_case)
         f = open(os.path.join(self.syzkaller_path, "workdir/{}.cfg".format(hash_val)), "w")
         f.writelines(syz_config)
         f.close()
@@ -586,7 +590,7 @@ class Deployer(Workers):
             self.__save_error(hash_val)
         else:
             self.__copy_crashes(need_fuzzing)
-            self.__create_stamp(stamp_finish_fuzzing)
+            self.finished_fuzzing(hash_val[:7], "'incomplete'")
             if self.__success_check(hash_val[:7]):
                 if need_fuzzing:
                     paths = self.confirmSuccess(hash_val, case)

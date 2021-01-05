@@ -95,7 +95,6 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_GCC_CLANG" ]; then
   #  sudo ln -s /usr/lib/x86_64-linux-gnu/libmpfr.so.6 /usr/lib/x86_64-linux-gnu/libmpfr.so.4
   #fi
   touch $TOOLS_PATH/.stamp/BUILD_GCC_CLANG
-  cd ..
 fi
 
 echo "[+] Building cmake"

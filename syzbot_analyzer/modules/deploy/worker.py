@@ -24,7 +24,7 @@ class Workers(Case):
     def do_symbolic_tracing(self, case, i386, max_round=3, raw_tracing=False):
         self.logger.info("initial environ of symbolic execution")
         self.sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.index, self.current_case_path, self.linux_folder)
-        self.init_crash_checker(4777)
+        self.init_crash_checker(self.ssh_port, False)
         r = utilities.request_get(case['report'])
         #_, _, _, offset, size = self.sa.KasanVulnChecker(r.text)
         offset = case["vul_offset"]
@@ -60,7 +60,7 @@ class Workers(Case):
             sym_logger = self.__init_logger(cur_sym_log)
             sym_logger.info("round {}: symbolic tracing".format(i))
             sym = sym_exec.SymExec(logger=sym_logger, index=self.index, debug=self.debug)
-            sym.setup_vm(linux_path, arch, self.default_port+self.index, self.image_path, self.gdb_port+self.index, self.qemu_monitor_port+self.index, proj_path=self.current_case_path, cpu="2", logger=self.case_logger, hash_tag=self.hash_val[:7], log_name="sym/vm.log", log_suffix="-{}".format(i),  timeout=70*60)
+            sym.setup_vm(linux_path, arch, self.ssh_port, self.image_path, self.gdb_port, self.qemu_monitor_port, proj_path=self.current_case_path, cpu="2", logger=self.case_logger, hash_tag=self.hash_val[:7], log_name="sym/vm.log", log_suffix="-{}".format(i),  timeout=70*60)
             p = None
             try:
                 p = sym.run_vm()
@@ -79,7 +79,7 @@ class Workers(Case):
                 self.cleanup(sym)
                 continue
             sym_logger.info("Uploading poc and triggering the crash")
-            ok, output = self.crash_checker.upload_exp(case["syz_repro"], self.default_port+self.index, case["syzkaller"], utilities.URL, case["c_repro"], i386, 0)
+            ok, output = self.crash_checker.upload_exp(case["syz_repro"], self.ssh_port, case["syzkaller"], utilities.URL, case["c_repro"], i386, 0)
             for line in output:
                 sym_logger.info(line)
             if ok == 0:
@@ -87,7 +87,7 @@ class Workers(Case):
                 self.cleanup(sym)
                 continue
 
-            self.crash_checker.run_exp(case["syz_repro"], self.default_port+self.index, utilities.URL, ok, i386, 0)
+            self.crash_checker.run_exp(case["syz_repro"], self.ssh_port, utilities.URL, ok, i386, 0)
             paths = []
             #paths.append({'cond': 0xffffffff8328c77d, 'correct_path': 0xffffffff8328c77f, 'wrong_path': 0xffffffff8328c79a})
             #paths.append({'cond': 0xffffffff83295764, 'correct_path': 0xffffffff83295766, 'wrong_path': 0xffffffff8329576b})
@@ -174,40 +174,43 @@ class Workers(Case):
             self.logger.error("Error occur when getting pointer in IR")
         self.__create_stamp(stamp_static_analysis)
     
-    def do_reproducing_ori_poc(self, case, hash_val, i386):
+    def do_reproducing_ori_poc(self, case, hash_val, i386, store_read):
         self.logger.info("Try to triger the OOB/UAF by running original poc")
         self.case_info_logger.info("compiler: "+self.compiler)
-        self.init_crash_checker(3777)
+        self.init_crash_checker(self.ssh_port, store_read)
         report, trigger = self.crash_checker.read_crash(case["syz_repro"], case["syzkaller"], None, 0, case["c_repro"], i386)
-        write_without_mutating, title = self.KasanWriteChecker(report, hash_val)
+        hunted_type_without_mutating, title = self.KasanChecker(store_read, report, hash_val)
         self.__create_stamp(stamp_reproduce_ori_poc)
-        return write_without_mutating, title
+        return hunted_type_without_mutating, title
     
-    def KasanWriteChecker(self, report, hash_val):
+    def KasanChecker(self, read_check, report, hash_val):
         title = None
         ret = False
         if report != []:
             for each in report:
                 for line in each:
-                    if utilities.regx_match(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line) or\
-                    utilities.regx_match(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line):
+                    if utilities.regx_match(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line):
+                    #utilities.regx_match(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line):
                         m = re.search(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line)
                         if m != None and len(m.groups()) > 0:
                             title = m.groups()[0]
-                        m = re.search(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line)
-                        if m != None and len(m.groups()) > 0:
-                            title = m.groups()[0]
+                        #m = re.search(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line)
+                        #if m != None and len(m.groups()) > 0:
+                        #    title = m.groups()[0]
                     if utilities.regx_match(utilities.kasan_write_addr_regx, line):
-                        ret = True
-                        self.crash_checker.logger.info("OOB/UAF Write without mutating")
-                        self.crash_checker.logger.info("Detect read before write")
-                        self.logger.info("Write to confirmed success")
-                        self.__write_to_sucess(hash_val)
-                        self.__write_to_confirmed_sucess(hash_val)
-                        break
+                            ret = True
+                            self.crash_checker.logger.info("OOB/UAF Write without mutating")
+                            self.logger.info("Write to confirmed success")
+                            self.__write_to_sucess(hash_val)
+                            self.__write_to_confirmed_sucess(hash_val)
+                            break
+                    if read_check and utilities.regx_match(utilities.kasan_read_addr_regx, line):
+                            ret = True
+                            self.crash_checker.logger.info("OOB/UAF Read without mutating")
+                            break
         return ret, title
     
-    def init_crash_checker(self, port):
+    def init_crash_checker(self, port, store_read):
         self.crash_checker = CrashChecker(
             self.project_path,
             self.current_case_path,
@@ -215,6 +218,8 @@ class Workers(Case):
             self.logger,
             self.debug,
             self.index,
+            self.max_qemu_for_one_case,
+            store_read=store_read,
             compiler=self.compiler)
     
     def cleanup(self, obj):

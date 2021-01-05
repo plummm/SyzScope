@@ -17,7 +17,7 @@ def read_regs_test(vm):
 
 def init_vm():
     vm = VM('/home/xzou017/projects/SyzbotAnalyzer/work/incomplete/00939fa/linux/', 2778, 
-    "/home/xzou017/projects/SyzbotAnalyzer/work/incomplete/00939fa/img", gdb_port=1235)
+    "/home/xzou017/projects/SyzbotAnalyzer/work/incomplete/00939fa/img", gdb_port=1235, hash_tag='1234')
     return vm
 
 if __name__ == '__main__':

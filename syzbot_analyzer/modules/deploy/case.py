@@ -9,6 +9,8 @@ stamp_reproduce_ori_poc = "REPRO_ORI_POC"
 stamp_symbolic_tracing = "FINISH_SYM_TRACING"
 stamp_static_analysis = "FINISH_STATIC_ANALYSIS"
 
+max_qemu_for_one_case = 4
+
 class Case:
     def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False, symbolic_tracing=True, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1):
         self.linux_folder = "linux"
@@ -33,6 +35,7 @@ class Case:
         self.static_analysis = static_analysis
         self.symbolic_tracing = symbolic_tracing
         self.max_compiling_kernel = max_compiling_kernel
+        self.max_qemu_for_one_case = max_qemu_for_one_case
         self.sa = None
         if replay == None:
             self.replay = False
@@ -40,9 +43,9 @@ class Case:
         else:
             self.replay = True
             self.catalog = replay
-        self.default_port = port
-        self.gdb_port = gdb_port
-        self.qemu_monitor_port = qemu_monitor_port
+        self.ssh_port = port + max_qemu_for_one_case*index
+        self.gdb_port = gdb_port + max_qemu_for_one_case*index
+        self.qemu_monitor_port = qemu_monitor_port + max_qemu_for_one_case*index
         if linux_index != -1:
             self.index = linux_index
         self.debug = debug

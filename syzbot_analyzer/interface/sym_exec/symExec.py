@@ -38,7 +38,7 @@ class SymExec(MemInstrument):
         else:
             self.logger = logger
 
-    def setup_vm(self, linux, arch, port, image, gdb_port, mon_port, proj_path='/tmp/', mem="2G", cpu="2", key=None, opts=None, log_name="vm.log", log_suffix="", logger=None, hash_tag=None, timeout=None):
+    def setup_vm(self, linux, arch, port, image, gdb_port, mon_port, hash_tag, proj_path='/tmp/', mem="2G", cpu="2", key=None, opts=None, log_name="vm.log", log_suffix="", logger=None, timeout=None):
         self.gdb_port = gdb_port
         self.mon_port = mon_port
         if timeout != None:
@@ -69,9 +69,6 @@ class SymExec(MemInstrument):
         if not self.vm.set_checkpoint():
             self.logger.error("No kasan_report() found")
             return None
-        if self.vm.timeout != None:
-            x = threading.Thread(target=self.vm.monitor_execution, name="{} qemu killer".format(self.vm.hash_tag))
-            x.start()
         self.proj = self.vm.kernel.proj
         self.logger.info("Waiting for qemu launching")
         while True:

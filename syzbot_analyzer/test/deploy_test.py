@@ -17,6 +17,7 @@ def getMinimalDeployer(case_path):
         d.logger,
         True,
         d.index,
+        1,
         compiler=d.compiler)
     d.syzkaller_path = os.path.join(d.current_case_path, "gopath/src/github.com/google/syzkaller")
     return d
