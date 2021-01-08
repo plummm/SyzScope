@@ -19,6 +19,7 @@ struct Load {
         int64_t offset = ap_offset.getSExtValue();
         offset -= BUG_Offset;
         struct Input *ret = (struct Input *)malloc(sizeof(struct Input));
+        errs() << "basepointer: " << (*basePointer) << "\n";
         ret->basePointer = basePointer;
         ret->offset = offset;
         ret->size = BUG_Size;

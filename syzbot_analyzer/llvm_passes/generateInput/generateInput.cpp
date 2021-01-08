@@ -183,31 +183,6 @@ struct thisPass : public ModulePass {
         T::printSloganTail();
     }
 
-    void handleLoadInst(LoadInst *load) {
-        llvm::Value *op = load->getPointerOperand();
-        APInt ap_offset(64, 0, true);
-        llvm::Value *basePointer = op->stripAndAccumulateConstantOffsets(*dl, ap_offset, true);
-        int64_t offset = ap_offset.getSExtValue();
-        offset -= BUG_Offset;
-        struct Input *ret = (struct Input *)malloc(sizeof(struct Input));
-        ret->basePointer = basePointer;
-        ret->offset = offset;
-        ret->size = BUG_Size;
-        ret->distance = minDistance;
-        ret->prev = NULL;
-        ret->next = NULL;
-        if (input == NULL) {
-            input = ret;
-        } else {
-            input->prev = ret;
-            ret->next = input;
-            input = ret;
-        }
-        errs() << "-----------------------------------\n";
-        errs() << "offset to base obj is " << offset << "\n";
-        errs() << "-----------------------------------\n";
-    }
-
     void inspectGEPInst(inst_iterator I) {
         if (GetElementPtrInst *gep = dyn_cast<GetElementPtrInst>(&(*I))) {
             errs() << (*I) << "\n";

@@ -27,6 +27,7 @@ syz_config_template="""
         "testcase": "{0}/workdir/testcase-{4}",
         "analyzer_dir": "{6}",
         "time_limit": "{7}",
+        "store_read": {10},
         "vm": {{
                 "count": {9},
                 "kernel": "{1}/arch/x86/boot/bzImage",
@@ -80,6 +81,10 @@ class Deployer(Workers):
             i386 = None
             if utilities.regx_match(r'386', case["manager"]):
                 i386 = True
+            
+            if 'use-after-free' in case['title'] or 'out-of-bounds' in case['title']:
+                self.store_read = False
+            self.init_crash_checker(self.ssh_port)
 
             if self.static_analysis:
                 if not self.finished_static_analysis(hash_val, 'incomplete'):
@@ -115,11 +120,8 @@ class Deployer(Workers):
             need_fuzzing = False
             title = None
             if not self.reproduced_ori_poc(hash_val, 'incomplete'):
-                store_read = True
-                if 'use-after-free' in case['title'] or 'out-of-bounds' in case['title']:
-                    store_read = False
-                write_without_mutating, title = self.do_reproducing_ori_poc(case, hash_val, i386, store_read)
-                if store_read:
+                write_without_mutating, title = self.do_reproducing_ori_poc(case, hash_val, i386)
+                if self.store_read:
                     write_without_mutating = False
 
             if self.force_fuzz or not write_without_mutating:
@@ -281,7 +283,7 @@ class Deployer(Workers):
             return False
         for file_name in os.listdir(dst):
             if file_name.endswith(ends):
-                print(file_name)
+                #print(file_name)
                 if file_name == "socket_netlink_route_sched.txt":
                     print('break')
                 find_it = False
@@ -462,7 +464,7 @@ class Deployer(Workers):
         new_syscalls.extend(dependent_syscalls)
         new_syscalls = utilities.unique(new_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(new_syscalls) + "\""
-        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash_val, self.ssh_port, self.current_case_path, self.time_limit, self.arch, self.max_qemu_for_one_case)
+        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash_val, self.ssh_port, self.current_case_path, self.time_limit, self.arch, self.max_qemu_for_one_case, str(self.store_read).lower())
         f = open(os.path.join(self.syzkaller_path, "workdir/{}-poc.cfg".format(hash_val)), "w")
         f.writelines(syz_config)
         f.close()
@@ -477,7 +479,7 @@ class Deployer(Workers):
         new_syscalls.extend(raw_syscalls)
         new_syscalls = utilities.unique(new_syscalls)
         enable_syscalls = "\"" + "\",\n\t\"".join(new_syscalls) + "\""
-        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash_val, self.ssh_port, self.current_case_path, self.time_limit, self.arch, self.max_qemu_for_one_case)
+        syz_config = syz_config_template.format(self.syzkaller_path, self.kernel_path, self.image_path, enable_syscalls, hash_val, self.ssh_port, self.current_case_path, self.time_limit, self.arch, self.max_qemu_for_one_case, str(self.store_read).lower())
         f = open(os.path.join(self.syzkaller_path, "workdir/{}.cfg".format(hash_val)), "w")
         f.writelines(syz_config)
         f.close()

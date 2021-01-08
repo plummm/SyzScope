@@ -246,16 +246,17 @@ index 5adc9dc6..b95f196f 100644
  
  func ExecprogCmd(execprog, executor, OS, arch, sandbox string, repeat, threaded, collide bool,
 diff --git a/pkg/mgrconfig/config.go b/pkg/mgrconfig/config.go
-index 69df2a80..c7f071e1 100644
+index 69df2a80..18298663 100644
 --- a/pkg/mgrconfig/config.go
 +++ b/pkg/mgrconfig/config.go
-@@ -114,4 +114,7 @@ type Config struct {
+@@ -114,4 +114,8 @@ type Config struct {
  	SyzFuzzerBin   string `json:"-"`
  	SyzExecprogBin string `json:"-"`
  	SyzExecutorBin string `json:"-"`
 +	Testcase       string `json:"testcase"`
 +	AnalyzerDir    string `json:"analyzer_dir"`
 +	TimeLimit      string `json:"time_limit"`
++	StoreRead      bool   `json:"store_read"`
  }
 diff --git a/pkg/mgrconfig/load.go b/pkg/mgrconfig/load.go
 index 4e413636..857dd80d 100644
@@ -293,7 +294,7 @@ index 4e413636..857dd80d 100644
  	var arr []int
  	for id := range syscalls {
 diff --git a/pkg/report/linux.go b/pkg/report/linux.go
-index 07c061ff..fbf4773a 100644
+index 07c061ff..d853ce53 100644
 --- a/pkg/report/linux.go
 +++ b/pkg/report/linux.go
 @@ -129,7 +129,7 @@ func (ctx *linux) ContainsCrash(output []byte) bool {
@@ -305,7 +306,7 @@ index 07c061ff..fbf4773a 100644
  	if oops == nil {
  		return nil
  	}
-@@ -185,6 +185,72 @@ func (ctx *linux) findFirstOops(output []byte) (oops *oops, startPos int, contex
+@@ -185,6 +185,75 @@ func (ctx *linux) findFirstOops(output []byte) (oops *oops, startPos int, contex
  	return
  }
  
@@ -344,6 +345,9 @@ index 07c061ff..fbf4773a 100644
 +	var crashRegx []*regexp.Regexp
 +	//kasanRegx := regexp.MustCompile(`BUG: KASAN: ([a-z\\-]+) in ([a-zA-Z0-9_]+).*`)
 +	//oobReadRegx := regexp.MustCompile(`\?!\?MAGIC\?!\?read->(\w*) size->(\d*)`)
++	if ReadIsCritical {
++		crashRegx = append(crashRegx, regexp.MustCompile(`Read of size (\d+) at addr (\w*)`))
++	}
 +	crashRegx = append(crashRegx, regexp.MustCompile(`Write of size (\d+) at addr (\w*)`))
 +	crashRegx = append(crashRegx, regexp.MustCompile(`BUG: KASAN: double-free or invalid-free in`))
 +	crashRegx = append(crashRegx, regexp.MustCompile(`invalid-free in`))
@@ -378,6 +382,19 @@ index 07c061ff..fbf4773a 100644
  // Yes, it is complex, but all state and logic are tightly coupled. It's unclear how to simplify it.
  // nolint: gocyclo
  func (ctx *linux) findReport(output []byte, oops *oops, startPos int, context string) (
+diff --git a/pkg/report/report.go b/pkg/report/report.go
+index c9832c9a..461429f9 100644
+--- a/pkg/report/report.go
++++ b/pkg/report/report.go
+@@ -83,6 +83,8 @@ func (t Type) String() string {
+ 	}
+ }
+ 
++var ReadIsCritical bool
++
+ // NewReporter creates reporter for the specified OS/Type.
+ func NewReporter(cfg *mgrconfig.Config) (Reporter, error) {
+ 	typ := cfg.TargetOS
 diff --git a/pkg/repro/repro.go b/pkg/repro/repro.go
 index 6de117df..17473a45 100644
 --- a/pkg/repro/repro.go
@@ -1579,7 +1596,7 @@ index 62648336..e31b664a 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index 2a0b7dd4..10b21284 100644
+index 2a0b7dd4..81979174 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
 @@ -6,6 +6,7 @@ package main
@@ -1625,16 +1642,18 @@ index 2a0b7dd4..10b21284 100644
  	mgr.vmLoop()
  }
  
-@@ -311,6 +320,8 @@ func (mgr *Manager) vmLoop() {
+@@ -311,6 +320,10 @@ func (mgr *Manager) vmLoop() {
  	reproDone := make(chan *ReproResult, 1)
  	stopPending := false
  	shutdown := vm.Shutdown
 +	succeed := 0
 +	start := time.Now()
++	storeRead := mgr.cfg.StoreRead
++	report.ReadIsCritical = storeRead
  	for shutdown != nil || len(instances) != vmCount {
  		mgr.mu.Lock()
  		phase := mgr.phase
-@@ -367,7 +378,14 @@ func (mgr *Manager) vmLoop() {
+@@ -367,7 +380,14 @@ func (mgr *Manager) vmLoop() {
  				instances = instances[:last]
  				log.Logf(1, "loop: starting instance %v", idx)
  				go func() {
@@ -1650,7 +1669,7 @@ index 2a0b7dd4..10b21284 100644
  					runDone <- &RunResult{idx, crash, err}
  				}()
  			}
-@@ -387,6 +405,10 @@ func (mgr *Manager) vmLoop() {
+@@ -387,6 +407,10 @@ func (mgr *Manager) vmLoop() {
  			stopPending = true
  		case res := <-runDone:
  			log.Logf(1, "loop: instance %v finished, crash=%v", res.idx, res.crash != nil)
@@ -1661,14 +1680,14 @@ index 2a0b7dd4..10b21284 100644
  			if res.err != nil && shutdown != nil {
  				log.Logf(0, "%v", res.err)
  			}
-@@ -396,9 +418,11 @@ func (mgr *Manager) vmLoop() {
+@@ -396,9 +420,11 @@ func (mgr *Manager) vmLoop() {
  			// which we detect as "lost connection". Don't save that as crash.
  			if shutdown != nil && res.crash != nil {
  				needRepro := mgr.saveCrash(res.crash)
 -				if needRepro {
 -					log.Logf(1, "loop: add pending repro for '%v'", res.crash.Title)
 -					pendingRepro[res.crash] = true
-+				if isCriticalCrash(res.crash.Report.Title) {
++				if isCriticalCrash(res.crash.Report.Title, storeRead) > 0 {
 +					if needRepro && succeed <= 5 && res.crash.Report.Title != vm.NoOutputCrash && res.crash.Report.Title != "lost connection to test machine" {
 +						log.Logf(1, "loop: add pending repro for '%v'", res.crash.Title)
 +						pendingRepro[res.crash] = true
@@ -1676,22 +1695,26 @@ index 2a0b7dd4..10b21284 100644
  				}
  			}
  		case res := <-reproDone:
-@@ -423,6 +447,14 @@ func (mgr *Manager) vmLoop() {
+@@ -423,6 +449,18 @@ func (mgr *Manager) vmLoop() {
  				}
  			} else {
  				mgr.saveRepro(res.res, res.stats, res.hub)
 +				log.Logf(0, "SaveRepro %s", res.res.Report.Title)
-+				if isCriticalCrash(res.res.Report.Title) {
++				if isCriticalCrash(res.res.Report.Title, storeRead) > 1 {
 +					succeed++
 +					if succeed == 1 {
 +						log.Logf(0, "Save to success file")
 +						courier.SaveToFile("success")
 +					}
 +				}
++				if isCriticalCrash(res.res.Report.Title, storeRead) == 1 {
++					log.Logf(0, "Abnormally memory read found")
++					courier.SaveToFile("AbnormallyMemRead")
++				}
  			}
  		case <-shutdown:
  			log.Logf(1, "loop: shutting down...")
-@@ -528,7 +560,7 @@ func (mgr *Manager) loadCorpus() {
+@@ -528,7 +566,7 @@ func (mgr *Manager) loadCorpus() {
  	mgr.phase = phaseLoadedCorpus
  }
  
@@ -1700,7 +1723,7 @@ index 2a0b7dd4..10b21284 100644
  	mgr.checkUsedFiles()
  	inst, err := mgr.vmPool.Create(index)
  	if err != nil {
-@@ -569,14 +601,18 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
+@@ -569,14 +607,18 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
  	defer atomic.AddUint32(&mgr.numFuzzing, ^uint32(0))
  	cmd := instance.FuzzerCmd(fuzzerBin, executorCmd, fmt.Sprintf("vm-%v", index),
  		mgr.cfg.TargetOS, mgr.cfg.TargetArch, fwdAddr, mgr.cfg.Sandbox, procs, fuzzerV,
@@ -1721,7 +1744,7 @@ index 2a0b7dd4..10b21284 100644
  		// This is the only "OK" outcome.
  		log.Logf(0, "vm-%v: running for %v, restarting", index, time.Since(start))
  		return nil, nil
-@@ -845,6 +881,12 @@ func (mgr *Manager) saveRepro(res *repro.Result, stats *repro.Stats, hub bool) {
+@@ -845,6 +887,12 @@ func (mgr *Manager) saveRepro(res *repro.Result, stats *repro.Stats, hub bool) {
  	if len(cprogText) > 0 {
  		osutil.WriteFile(filepath.Join(dir, "repro.cprog"), cprogText)
  	}
@@ -1734,14 +1757,31 @@ index 2a0b7dd4..10b21284 100644
  	saveReproStats(filepath.Join(dir, "repro.stats"), stats)
  }
  
-@@ -1187,3 +1229,8 @@ func publicWebAddr(addr string) string {
+@@ -1187,3 +1235,25 @@ func publicWebAddr(addr string) string {
  	}
  	return "http://" + addr
  }
 +
-+func isCriticalCrash(title string) bool {
-+	return strings.Contains(title, "out-of-bounds Write") ||
-+		strings.Contains(title, "use-after-free Write")
++// return
++// 0 for Non-critical
++// 1 for Read
++// 2 for Write or invalid free
++// 3 for both 1 and 2
++func isCriticalCrash(title string, storeRead bool) int {
++	ret := 0
++	if storeRead {
++		if strings.Contains(title, "out-of-bounds Read") ||
++			strings.Contains(title, "use-after-free Read") {
++			ret |= 1
++		}
++	}
++
++	if strings.Contains(title, "out-of-bounds Write") ||
++		strings.Contains(title, "use-after-free Write") ||
++		strings.Contains(title, "invalid-free in") {
++		ret |= 2
++	}
++	return ret
 +}
 diff --git a/syz-manager/rpc.go b/syz-manager/rpc.go
 index 91e31dbd..19e92b93 100644

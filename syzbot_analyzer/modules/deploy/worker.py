@@ -10,7 +10,7 @@ import syzbot_analyzer.interface.utilities as utilities
 from syzbot_analyzer.modules.syzbotCrawler import syzbot_host_url, syzbot_bug_base_url
 from syzbot_analyzer.interface import s2e, static_analysis, sym_exec
 from subprocess import call, Popen, PIPE, STDOUT
-from syzbot_analyzer.modules.crash import CrashChecker, kasan_regx, free_regx
+from syzbot_analyzer.modules.crash import CrashChecker, kasan_regx, double_free_regx
 from syzbot_analyzer.interface.utilities import chmodX
 from dateutil import parser as time_parser
 from .case import Case, stamp_build_kernel, stamp_build_syzkaller, stamp_finish_fuzzing, stamp_reproduce_ori_poc, stamp_symbolic_tracing, stamp_static_analysis
@@ -24,7 +24,7 @@ class Workers(Case):
     def do_symbolic_tracing(self, case, i386, max_round=3, raw_tracing=False):
         self.logger.info("initial environ of symbolic execution")
         self.sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.index, self.current_case_path, self.linux_folder)
-        self.init_crash_checker(self.ssh_port, False)
+        #self.init_crash_checker(self.ssh_port, False)
         r = utilities.request_get(case['report'])
         #_, _, _, offset, size = self.sa.KasanVulnChecker(r.text)
         offset = case["vul_offset"]
@@ -79,15 +79,13 @@ class Workers(Case):
                 self.cleanup(sym)
                 continue
             sym_logger.info("Uploading poc and triggering the crash")
-            ok, output = self.crash_checker.upload_exp(case["syz_repro"], self.ssh_port, case["syzkaller"], utilities.URL, case["c_repro"], i386, 0)
-            for line in output:
-                sym_logger.info(line)
+            ok = self.crash_checker.upload_exp(case["syz_repro"], self.ssh_port, case["syzkaller"], utilities.URL, case["c_repro"], i386, 0, sym_logger)
             if ok == 0:
                 self.logger.error("Error occur at upload exp")
                 self.cleanup(sym)
                 continue
 
-            self.crash_checker.run_exp(case["syz_repro"], self.ssh_port, utilities.URL, ok, i386, 0)
+            self.crash_checker.run_exp(case["syz_repro"], self.ssh_port, utilities.URL, ok, i386, 0, sym_logger)
             paths = []
             #paths.append({'cond': 0xffffffff8328c77d, 'correct_path': 0xffffffff8328c77f, 'wrong_path': 0xffffffff8328c79a})
             #paths.append({'cond': 0xffffffff83295764, 'correct_path': 0xffffffff83295766, 'wrong_path': 0xffffffff8329576b})
@@ -174,43 +172,52 @@ class Workers(Case):
             self.logger.error("Error occur when getting pointer in IR")
         self.__create_stamp(stamp_static_analysis)
     
-    def do_reproducing_ori_poc(self, case, hash_val, i386, store_read):
+    def do_reproducing_ori_poc(self, case, hash_val, i386):
         self.logger.info("Try to triger the OOB/UAF by running original poc")
         self.case_info_logger.info("compiler: "+self.compiler)
-        self.init_crash_checker(self.ssh_port, store_read)
         report, trigger = self.crash_checker.read_crash(case["syz_repro"], case["syzkaller"], None, 0, case["c_repro"], i386)
-        hunted_type_without_mutating, title = self.KasanChecker(store_read, report, hash_val)
+        hunted_type_without_mutating, title = self.KasanChecker(report, hash_val)
         self.__create_stamp(stamp_reproduce_ori_poc)
         return hunted_type_without_mutating, title
     
-    def KasanChecker(self, read_check, report, hash_val):
+    def KasanChecker(self, report, hash_val):
         title = None
         ret = False
         if report != []:
             for each in report:
                 for line in each:
-                    if utilities.regx_match(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line):
-                    #utilities.regx_match(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line):
+                    if utilities.regx_match(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line) or \
+                        utilities.regx_match(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line):
                         m = re.search(r'BUG: (KASAN: [a-z\\-]+ in [a-zA-Z0-9_]+)', line)
                         if m != None and len(m.groups()) > 0:
                             title = m.groups()[0]
-                        #m = re.search(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line)
-                        #if m != None and len(m.groups()) > 0:
-                        #    title = m.groups()[0]
+                        m = re.search(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line)
+                        if m != None and len(m.groups()) > 0:
+                            title = m.groups()[0]
+                    if utilities.regx_match(utilities.double_free_regx, line):
+                            ret = True
+                            self.crash_checker.logger.info("Double free without mutating")
+                            self.logger.info("Write to ConfirmedDoubleFree")
+                            self.__write_to_DoubleFree(hash_val)
+                            self.__write_to_ConfirmedDoubleFree(hash_val)
+                            break
                     if utilities.regx_match(utilities.kasan_write_addr_regx, line):
                             ret = True
                             self.crash_checker.logger.info("OOB/UAF Write without mutating")
-                            self.logger.info("Write to confirmed success")
-                            self.__write_to_sucess(hash_val)
-                            self.__write_to_confirmed_sucess(hash_val)
+                            self.logger.info("Write to ConfirmedAbnormallyMemWrite")
+                            self.__write_to_AbnormallyMemWrite(hash_val)
+                            self.__write_to_ConfirmedAbnormallyMemWrite(hash_val)
                             break
-                    if read_check and utilities.regx_match(utilities.kasan_read_addr_regx, line):
+                    if self.store_read and utilities.regx_match(utilities.kasan_read_addr_regx, line):
                             ret = True
                             self.crash_checker.logger.info("OOB/UAF Read without mutating")
+                            self.logger.info("Write to ConfirmedAbnormallyMemRead")
+                            self.__write_to_AbnormallyMemRead(hash_val)
+                            self.__write_to_ConfirmedAbnormallyMemRead(hash_val)
                             break
         return ret, title
     
-    def init_crash_checker(self, port, store_read):
+    def init_crash_checker(self, port):
         self.crash_checker = CrashChecker(
             self.project_path,
             self.current_case_path,
@@ -219,7 +226,7 @@ class Workers(Case):
             self.debug,
             self.index,
             self.max_qemu_for_one_case,
-            store_read=store_read,
+            store_read=self.store_read,
             compiler=self.compiler)
     
     def cleanup(self, obj):
@@ -264,12 +271,26 @@ class Workers(Case):
         if os.path.isfile(stamp_path):
             os.remove(stamp_path)
     
-    def __write_to_sucess(self, hash_val):
-        with open("{}/work/success".format(self.project_path), "a+") as f:
-            f.write(hash_val[:7]+"\n")
+    def __write_to_AbnormallyMemWrite(self, hash_val):
+        self.__write_to(hash_val, "AbnormallyMemWrite")
     
-    def __write_to_confirmed_sucess(self, hash_val):
-        with open("{}/work/confirmedSuccess".format(self.project_path), "a+") as f:
+    def __write_to_ConfirmedAbnormallyMemWrite(self, hash_val):
+        self.__write_to(hash_val, "ConfirmedAbnormallyMemWrite")
+    
+    def __write_to_AbnormallyMemRead(self, hash_val):
+        self.__write_to(hash_val, "AbnormallyMemRead")
+    
+    def __write_to_ConfirmedAbnormallyMemRead(self, hash_val):
+        self.__write_to(hash_val, "ConfirmedAbnormallyMemRead")
+    
+    def __write_to_DoubleFree(self, hash_val):
+        self.__write_to(hash_val, "DoubleFree")
+    
+    def __write_to_ConfirmedDoubleFree(self, hash_val):
+        self.__write_to(hash_val, "ConfirmedDoubleFree")
+    
+    def __write_to(self, hash_val, name):
+        with open("{}/work/{}".format(self.project_path, name), "a+") as f:
             f.write(hash_val[:7]+"\n")
 
     def __log_subprocess_output(self, pipe, log_level):

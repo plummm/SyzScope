@@ -24,6 +24,7 @@ class Case:
         self.case_logger = None
         self.logger = None
         self.case_info_logger = None
+        self.store_read = True
         self.force = force
         self.time_limit = time
         self.crash_checker = None

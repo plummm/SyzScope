@@ -7,6 +7,8 @@ import syzbot_analyzer.interface.utilities as utilities
 
 from subprocess import Popen, PIPE, STDOUT, call
 
+reboot_regx = r'reboot: machine restart'
+port_error_regx = r'Could not set up host forwarding rule'
 
 class VMInstance:
 
@@ -23,6 +25,8 @@ class VMInstance:
         self.qemu_ready = False
         self.kill_qemu = False
         self.hash_tag = hash_tag
+        self.log_name = log_name
+        self.output = []
         self.def_opts = ["kasan_multi_shot=1", "earlyprintk=serial", "oops=panic", "nmi_watchdog=panic", "panic=1", \
                         "ftrace_dump_on_oops=orig_cpu", "rodata=n", "vsyscall=native", "net.ifnames=0", \
                         "biosdevname=0", "kvm-intel.nested=1", \
@@ -138,14 +142,32 @@ class VMInstance:
         try:
             self.qemu_logger.info("pid: {}".format(self._qemu.pid))
             for line in iter(pipe.readline, b''):
-                line = line.decode("utf-8").strip('\n').strip('\r')
+                try:
+                    line = line.decode("utf-8").strip('\n').strip('\r')
+                except:
+                    self.qemu_logger.info('bytes array \'{}\' cannot be converted to utf-8'.format(line))
+                    continue
+                if utilities.regx_match(reboot_regx, line) or utilities.regx_match(port_error_regx, line):
+                    self.case_logger.error("Booting qemu-{} failed".format(self.log_name))
                 if utilities.regx_match(r'Debian GNU\/Linux \d+ syzkaller ttyS\d+', line):
                     self.qemu_ready = True
                 self.qemu_logger.info(line)
                 if self.debug:
                     print(line)
+                self.output.append(line)
                 if self._qemu.poll() != None:
                     return
         except EOFError:
             # Qemu may crash and makes pipe NULL
-            return
+            pass
+        except ValueError:
+            # Traceback (most recent call last):                                                                       │
+            # File "/usr/lib/python3.6/threading.py", line 916, in _bootstrap_inner                                  │
+            # self.run()                                                                                           │
+            # File "/usr/lib/python3.6/threading.py", line 864, in run                                               │
+            # self._target(*self._args, **self._kwargs)                                                            │
+            # File "/home/xzou017/projects/SyzbotAnalyzer/syzbot_analyzer/interface/vm/instance.py", line 140, in __log_qemu                                                                                                  │
+            # for line in iter(pipe.readline, b''):                                                                │
+            # ValueError: PyMemoryView_FromBuffer(): info->buf must not be NULL
+            pass
+        return

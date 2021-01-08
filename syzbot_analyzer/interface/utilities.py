@@ -26,7 +26,7 @@ kasan_write_regx = r'KASAN: ([a-z\\-]+) Write in ([a-zA-Z0-9_]+).*'
 kasan_read_regx = r'KASAN: ([a-z\\-]+) Read in ([a-zA-Z0-9_]+).*'
 kasan_write_addr_regx = r'Write of size (\d+) at addr (\w+)'
 kasan_read_addr_regx = r'Read of size (\d+) at addr (\w+)'
-free_regx = r'KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
+double_free_regx = r'KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
 bug_desc_begin_regx = r'The buggy address belongs to the object at'
 bug_desc_end_regx = r'The buggy address belongs to the page'
 offset_desc_regx = r'The buggy address is located (\d+) bytes ((inside)|(to the right)|(to the left)) of'
@@ -167,9 +167,9 @@ def extract_vul_obj_offset_and_size(report):
     bug_mem_addr = extract_bug_mem_addr(report)
     if bug_mem_addr == None:
         #print("Failed to locate the memory address that trigger UAF/OOB")
-        return offset
+        return offset, size
     if bug_type == KASAN_NONE:
-        return offset
+        return offset, size
     if bug_type == KASAN_UAF or bug_type == KASAN_OOB:
         for line in bug_desc:
             if offset == None:
