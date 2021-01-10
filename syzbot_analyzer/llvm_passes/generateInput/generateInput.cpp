@@ -12,6 +12,7 @@ struct thisPass : public ModulePass {
         struct Input *input = getInput(M);
         for (struct Input *i = input; i != NULL; i=i->next) {
             errs() << "basePointer: " << i->basePointer << " offset: " << i->offset << " distance: " << i->distance << "\n";
+            errs() << "Inst: " << (*i->inst) << "\n";
         }
         //typeMatchFunc(M, input);
         return true;
@@ -19,7 +20,7 @@ struct thisPass : public ModulePass {
 
     struct Input *getInput(Module &M) {
         locatePointerAndOffset(M);
-        for (struct Input *i = input; i != NULL; i=i->next) {
+        for (struct Input *i = head; i != NULL; i=i->next) {
             if (i->distance > minDistance) {
                 struct Input *next = i->next;
                 struct Input *prev = i->prev;
@@ -30,12 +31,12 @@ struct thisPass : public ModulePass {
                 free(i);
             }
         }
-        return input;
+        return head;
     }
 
     void locatePointerAndOffset(Module &M) {
         uint64_t size = BUG_Size;
-        dl = new llvm::DataLayout(&M);
+        dlForInput = new llvm::DataLayout(&M);
         bool BUG_in_header = false;
         parseCalltrace(&M);
         minDistance = MAX_DISTANCE * calltrace.size();
@@ -425,7 +426,7 @@ struct thisPass : public ModulePass {
                 }*/ else 
                     continue;
                 APInt ap_offset(64, 0, true);
-                auto basePointer = op->stripAndAccumulateConstantOffsets(*dl, ap_offset, true);
+                auto basePointer = op->stripAndAccumulateConstantOffsets(*dlForInput, ap_offset, true);
                 auto offset = ap_offset.getSExtValue();
                 
                 llvm::Type *t = basePointer->getType();
@@ -455,7 +456,7 @@ struct thisPass : public ModulePass {
         uint64_t ret = 0;
         GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(&(*I));
         APInt ap_offset(64, 0, true);
-        bool success = GEP->accumulateConstantOffset(*dl, ap_offset);
+        bool success = GEP->accumulateConstantOffset(*dlForInput, ap_offset);
         assert(success);
         ret = ap_offset.getSExtValue();
         return ret;
@@ -466,7 +467,7 @@ struct thisPass : public ModulePass {
         llvm::Type *t = op->getType();
         if (t->isPointerTy()) {
             llvm::Type *targetObjType = t->getPointerElementType();
-            targetObjSize = dl->getTypeAllocSize(targetObjType);
+            targetObjSize = dlForInput->getTypeAllocSize(targetObjType);
         }
 
         return targetObjSize;

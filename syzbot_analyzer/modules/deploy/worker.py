@@ -10,7 +10,7 @@ import syzbot_analyzer.interface.utilities as utilities
 from syzbot_analyzer.modules.syzbotCrawler import syzbot_host_url, syzbot_bug_base_url
 from syzbot_analyzer.interface import s2e, static_analysis, sym_exec
 from subprocess import call, Popen, PIPE, STDOUT
-from syzbot_analyzer.modules.crash import CrashChecker, kasan_regx, double_free_regx
+from syzbot_analyzer.modules.crash import CrashChecker
 from syzbot_analyzer.interface.utilities import chmodX
 from dateutil import parser as time_parser
 from .case import Case, stamp_build_kernel, stamp_build_syzkaller, stamp_finish_fuzzing, stamp_reproduce_ori_poc, stamp_symbolic_tracing, stamp_static_analysis
@@ -183,6 +183,9 @@ class Workers(Case):
     def KasanChecker(self, report, hash_val):
         title = None
         ret = False
+        flag_double_free = False
+        flag_kasan_write = False
+        flag_kasan_read = False
         if report != []:
             for each in report:
                 for line in each:
@@ -194,26 +197,29 @@ class Workers(Case):
                         m = re.search(r'BUG: (KASAN: double-free or invalid-free in [a-zA-Z0-9_]+)', line)
                         if m != None and len(m.groups()) > 0:
                             title = m.groups()[0]
-                    if utilities.regx_match(utilities.double_free_regx, line):
+                    if utilities.regx_match(utilities.double_free_regx, line) and not flag_double_free:
                             ret = True
                             self.crash_checker.logger.info("Double free without mutating")
                             self.logger.info("Write to ConfirmedDoubleFree")
                             self.__write_to_DoubleFree(hash_val)
                             self.__write_to_ConfirmedDoubleFree(hash_val)
+                            flag_double_free = True
                             break
-                    if utilities.regx_match(utilities.kasan_write_addr_regx, line):
+                    if utilities.regx_match(utilities.kasan_write_addr_regx, line) and not flag_kasan_write:
                             ret = True
                             self.crash_checker.logger.info("OOB/UAF Write without mutating")
                             self.logger.info("Write to ConfirmedAbnormallyMemWrite")
                             self.__write_to_AbnormallyMemWrite(hash_val)
                             self.__write_to_ConfirmedAbnormallyMemWrite(hash_val)
+                            flag_kasan_write = True
                             break
-                    if self.store_read and utilities.regx_match(utilities.kasan_read_addr_regx, line):
+                    if self.store_read and utilities.regx_match(utilities.kasan_read_addr_regx, line) and not flag_kasan_read:
                             ret = True
                             self.crash_checker.logger.info("OOB/UAF Read without mutating")
                             self.logger.info("Write to ConfirmedAbnormallyMemRead")
                             self.__write_to_AbnormallyMemRead(hash_val)
                             self.__write_to_ConfirmedAbnormallyMemRead(hash_val)
+                            flag_kasan_read
                             break
         return ret, title
     
@@ -232,6 +238,14 @@ class Workers(Case):
     def cleanup(self, obj):
         obj.cleanup()
         del obj
+    
+    def write_to_confirm(self, hash_val, new_impact_type):
+        if new_impact_type == utilities.AbMemRead:
+            self.__write_to_ConfirmedAbnormallyMemRead(hash_val)
+        if new_impact_type == utilities.AbMemWrite:
+            self.__write_to_ConfirmedAbnormallyMemWrite(hash_val)
+        if new_impact_type == utilities.InvFree:
+            self.__write_to_ConfirmedDoubleFree(hash_val)
 
     def reproduced_ori_poc(self, hash_val, folder):
         return self.__check_stamp(stamp_reproduce_ori_poc, hash_val[:7], folder)

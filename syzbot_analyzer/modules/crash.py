@@ -18,8 +18,11 @@ boundary_regx = r'======================================================'
 call_trace_regx = r'Call Trace:'
 message_drop_regx = r'printk messages dropped'
 panic_regx = r'Kernel panic'
-kasan_regx = r'BUG: KASAN: ([a-z\\-]+) in ([a-zA-Z0-9_]+).*'
-double_free_regx = r'BUG: KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
+kasan_mem_regx = r'BUG: KASAN: ([a-z\\-]+) in ([a-zA-Z0-9_]+).*'
+kasan_double_free_regx = r'BUG: KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
+kasan_write_regx = r'KASAN: ([a-z\\-]+) Write in ([a-zA-Z0-9_]+).*'
+kasan_read_regx = r'KASAN: ([a-z\\-]+) Read in ([a-zA-Z0-9_]+).*'
+double_free_regx = r'KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
 magic_regx = r'\?!\?MAGIC\?!\?read->(\w*) size->(\d*)'
 write_regx = r'Write of size (\d+) at addr (\w*)'
 read_regx = r'Read of size (\d+) at addr (\w*)'
@@ -33,8 +36,6 @@ thread_fn = None
 class CrashChecker:
     def __init__(self, project_path, case_path, ssh_port, logger, debug, offset, qemu_num, store_read=False, compiler="gcc-7"):
         os.makedirs("{}/poc".format(case_path), exist_ok=True)
-        self.kasan_regx = r'KASAN: ([a-z\\-]+) Write in ([a-zA-Z0-9_]+).*'
-        self.double_free_regx = r'KASAN: double-free or invalid-free in ([a-zA-Z0-9_]+).*'
         self.logger = logger
         self.project_path = project_path
         self.package_path = os.path.join(project_path, "syzbot_analyzer")
@@ -42,7 +43,7 @@ class CrashChecker:
         self.image_path = "{}/img".format(self.case_path)
         self.linux_path = "{}/linux".format(self.case_path)
         self.qemu_num = qemu_num
-        self.ssh_port = ssh_port+offset*qemu_num
+        self.ssh_port = ssh_port
         self.kasan_func_list = self.read_kasan_funcs()
         self.debug = debug
         self.store_read = store_read
@@ -211,10 +212,13 @@ class CrashChecker:
                 if os.path.isfile(description_file):
                     with open(description_file, "r") as f:
                         line = f.readline()
-                        if utilities.regx_match(self.kasan_regx, line) and os.path.isfile('{}/{}/repro.prog'.format(crash_path, case)):
+                        if self.store_read and utilities.regx_match(kasan_read_regx, line) and os.path.isfile('{}/{}/repro.prog'.format(crash_path, case)):
                             res.append(os.path.join(crash_path, case))
                             continue
-                        if utilities.regx_match(self.double_free_regx, line) and os.path.isfile('{}/{}/repro.prog'.format(crash_path, case)):
+                        if utilities.regx_match(kasan_write_regx, line) and os.path.isfile('{}/{}/repro.prog'.format(crash_path, case)):
+                            res.append(os.path.join(crash_path, case))
+                            continue
+                        if utilities.regx_match(double_free_regx, line) and os.path.isfile('{}/{}/repro.prog'.format(crash_path, case)):
                             res.append(os.path.join(crash_path, case))
                             continue
         return res
@@ -266,8 +270,8 @@ class CrashChecker:
                             crash = []
                             kasan_flag ^= 1
                         continue
-                    if utilities.regx_match(kasan_regx, line) or \
-                       utilities.regx_match(double_free_regx, line):
+                    if utilities.regx_match(kasan_mem_regx, line) or \
+                       utilities.regx_match(kasan_double_free_regx, line):
                        kasan_flag ^= 1
                     if record_flag and kasan_flag:
                         crash.append(line)
@@ -291,8 +295,8 @@ class CrashChecker:
                     res.append(crash)
                     crash = []
                 continue
-            if utilities.regx_match(kasan_regx, line) or \
-                utilities.regx_match(double_free_regx, line):
+            if utilities.regx_match(kasan_mem_regx, line) or \
+                utilities.regx_match(kasan_double_free_regx, line):
                 kasan_flag ^= 1
             if record_flag and kasan_flag:
                 crash.append(line)
@@ -338,11 +342,12 @@ class CrashChecker:
                 self.logger.info("Failed to parse repro {}".format(syz_repro))
         else:
             c_hash = syz_commit + "-ori"
-        qemu = VM(hash_tag=syz_commit, linux=self.linux_path, port=self.ssh_port+th_index, image=self.image_path, proj_path="{}/poc/".format(self.case_path) ,log_name="qemu-{}-{}.log".format(c_hash, th_index), timeout=10*60)
+        qemu = VM(hash_tag=syz_commit, linux=self.linux_path, port=self.ssh_port+th_index, image=self.image_path, proj_path="{}/poc/".format(self.case_path) ,log_name="qemu-{}.log".format(c_hash), log_suffix=str(th_index), timeout=10*60, debug=self.debug)
         qemu.qemu_logger.info("QEMU-{} launched. Fixed={}\n".format(th_index, fixed))
         p = qemu.run()
         
         extract_report = False
+        qemu_close = False
         out_begin = 0
         record_flag = 0
         kasan_flag = 0
@@ -350,7 +355,10 @@ class CrashChecker:
         read_flag = 0
         crash = []
         try:
-            while p.poll() == None:
+            while not qemu_close:
+                # We need one more iteration to get remain output from qemu
+                if p.poll() != None and not qemu.qemu_ready:
+                    qemu_close = True
                 if qemu.qemu_ready and out_begin == 0:
                     ok = self.upload_exp(syz_repro, self.ssh_port+th_index, syz_commit, repro_type, c_repro, i386, fixed, qemu.qemu_logger)
                     if not ok:
@@ -382,8 +390,8 @@ class CrashChecker:
                                     break
                             record_flag = 1
                             continue
-                        if utilities.regx_match(kasan_regx, line) or \
-                        utilities.regx_match(double_free_regx, line):
+                        if utilities.regx_match(kasan_mem_regx, line) or \
+                        utilities.regx_match(kasan_double_free_regx, line):
                             kasan_flag = 1
                         if utilities.regx_match(write_regx, line):
                             write_flag = 1
@@ -411,7 +419,7 @@ class CrashChecker:
         stdout=PIPE,
         stderr=STDOUT)
         with p.stdout:
-            log_anything(p.stdout, logger)
+            log_anything(p.stdout, logger, self.debug)
         exitcode = p.wait()
         if exitcode != 2 and exitcode != 3:
             return 0
@@ -443,20 +451,26 @@ class CrashChecker:
         stderr=STDOUT)
         with p1.stdout:
             if logger != None:
-                log_anything(p1.stdout, logger)
+                log_anything(p1.stdout, logger, self.debug)
         exitcode = p1.wait()
         if exitcode == 1:
             self.case_logger.error("QEMU threaded {}: Usually, there is no reproducer in the crash".format(th_index))
             return 0
-        p2 = Popen(["ssh", "-p", str(port), "-F", "/dev/null", "-o", "UserKnownHostsFile=/dev/null", 
+
+        """p2 = process(["ssh", "-F", "/dev/null", "-o", "UserKnownHostsFile=/dev/null", 
         "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=no", 
-        "-o", "ConnectTimeout=10", "-i", "{}/stretch.img.key".format(self.image_path), 
-        "-v", "root@localhost", "chmod +x run.sh && ./run.sh"],
+        "-i", "{}/stretch.img.key".format(self.image_path), 
+        "-p", str(port), "root@localhost"])
+        p2.sendline("chmod +x run.sh && ./run.sh")"""
+        p2 = Popen(["ssh", "-F", "/dev/null", "-o", "UserKnownHostsFile=/dev/null", 
+        "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=no", 
+        "-i", "{}/stretch.img.key".format(self.image_path), 
+        "-p", str(port), "root@localhost", "chmod +x run.sh && ./run.sh"],
         stdout=PIPE,
         stderr=STDOUT)
         with p2.stdout:
             if logger != None:
-                x = threading.Thread(target=log_anything, args=(p2.stdout, logger,), name="{} run.sh logger".format(th_index))
+                x = threading.Thread(target=log_anything, args=(p2.stdout, logger, self.debug), name="{} run.sh logger".format(th_index))
                 x.start()
         return 1
 
@@ -609,7 +623,7 @@ class CrashChecker:
             if log_level == logging.DEBUG:
                 self.case_logger.debug(line)
 
-def log_anything(pipe, logger):
+def log_anything(pipe, logger, debug):
     try:
         for line in iter(pipe.readline, b''):
             try:
@@ -621,9 +635,24 @@ def log_anything(pipe, logger):
                 logger.info(line)
             if logger.level == logging.DEBUG:
                 logger.debug(line)
+            if debug:
+                print(line)
     except ValueError:
         if pipe.close:
             return
+
+def log_by_pwn_process(p, logger, debug):
+    while p.poll() == None:
+        try:
+            line = p.recvuntil("\n", timeout=10)
+        except EOFError:
+            break
+        if logger.level == logging.INFO:
+                logger.info(line)
+        if logger.level == logging.DEBUG:
+            logger.debug(line)
+        if debug:
+            print(line)
 
 def link_correct_linux_repro(case_path, index):
     dst = os.path.join(case_path, "linux")

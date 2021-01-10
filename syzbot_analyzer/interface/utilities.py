@@ -20,6 +20,11 @@ SYSCALL = 0
 STRUCT = 1
 FUNC_DEF = 2
 
+NONCRITICAL = 0
+AbMemRead = 1
+AbMemWrite = 2
+InvFree = 4
+
 syzbot_bug_base_url = "bug?id="
 syzbot_host_url = "https://syzkaller.appspot.com/"
 kasan_write_regx = r'KASAN: ([a-z\\-]+) Write in ([a-zA-Z0-9_]+).*'
@@ -106,13 +111,16 @@ def extract_allocated_section(report):
     
 def extrace_call_trace(report):
     call_trace_end = [r"entry_SYSENTER", r"entry_SYSCALL", r"ret_from_fork", r"bpf_prog_[a-z0-9]{16}\+"]
+    exceptions = [" <IRQ>", " </IRQ>"]
     res = []
     record_flag = 0
     implicit_call_regx = r'\[.+\]  \?.*'
     for line in report:
+        line = line.strip('\n')
         if record_flag and \
-            not regx_match(implicit_call_regx, line) and \
-            not is_kasan_func(extract_debug_info(line)):
+                not regx_match(implicit_call_regx, line) and \
+                not is_kasan_func(extract_debug_info(line)) and \
+                line not in exceptions:
             res.append(line)
         if regx_match(r'Call Trace', line):
             record_flag ^= 1

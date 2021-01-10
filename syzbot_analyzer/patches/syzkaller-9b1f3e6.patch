@@ -1596,7 +1596,7 @@ index 62648336..e31b664a 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index 2a0b7dd4..81979174 100644
+index 2a0b7dd4..1cf92bb7 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
 @@ -6,6 +6,7 @@ package main
@@ -1633,7 +1633,21 @@ index 2a0b7dd4..81979174 100644
  type Manager struct {
  	cfg            *mgrconfig.Config
  	vmPool         *vm.Pool
-@@ -267,6 +274,8 @@ func RunManager(cfg *mgrconfig.Config, target *prog.Target, sysTarget *targets.T
+@@ -102,6 +109,13 @@ const (
+ 	phaseTriagedHub
+ )
+ 
++const (
++	nonCritical = 0
++	abMemRead   = 1
++	abMemWrite  = 2
++	invalidFree = 4
++)
++
+ const currentDBVersion = 4
+ 
+ type Crash struct {
+@@ -267,6 +281,8 @@ func RunManager(cfg *mgrconfig.Config, target *prog.Target, sysTarget *targets.T
  		<-vm.Shutdown
  		return
  	}
@@ -1642,18 +1656,21 @@ index 2a0b7dd4..81979174 100644
  	mgr.vmLoop()
  }
  
-@@ -311,6 +320,10 @@ func (mgr *Manager) vmLoop() {
+@@ -311,6 +327,13 @@ func (mgr *Manager) vmLoop() {
  	reproDone := make(chan *ReproResult, 1)
  	stopPending := false
  	shutdown := vm.Shutdown
 +	succeed := 0
 +	start := time.Now()
 +	storeRead := mgr.cfg.StoreRead
++	if storeRead {
++		log.Logf(0, "storeRead %v", storeRead)
++	}
 +	report.ReadIsCritical = storeRead
  	for shutdown != nil || len(instances) != vmCount {
  		mgr.mu.Lock()
  		phase := mgr.phase
-@@ -367,7 +380,14 @@ func (mgr *Manager) vmLoop() {
+@@ -367,7 +390,14 @@ func (mgr *Manager) vmLoop() {
  				instances = instances[:last]
  				log.Logf(1, "loop: starting instance %v", idx)
  				go func() {
@@ -1669,7 +1686,7 @@ index 2a0b7dd4..81979174 100644
  					runDone <- &RunResult{idx, crash, err}
  				}()
  			}
-@@ -387,6 +407,10 @@ func (mgr *Manager) vmLoop() {
+@@ -387,6 +417,10 @@ func (mgr *Manager) vmLoop() {
  			stopPending = true
  		case res := <-runDone:
  			log.Logf(1, "loop: instance %v finished, crash=%v", res.idx, res.crash != nil)
@@ -1680,7 +1697,7 @@ index 2a0b7dd4..81979174 100644
  			if res.err != nil && shutdown != nil {
  				log.Logf(0, "%v", res.err)
  			}
-@@ -396,9 +420,11 @@ func (mgr *Manager) vmLoop() {
+@@ -396,9 +430,11 @@ func (mgr *Manager) vmLoop() {
  			// which we detect as "lost connection". Don't save that as crash.
  			if shutdown != nil && res.crash != nil {
  				needRepro := mgr.saveCrash(res.crash)
@@ -1695,26 +1712,36 @@ index 2a0b7dd4..81979174 100644
  				}
  			}
  		case res := <-reproDone:
-@@ -423,6 +449,18 @@ func (mgr *Manager) vmLoop() {
+@@ -423,6 +459,28 @@ func (mgr *Manager) vmLoop() {
  				}
  			} else {
  				mgr.saveRepro(res.res, res.stats, res.hub)
 +				log.Logf(0, "SaveRepro %s", res.res.Report.Title)
-+				if isCriticalCrash(res.res.Report.Title, storeRead) > 1 {
++				if isCriticalCrash(res.res.Report.Title, storeRead) != nonCritical {
 +					succeed++
++				}
++				if (isCriticalCrash(res.res.Report.Title, storeRead) | abMemWrite) == 1 {
 +					if succeed == 1 {
 +						log.Logf(0, "Save to success file")
-+						courier.SaveToFile("success")
++						courier.SaveToFile("AbnormallyMemWrite")
 +					}
 +				}
-+				if isCriticalCrash(res.res.Report.Title, storeRead) == 1 {
-+					log.Logf(0, "Abnormally memory read found")
-+					courier.SaveToFile("AbnormallyMemRead")
++				if (isCriticalCrash(res.res.Report.Title, storeRead) | abMemRead) == 1 {
++					if succeed == 1 {
++						log.Logf(0, "Abnormally memory read found")
++						courier.SaveToFile("AbnormallyMemRead")
++					}
++				}
++				if (isCriticalCrash(res.res.Report.Title, storeRead) | invalidFree) == 1 {
++					if succeed == 1 {
++						log.Logf(0, "double free or invalid free")
++						courier.SaveToFile("DoubleFree")
++					}
 +				}
  			}
  		case <-shutdown:
  			log.Logf(1, "loop: shutting down...")
-@@ -528,7 +566,7 @@ func (mgr *Manager) loadCorpus() {
+@@ -528,7 +586,7 @@ func (mgr *Manager) loadCorpus() {
  	mgr.phase = phaseLoadedCorpus
  }
  
@@ -1723,7 +1750,7 @@ index 2a0b7dd4..81979174 100644
  	mgr.checkUsedFiles()
  	inst, err := mgr.vmPool.Create(index)
  	if err != nil {
-@@ -569,14 +607,18 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
+@@ -569,14 +627,18 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
  	defer atomic.AddUint32(&mgr.numFuzzing, ^uint32(0))
  	cmd := instance.FuzzerCmd(fuzzerBin, executorCmd, fmt.Sprintf("vm-%v", index),
  		mgr.cfg.TargetOS, mgr.cfg.TargetArch, fwdAddr, mgr.cfg.Sandbox, procs, fuzzerV,
@@ -1744,7 +1771,7 @@ index 2a0b7dd4..81979174 100644
  		// This is the only "OK" outcome.
  		log.Logf(0, "vm-%v: running for %v, restarting", index, time.Since(start))
  		return nil, nil
-@@ -845,6 +887,12 @@ func (mgr *Manager) saveRepro(res *repro.Result, stats *repro.Stats, hub bool) {
+@@ -845,6 +907,12 @@ func (mgr *Manager) saveRepro(res *repro.Result, stats *repro.Stats, hub bool) {
  	if len(cprogText) > 0 {
  		osutil.WriteFile(filepath.Join(dir, "repro.cprog"), cprogText)
  	}
@@ -1757,7 +1784,7 @@ index 2a0b7dd4..81979174 100644
  	saveReproStats(filepath.Join(dir, "repro.stats"), stats)
  }
  
-@@ -1187,3 +1235,25 @@ func publicWebAddr(addr string) string {
+@@ -1187,3 +1255,28 @@ func publicWebAddr(addr string) string {
  	}
  	return "http://" + addr
  }
@@ -1765,21 +1792,24 @@ index 2a0b7dd4..81979174 100644
 +// return
 +// 0 for Non-critical
 +// 1 for Read
-+// 2 for Write or invalid free
-+// 3 for both 1 and 2
++// 2 for Write
++// 4 for invalid free
 +func isCriticalCrash(title string, storeRead bool) int {
-+	ret := 0
++	ret := nonCritical
 +	if storeRead {
 +		if strings.Contains(title, "out-of-bounds Read") ||
 +			strings.Contains(title, "use-after-free Read") {
-+			ret |= 1
++			ret |= abMemRead
 +		}
 +	}
 +
 +	if strings.Contains(title, "out-of-bounds Write") ||
-+		strings.Contains(title, "use-after-free Write") ||
-+		strings.Contains(title, "invalid-free in") {
-+		ret |= 2
++		strings.Contains(title, "use-after-free Write") {
++		ret |= abMemWrite
++	}
++
++	if strings.Contains(title, "invalid-free in") {
++		ret |= invalidFree
 +	}
 +	return ret
 +}

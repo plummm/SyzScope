@@ -15,23 +15,24 @@ struct Load {
     static void handleInst(LoadInst *load) {
         llvm::Value *op = load->getPointerOperand();
         APInt ap_offset(64, 0, true);
-        llvm::Value *basePointer = op->stripAndAccumulateConstantOffsets(*dl, ap_offset, true);
+        llvm::Value *basePointer = op->stripAndAccumulateConstantOffsets(*dlForInput, ap_offset, true);
         int64_t offset = ap_offset.getSExtValue();
         offset -= BUG_Offset;
         struct Input *ret = (struct Input *)malloc(sizeof(struct Input));
         errs() << "basepointer: " << (*basePointer) << "\n";
         ret->basePointer = basePointer;
+        ret->inst = load;
         ret->offset = offset;
         ret->size = BUG_Size;
         ret->distance = minDistance;
         ret->prev = NULL;
         ret->next = NULL;
-        if (input == NULL) {
-            input = ret;
+        if (head == NULL) {
+            head = ret;
         } else {
-            input->prev = ret;
-            ret->next = input;
-            input = ret;
+            head->prev = ret;
+            ret->next = head;
+            head = ret;
         }
         errs() << "-----------------------------------\n";
         errs() << "offset to base obj is " << offset << "\n";

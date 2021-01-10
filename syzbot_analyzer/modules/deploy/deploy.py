@@ -67,7 +67,7 @@ class Deployer(Workers):
         if self.force or \
                 (not self.finished_fuzzing(hash_val, 'succeed')  and not self.finished_fuzzing(hash_val, 'completed')):
             self.compiler = utilities.set_compiler_version(time_parser.parse(case["time"]), case["config"])
-            write_without_mutating = False
+            impact_without_mutating = False
             self.__create_dir_for_case()
             if self.force:
                 self.cleanup_finished_fuzzing(hash_val)
@@ -117,23 +117,14 @@ class Deployer(Workers):
                 self.__save_error(hash_val)
                 return
             
-            need_fuzzing = False
             title = None
             if not self.reproduced_ori_poc(hash_val, 'incomplete'):
-                write_without_mutating, title = self.do_reproducing_ori_poc(case, hash_val, i386)
-                if self.store_read:
-                    write_without_mutating = False
+                impact_without_mutating, title = self.do_reproducing_ori_poc(case, hash_val, i386)
 
-            if self.force_fuzz or not write_without_mutating:
-                path = None
-                need_fuzzing = True
-                req = requests.request(method='GET', url=case["syz_repro"])
-                self.__write_config(req.content.decode("utf-8"), hash_val[:7])
-                exitcode = self.run_syzkaller(hash_val)
-                self.__save_case(hash_val, exitcode, case, need_fuzzing)
-            if write_without_mutating and title != None:
-                # move to succeed group
-                self.__save_case(hash_val, 0, case, need_fuzzing=False, title=title)
+            req = requests.request(method='GET', url=case["syz_repro"])
+            self.__write_config(req.content.decode("utf-8"), hash_val[:7])
+            exitcode = self.run_syzkaller(hash_val)
+            self.save_case(hash_val, exitcode, case, impact_without_mutating, title=title)
         else:
             self.logger.info("{} has finished".format(hash_val[:7]))
         return self.index
@@ -411,8 +402,8 @@ class Deployer(Workers):
             res = self.crash_checker.repro_on_fixed_kernel(syz_commit, case["commit"], config, c_repro, i386, commit, crashes_path=crashes_path)
         return res
     
-    def save_case(self, hash_val, exitcode, case, need_fuzzing, title=None, secondary_fuzzing=False):
-        self.__save_case(hash_val=hash_val, exitcode=exitcode, case=case, need_fuzzing=need_fuzzing, title=title, secondary_fuzzing=secondary_fuzzing)
+    def save_case(self, hash_val, exitcode, case, impact_without_mutating, title=None, secondary_fuzzing=False):
+        self.__save_case(hash_val=hash_val, exitcode=exitcode, case=case, impact_without_mutating=impact_without_mutating, title=title, secondary_fuzzing=secondary_fuzzing)
 
     def __check_confirmed(self, hash_val):
         return False
@@ -587,55 +578,60 @@ class Deployer(Workers):
                 res.append(syscall)
         return res
 
-    def __save_case(self, hash_val, exitcode, case, need_fuzzing, title=None, secondary_fuzzing=False):
-        if exitcode !=0:
-            self.__save_error(hash_val)
-        else:
-            self.__copy_crashes(need_fuzzing)
-            self.finished_fuzzing(hash_val[:7], "'incomplete'")
-            if self.__success_check(hash_val[:7]):
-                if need_fuzzing:
-                    paths = self.confirmSuccess(hash_val, case)
-                    if len(paths) > 0:
-                        for each in paths:
-                            self.__copy_new_capability(each, need_fuzzing, title)
-                        self.__move_to_succeed()
+    def __save_case(self, hash_val, exitcode, case, impact_without_mutating, title=None, secondary_fuzzing=False):
+        self.__copy_crashes()
+        self.finished_fuzzing(hash_val[:7], "'incomplete'")
+        new_impact_type = self.__new_impact(hash_val[:7])
+        if new_impact_type != utilities.NONCRITICAL:
+                paths = self.confirmSuccess(hash_val, case)
+                if len(paths) > 0:
+                    for each in paths:
+                        self.__copy_new_impact(each, impact_without_mutating, title)
+                    self.__move_to_succeed(new_impact_type)
+                elif not impact_without_mutating:
+                    if exitcode !=0:
+                        self.__save_error(hash_val)
                     else:
                         self.__move_to_completed()
                 else:
-                    self.__copy_new_capability(case, need_fuzzing, title)
-                    self.__move_to_succeed()
+                    self.__copy_new_impact(case, impact_without_mutating, title)
+                    self.__move_to_succeed(new_impact_type)
+        elif not impact_without_mutating:
+            self.__move_to_completed()
+        else:
+            self.__copy_new_impact(case, impact_without_mutating, title)
+            self.__move_to_succeed(new_impact_type)
+            #if found OOB/UAF read, do fuzzing again bases on it
+            """
+            crash_path = utilities.extract_existed_crash(self.current_case_path, [utilities.kasan_read_regx])
+            if len(crash_path) == 0 or secondary_fuzzing:
+                self.__move_to_completed()
             else:
-                #if found OOB/UAF read, do fuzzing again bases on it
-                crash_path = utilities.extract_existed_crash(self.current_case_path, [utilities.kasan_read_regx])
-                if len(crash_path) == 0 or secondary_fuzzing:
-                    self.__move_to_completed()
-                else:
-                    need_patch = 0
-                    for each in crash_path:
-                        testcase_path = os.path.join(each, "repro.prog")
-                        if os.path.isfile(testcase_path):
-                            #Using patch to eliminate cases wuth different root cases
-                            if len(self.repro_on_fixed_kernel(hash_val, case, [each]))>0:
-                                dst = "{}/gopath/src/github.com/google/syzkaller/workdir/testcase-{}".format(self.current_case_path, hash_val[:7])
-                                shutil.copy(testcase_path, dst)
-                                with open(testcase_path, 'r') as f:
-                                    self.logger.info("OOB/UAF Read detected, rerun syzkaller base on new testcase {}".format(testcase_path))
-                                    raw_text = f.readlines()
-                                    self.__write_config("".join(raw_text),hash_val)
-                                    if need_patch == 0:
-                                        need_patch = 1
-                                        self.__run_delopy_script(hash_val[:7], case, need_patch)
-                                    exitcode = self.run_syzkaller(hash_val)
-                                    self.__save_case(hash_val, exitcode, case, need_fuzzing, secondary_fuzzing=True)
-                                    return
-                    self.__move_to_completed()
-
+                need_patch = 0
+                for each in crash_path:
+                    testcase_path = os.path.join(each, "repro.prog")
+                    if os.path.isfile(testcase_path):
+                        #Using patch to eliminate cases wuth different root cases
+                        if len(self.repro_on_fixed_kernel(hash_val, case, [each]))>0:
+                            dst = "{}/gopath/src/github.com/google/syzkaller/workdir/testcase-{}".format(self.current_case_path, hash_val[:7])
+                            shutil.copy(testcase_path, dst)
+                            with open(testcase_path, 'r') as f:
+                                self.logger.info("OOB/UAF Read detected, rerun syzkaller base on new testcase {}".format(testcase_path))
+                                raw_text = f.readlines()
+                                self.__write_config("".join(raw_text),hash_val)
+                                if need_patch == 0:
+                                    need_patch = 1
+                                    self.__run_delopy_script(hash_val[:7], case, need_patch)
+                                exitcode = self.run_syzkaller(hash_val)
+                                self.__save_case(hash_val, exitcode, case, need_fuzzing, secondary_fuzzing=True)
+                                return
+                self.__move_to_completed()
+            """
     
-    def __copy_new_capability(self, path, need_fuzzing, title):
+    def __copy_new_impact(self, path, impact_without_mutating, title):
         output = os.path.join(self.current_case_path, "output")
         os.makedirs(output, exist_ok=True)
-        if not need_fuzzing:
+        if not impact_without_mutating:
             case = path
             if case['syz_repro'] != None:
                 r = utilities.request_get(case['syz_repro'])
@@ -672,7 +668,7 @@ class Deployer(Workers):
         self.logger.info("case {} encounter an error. See log for details.".format(hash_val))
         self.__move_to_error()
 
-    def __copy_crashes(self, need_fuzzing):
+    def __copy_crashes(self):
         crash_path = "{}/workdir/crashes".format(self.syzkaller_path)
         dest_path = "{}/crashes".format(self.current_case_path)
         i = 0
@@ -685,9 +681,6 @@ class Deployer(Workers):
                 except FileExistsError:
                     dest_path = "{}/crashes-{}".format(self.current_case_path, i)
                     i += 1
-        else:
-            if need_fuzzing:
-                self.logger.info("No crashes found in syzkaller")
 
     def __move_to_completed(self):
         self.logger.info("Copy to completed")
@@ -707,7 +700,7 @@ class Deployer(Workers):
         shutil.move(src, des)
         self.current_case_path = des
     
-    def __move_to_succeed(self):
+    def __move_to_succeed(self, new_impact_type):
         self.logger.info("Copy to succeed")
         src = self.current_case_path
         base = os.path.basename(src)
@@ -724,6 +717,7 @@ class Deployer(Workers):
                 self.logger.info("Fail to delete directory {}".format(des))
         shutil.move(src, des)
         self.current_case_path = des
+        self.write_to_confirm(base, new_impact_type)
     
     def __move_to_error(self):
         self.logger.info("Copy to error")
@@ -797,8 +791,18 @@ class Deployer(Workers):
             if log_level == logging.DEBUG:
                 self.case_logger.debug(line)
 
-    def __success_check(self, hash_val):
-        success_path = "{}/work/success".format(self.project_path)
+    def __new_impact(self, hash_val):
+        ret = utilities.NONCRITICAL
+        if self.__success_check(hash_val, "AbnormallyMemRead") and self.store_read:
+            ret |= utilities.AbMemRead
+        if self.__success_check(hash_val, "AbnormallyMemWrite"):
+            ret |= utilities.AbMemWrite
+        if self.__success_check(hash_val, "DoubleFree"):
+            ret |= utilities.InvFree
+        return ret
+
+    def __success_check(self, hash_val, name):
+        success_path = "{}/work/{}".format(self.project_path, name)
         if os.path.isfile(success_path):
             f = open(success_path, "r")
             text = f.readlines()

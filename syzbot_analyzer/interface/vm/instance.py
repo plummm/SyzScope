@@ -47,6 +47,8 @@ class VMInstance:
         format = logging.Formatter('%(message)s')
         handler.setFormatter(format)
         logger = logging.getLogger(log_path)
+        for each_handler in logger.handlers:
+            logger.removeHandler(each_handler)
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)
         logger.propagate = False
@@ -140,6 +142,7 @@ class VMInstance:
     
     def __log_qemu(self, pipe):
         try:
+            self.qemu_logger.info("\n".join(self.cmd_launch)+"\n")
             self.qemu_logger.info("pid: {}".format(self._qemu.pid))
             for line in iter(pipe.readline, b''):
                 try:
@@ -155,8 +158,6 @@ class VMInstance:
                 if self.debug:
                     print(line)
                 self.output.append(line)
-                if self._qemu.poll() != None:
-                    return
         except EOFError:
             # Qemu may crash and makes pipe NULL
             pass
@@ -170,4 +171,5 @@ class VMInstance:
             # for line in iter(pipe.readline, b''):                                                                │
             # ValueError: PyMemoryView_FromBuffer(): info->buf must not be NULL
             pass
+        self.qemu_ready = False
         return

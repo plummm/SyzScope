@@ -39,9 +39,9 @@ def args_parse():
     parser.add_argument('-r', '--replay', choices=['succeed', 'completed', 'incomplete', 'error'],
                         help='Replay crashes of each case in one directory')
     parser.add_argument('--ssh-port', nargs='?',
-                        default='53777',
+                        default='33777',
                         help='The default port of ssh using by QEMU\n'
-                        '(default value is 53777)')
+                        '(default value is 33777)')
     parser.add_argument('--ignore', nargs='?', action='store',
                         help='A file contains cases hashs which are ignored. One line for each hash.')
     parser.add_argument('--alert', nargs='*', action='store',
