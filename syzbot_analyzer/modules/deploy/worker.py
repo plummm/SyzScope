@@ -140,7 +140,8 @@ class Workers(Case):
             #self.__create_stamp(stamp_symbolic_tracing)
         else:
             self.logger.warning("Can not trigger vulnerability. Abaondoned")"""
-        self.__create_stamp(stamp_symbolic_tracing)
+        
+        self.create_finished_symbolic_tracing_stamp()
         return
 
     def do_static_analysis(self, case):
@@ -170,14 +171,14 @@ class Workers(Case):
         r = self.sa.run_static_analysis(vul_site, func_site, func, offset, size)
         if r != 0:
             self.logger.error("Error occur when getting pointer in IR")
-        self.__create_stamp(stamp_static_analysis)
+        self.create_finished_static_analysis_stamp()
     
     def do_reproducing_ori_poc(self, case, hash_val, i386):
         self.logger.info("Try to triger the OOB/UAF by running original poc")
         self.case_info_logger.info("compiler: "+self.compiler)
         report, trigger = self.crash_checker.read_crash(case["syz_repro"], case["syzkaller"], None, 0, case["c_repro"], i386)
         hunted_type_without_mutating, title = self.KasanChecker(report, hash_val)
-        self.__create_stamp(stamp_reproduce_ori_poc)
+        self.create_reproduced_ori_poc_stamp()
         return hunted_type_without_mutating, title
     
     def KasanChecker(self, report, hash_val):
@@ -258,6 +259,18 @@ class Workers(Case):
     
     def finished_static_analysis(self, hash_val, folder):
         return self.__check_stamp(stamp_static_analysis, hash_val[:7], folder)
+
+    def create_finished_fuzzing_stamp(self):
+        return self.__create_stamp(stamp_finish_fuzzing)
+    
+    def create_finished_symbolic_tracing_stamp(self):
+        return self.__create_stamp(stamp_symbolic_tracing)
+
+    def create_finished_static_analysis_stamp(self):
+        return self.__create_stamp(stamp_static_analysis)
+    
+    def create_reproduced_ori_poc_stamp(self):
+        return self.__create_stamp(stamp_reproduce_ori_poc)
     
     def cleanup_finished_fuzzing(self, hash_val):
         self.__clean_stamp(stamp_finish_fuzzing, hash_val[:7])

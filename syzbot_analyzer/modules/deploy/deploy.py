@@ -580,7 +580,7 @@ class Deployer(Workers):
 
     def __save_case(self, hash_val, exitcode, case, impact_without_mutating, title=None, secondary_fuzzing=False):
         self.__copy_crashes()
-        self.finished_fuzzing(hash_val[:7], "'incomplete'")
+        self.create_finished_fuzzing_stamp()
         new_impact_type = self.__new_impact(hash_val[:7])
         if new_impact_type != utilities.NONCRITICAL:
                 paths = self.confirmSuccess(hash_val, case)
