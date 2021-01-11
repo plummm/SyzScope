@@ -588,14 +588,14 @@ class Deployer(Workers):
                     for each in paths:
                         self.__copy_new_impact(each, impact_without_mutating, title)
                     self.__move_to_succeed(new_impact_type)
-                elif not impact_without_mutating:
+                elif impact_without_mutating:
+                    self.__copy_new_impact(case, impact_without_mutating, title)
+                    self.__move_to_succeed(new_impact_type)
+                else:
                     if exitcode !=0:
                         self.__save_error(hash_val)
                     else:
                         self.__move_to_completed()
-                else:
-                    self.__copy_new_impact(case, impact_without_mutating, title)
-                    self.__move_to_succeed(new_impact_type)
         elif not impact_without_mutating:
             self.__move_to_completed()
         else:
@@ -631,7 +631,7 @@ class Deployer(Workers):
     def __copy_new_impact(self, path, impact_without_mutating, title):
         output = os.path.join(self.current_case_path, "output")
         os.makedirs(output, exist_ok=True)
-        if not impact_without_mutating:
+        if impact_without_mutating:
             case = path
             if case['syz_repro'] != None:
                 r = utilities.request_get(case['syz_repro'])
