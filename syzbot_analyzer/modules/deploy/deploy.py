@@ -585,8 +585,10 @@ class Deployer(Workers):
         if new_impact_type != utilities.NONCRITICAL:
                 paths = self.confirmSuccess(hash_val, case)
                 if len(paths) > 0:
+                    if impact_without_mutating:
+                        self.__copy_new_impact(case, impact_without_mutating, title)
                     for each in paths:
-                        self.__copy_new_impact(each, impact_without_mutating, title)
+                        self.__copy_new_impact(each, False, title)
                     self.__move_to_succeed(new_impact_type)
                 elif impact_without_mutating:
                     self.__copy_new_impact(case, impact_without_mutating, title)

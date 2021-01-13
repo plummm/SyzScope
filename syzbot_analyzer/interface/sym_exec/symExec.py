@@ -22,14 +22,13 @@ class SymExec(MemInstrument):
         self.vul_mem_start = None
         self.vul_mem_end = None
         self.target_site = None
-        self.path = None
         self.extra_noisy_func = None
         self.gdb_port = None
         self.mon_port = None
         self.vm = None
         self.proj = None
         self.simgr = None
-        self._branch = None
+        self._path = None
         self._init_state = None
         self._timeout=None
         self.cus_sections = sections
@@ -49,12 +48,11 @@ class SymExec(MemInstrument):
         if self.vm != None:
             self.vm.kill()
 
-    def setup_bug_capture(self, offset, size, vuln_site=None, target_site=None, path = [], extra_noisy_func=None):
+    def setup_bug_capture(self, offset, size, vuln_site=None, target_site=None, extra_noisy_func=None):
         self.vul_mem_offset = offset
         self.vul_mem_size = size
         self.vuln_site = vuln_site
         self.target_site = target_site
-        self.path = path
         self.extra_noisy_func = extra_noisy_func
 
     def run_vm(self):
@@ -92,7 +90,7 @@ class SymExec(MemInstrument):
         """
         return p
 
-    def run_sym(self, raw_tracing=False, timeout=60*10):
+    def run_sym(self, path=[], raw_tracing=False, timeout=60*10):
         if timeout > self._timeout:
             self.logger.warning("Timeout of symbolic execution is longer than timeout of qemu")
         self._timeout = timeout
@@ -113,7 +111,7 @@ class SymExec(MemInstrument):
         # set a breakpoint at vulnerable site, resume the qemu
         # self.vm.reach_vul_site(self.vuln_site)
         self.vm.back_to_kasan_ret()
-        return self.symbolic_execute(self.target_site, self.path, raw_tracing)
+        return self.symbolic_execute(self.target_site, path, raw_tracing)
     
     def symbolic_execute(self, target_site, path, raw_tracing=False):
         extras = {angr.options.REVERSE_MEMORY_NAME_MAP,
@@ -132,11 +130,11 @@ class SymExec(MemInstrument):
         self._symbolize_vuln_mem(raw_tracing)
         if len(self._init_state.globals['sym']) == 0:
             return None
-        self._hookup_path(path)
-        ret = self._explore(target_site, raw_tracing)
+        ret = self.explore(path, target_site, raw_tracing)
         return ret
 
-    def _explore(self, target_site, raw_tracing):
+    def explore(self, path, target_site, raw_tracing):
+        self._path = path
         self.logger.info("Initial state explore at {}".format(hex(self._init_state.addr)))
         self.hook_noisy_func(self.extra_noisy_func)
 
@@ -144,8 +142,9 @@ class SymExec(MemInstrument):
         flag_stop = False
         self.get_current_state().inspect.b('mem_read', when=angr.BP_BEFORE, action=self.track_mem_read)
         self.get_current_state().inspect.b('mem_write', when=angr.BP_BEFORE, action=self.track_mem_write)
-        #self.get_current_state().inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff84179a80)
-        self.get_current_state().inspect.b('symbolic_variable', when=angr.BP_AFTER, action=self.track_symbolic_variable)
+        self.get_current_state().inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff812e358c)
+        self.get_current_state().inspect.b('symbolic_variable', when=angr.BP_BOTH, action=self.track_symbolic_variable)
+        self.get_current_state().inspect.b('call', when=angr.BP_BEFORE, action=self.track_call)
 
         ok, err = self.init_simgr(raw_tracing)
         if not ok:
@@ -180,24 +179,14 @@ class SymExec(MemInstrument):
                 n = len(insns)
                 self.vm.inspect_code(self.simgr.active[0].addr, n)
             
+            if self.simgr.unconstrained:
+                flag_stop = True
+
             if len(self.simgr.active) == 0:
                 # No dfs no deferred
                 if len(self.simgr.deferred) == 0:
                     self.logger.info("No active states")
                     return self.state_privilege
-
-            if self.simgr.unconstrained:
-                for each_state in self.simgr.unconstrained:
-                    if each_state.regs.rip.symbolic and each_state.satisfiable():
-                        self.state_privilege |= StateManager.CONTROL_FLOW_HIJACK
-                        self.logger.warning("Control flow hijack found!")
-                        for addr in each_state.globals['sym']:
-                            size = each_state.globals['sym'][addr]
-                            bv = each_state.memory.load(addr, size=size, inspect=False, endness=archinfo.Endness.LE)
-                            self.logger.info("addr {} eval to {}".format(hex(addr), hex(each_state.solver.eval(bv))))
-                        self.dump_state(each_state)
-                        self.dump_stack(each_state)
-                        flag_stop = True
             
             if flag_stop:
                 return self.state_privilege
@@ -214,24 +203,7 @@ class SymExec(MemInstrument):
                 for s in each['stack']:
                     self.logger.info(s)
         return ret
-    
-    def _hookup_path(self, path):
-        self._branch = {}
-        hooked = []
-        for each in path:
-            cond = each['cond']
-            correct_path = each['correct_path']
-            wrong_path = each['wrong_path']
-            self._branch[cond] = [correct_path, wrong_path]
-            self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.instrument_cond_jump, instruction=cond)
-            if cond == 0 and correct_path == 0 and wrong_path != 0:
-                self._init_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.exit_point, instruction=wrong_path)
-            """if wrong_path not in hooked:
-                self._init_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.instrument_wrong_path, instruction=wrong_path)
-                hooked.append(wrong_path)
-            if correct_path not in hooked:
-                self._init_state.inspect.b('instruction', when=angr.BP_AFTER, action=self.instrument_correct_path, instruction=correct_path)
-                hooked.append(correct_path)"""
+
 
     def _symbolize_vuln_mem(self, raw_tracing):
         for i in range(0, self.vul_mem_size):
@@ -256,7 +228,7 @@ class SymExec(MemInstrument):
             #self._init_state.regs.ss = self._init_state.solver.BVV(regs['ss'], 32)
             #self._init_state.regs.ds = self._init_state.solver.BVV(regs['ds'], 32)
             self._init_state.regs.fs = self._init_state.solver.BVV(self.get_segment_base('fs'), 64)
-            #self._init_state.regs.es = self._init_state.solver.BVV(regs['es'], 32)
+            #self._init_state.regs.es = self._init_state.solver.BVV(self.get_segment_base('fs'), 64)
             if 'eflags' in regs:
                 self._init_state.regs.eflags = self._init_state.solver.BVV(regs['eflags'], 32)
             else:
@@ -370,14 +342,28 @@ class SymExec(MemInstrument):
         if len(succ.successors) > 2:
             self.logger.error("WTF")
 
-        for each in successors:
-            if self.cur_cond_jmp != 0 and each.addr == self._branch[self.cur_cond_jmp][1]:
-                self.logger.info("kill a wrong state: state {}".format(self.self.get_state_index(each)))
-                succ.successors.remove(each)
-                if each in succ.flat_successors:
-                    succ.flat_successors.remove(each)
-                if each in succ.all_successors :
-                    succ.all_successors.remove(each)
+        if self._path != [] and len(successors) > 1:
+            if state.callstack.next == None:
+                file, line = self.vm.get_dbg_info(state.addr)
+                next_file = ''
+                next_line = ''
+                for i in range(0, len(self._path)-1):
+                    bb = self._path[i]
+                    if file == bb['file'] and line == bb['line']:
+                        next_file = self._path[i+1]['file']
+                        next_line = self._path[i+1]['line']
+                        for each in successors:
+                            file, line = self.vm.get_dbg_info(each.addr)
+                            if file != next_file or line != next_line:
+                                self.logger.info("kill a off path state: state {}".format(self.get_state_index(each)))
+                                succ.successors.remove(each)
+                                if each in succ.flat_successors:
+                                    succ.flat_successors.remove(each)
+                                if each in succ.all_successors :
+                                    succ.all_successors.remove(each)
+                            else:
+                                self._path = self._path[i+1:]
+                        break
         self.cur_cond_jmp = 0
         return succ
     

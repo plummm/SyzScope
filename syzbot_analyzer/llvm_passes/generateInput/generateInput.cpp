@@ -11,8 +11,9 @@ struct thisPass : public ModulePass {
     bool runOnModule(Module &M) override {
         struct Input *input = getInput(M);
         for (struct Input *i = input; i != NULL; i=i->next) {
-            errs() << "basePointer: " << i->basePointer << " offset: " << i->offset << " distance: " << i->distance << "\n";
-            errs() << "Inst: " << (*i->inst) << "\n";
+            errs() << " offset: " << i->offset << " distance: " << i->distance << "\n";
+            if (i->topCallsite != NULL)
+                errs() << "topCallsite: " << *i->topCallsite << "\n";
         }
         //typeMatchFunc(M, input);
         return true;
@@ -283,6 +284,7 @@ struct thisPass : public ModulePass {
         string line;
         vector<string> strlist;
         ifstream fin;
+        TheModule = M;
         fin.open(Calltrace_File);
         while (getline(fin, line)) {
             //errs() << line << "\n";
@@ -311,12 +313,24 @@ struct thisPass : public ModulePass {
             calltrace.push_back(item);
             //errs() << "funcName:" << item->funcName << " filePath:" << item->filePath << " isInline:" << item->isInline << " line:" << item->line <<"\n";
         }
+        findNextFuncInModule();
+    }
+
+    void findNextFuncInModule() {
+        if (TheModule == NULL) {
+            errs() << "Where is the module?\n";
+        }
         CalltraceItem *item;
         map<string, llvm::Function*> func_contexts;
+        int n=-1;
         for (int i=0; i<calltrace.size(); i++) {
             item = calltrace[i];
+            if (item->F != NULL)
+                continue;
+            if (n == -1)
+                n = i;
             string func_regx = item->funcName + "(\\.\\d+)?";
-            for(auto &F : (*M)){
+            for(auto &F : (*TheModule)){
                 if (F.isIntrinsic())
                     continue;
                 if (regex_match(F.getName().str(), regex(func_regx))) {
@@ -326,10 +340,11 @@ struct thisPass : public ModulePass {
                     //break;
                 }
             }
+            
             if (item->numDuplication == 1)
                 break;
         }
-        for (int i=0; i < calltrace.size(); i++) {
+        for (int i=n; i < calltrace.size(); i++) {
             errs() << calltrace[i]->funcName << " has " << calltrace[i]->numDuplication <<  " duplications\n";
             if (calltrace[i]->numDuplication == 1) {
                 determineCorrectContext(i, func_contexts);

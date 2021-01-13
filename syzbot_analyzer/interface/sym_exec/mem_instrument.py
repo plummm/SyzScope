@@ -70,8 +70,11 @@ class MemInstrument(StateManager):
         bv_addr = state.inspect.mem_write_address
         bv_expr = state.inspect.mem_write_expr
         addr = state.solver.eval(bv_addr)
+        if not state.solver.unique(bv_addr):
+            state.solver.add(bv_addr == addr)
         size = len(bv_expr) // 8
-        #addr = self._access_seg_regs(state, addr, True)
+        if not self._validate_inst(state):
+            return
         if self._is_symbolic(bv_addr):
             if self.is_under_constrained(bv_addr):
                 self.state_privilege |= StateManager.FINITE_ADDR_WRITE
@@ -102,6 +105,12 @@ class MemInstrument(StateManager):
         if state.regs.rip.symbolic:
             self.state_privilege |= StateManager.CONTROL_FLOW_HIJACK
             self.logger.warning("Control flow hijack found!")
+            for addr in state.globals['sym']:
+                size = state.globals['sym'][addr]
+                bv = state.memory.load(addr, size=size, inspect=False, endness=archinfo.Endness.LE)
+                self.logger.info("addr {} eval to {}".format(hex(addr), hex(state.solver.eval(bv))))
+            self.dump_state(state)
+            self.dump_stack(state)
             return
 
     def track_instruction(self, state):
@@ -156,14 +165,12 @@ class MemInstrument(StateManager):
     def dump_stack(self, state):
         ret = []
         callstack = state.callstack
-        func_name = self.vm.get_func_name(callstack.state.addr)
-        file, line = self.vm.get_dbg_info(callstack.state.addr)
-        ret.append("{}\n{}:{}".format(func_name, file, line))
         while True:
             if callstack.next == None:
-                func_name = self.vm.get_func_name(callstack.state.addr)
-                file, line = self.vm.get_dbg_info(callstack.state.addr)
-                ret.append("{}\n{}:{}".format(func_name, file, line))
+                if not callstack.state.regs.rip.symbolic:
+                    func_name = self.vm.get_func_name(callstack.state.addr)
+                    file, line = self.vm.get_dbg_info(callstack.state.addr)
+                    ret.append("{}\n{}:{}".format(func_name, file, line))
                 break
             func_addr = callstack.current_function_address
             call_site = callstack.call_site_addr
@@ -180,7 +187,7 @@ class MemInstrument(StateManager):
         kcov_funcs = ["__sanitizer_cov_trace_pc", "__sanitizer_cov_trace_switch", \
             "__sanitizer_cov_trace_const_cmp1", "__sanitizer_cov_trace_const_cmp2", "__sanitizer_cov_trace_const_cmp4", "__sanitizer_cov_trace_const_cmp8", 
             "__sanitizer_cov_trace_cmp1", "__sanitizer_cov_trace_cmp2", "__sanitizer_cov_trace_cmp4", "__sanitizer_cov_trace_cmp8"] 
-        noisy_func = ["kasan_check_read", "kasan_check_write","mutex_lock", "mutex_unlock", "queue_delayed_work_on", "pvclock_read_wallclock", "record_times", "update_rq_clock", "sched_clock_idle_sleep_event", \
+        noisy_func = ["kasan_report_double_free", "kasan_check_read", "kasan_check_write","mutex_lock", "mutex_unlock", "queue_delayed_work_on", "pvclock_read_wallclock", "record_times", "update_rq_clock", "sched_clock_idle_sleep_event", \
             "printk", "vprintk", "queued_spin_lock_slowpath", "__pv_queued_spin_lock_slowpath", "queued_read_lock_slowpath", "queued_write_lock_slowpath"]
         noisy_func.extend(kcov_funcs)
         
@@ -354,6 +361,14 @@ class MemInstrument(StateManager):
     
     def _is_symbolic(self, bv):
         return type(bv) != int and bv.symbolic
+
+    def _validate_inst(self, state):
+        ins_addr = state.scratch.ins_addr
+        insns = self.proj.factory.block(ins_addr).capstone.insns
+        inst = insns[0]
+        if 'rep' in inst.mnemonic:
+            return state.solver.eval(state.regs.rcx) != 0xffffffffffffffff
+        return True
 
     def _access_seg_regs(self, state, addr, is_write):
         if self.vm == None:

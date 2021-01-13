@@ -87,15 +87,14 @@ class Workers(Case):
 
             self.crash_checker.run_exp(case["syz_repro"], self.ssh_port, utilities.URL, ok, i386, 0, sym_logger)
             paths = []
-            #paths.append({'cond': 0xffffffff8328c77d, 'correct_path': 0xffffffff8328c77f, 'wrong_path': 0xffffffff8328c79a})
-            #paths.append({'cond': 0xffffffff83295764, 'correct_path': 0xffffffff83295766, 'wrong_path': 0xffffffff8329576b})
-            #paths.append({'cond': 0xffffffff8329661f, 'correct_path': 0xffffffff8329667b, 'wrong_path': 0xffffffff83296621})
-            #paths.append({'cond': 0xffffffff83296f63, 'correct_path': 0xffffffff83296f65, 'wrong_path': 0xffffffff83296fc2})
-            #paths.append({'cond': 0xffffffff83296fc0, 'correct_path': 0xffffffff83296f65, 'wrong_path': 0xffffffff83296fc2})
-            #paths.append({'cond': 0, 'correct_path': 0, 'wrong_path': 0xffffffff8328c7ad})
+            #paths.append({'file': 'net/tls/tls_main.c', 'line':'229'})
+            #paths.append({'file': 'net/tls/tls_main.c', 'line':'231'})
+            #paths.append({'file': 'net/tls/tls_main.c', 'line':'232'})
+            #paths.append({'file': 'net/tls/tls_main.c', 'line':'259'})
+            #paths.append({'file': 'net/tls/tls_main.c', 'line':'260'})
             sym.setup_bug_capture(offset, size)
             try:
-                ret = sym.run_sym(raw_tracing, timeout=60*60)
+                ret = sym.run_sym(paths , raw_tracing, timeout=60*60)
                 if ret == None:
                     self.cleanup(sym)
                     continue
@@ -211,7 +210,6 @@ class Workers(Case):
                             self.crash_checker.logger.info("OOB/UAF Write without mutating")
                             self.logger.info("Write to ConfirmedAbnormallyMemWrite")
                             self.__write_to_AbnormallyMemWrite(hash_val)
-                            self.__write_to_ConfirmedAbnormallyMemWrite(hash_val)
                             flag_kasan_write = True
                             break
                     if self.store_read and utilities.regx_match(utilities.kasan_read_addr_regx, line) and not flag_kasan_read:
@@ -219,7 +217,6 @@ class Workers(Case):
                             self.crash_checker.logger.info("OOB/UAF Read without mutating")
                             self.logger.info("Write to ConfirmedAbnormallyMemRead")
                             self.__write_to_AbnormallyMemRead(hash_val)
-                            self.__write_to_ConfirmedAbnormallyMemRead(hash_val)
                             flag_kasan_read
                             break
         return ret, title
