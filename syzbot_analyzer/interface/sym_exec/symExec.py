@@ -6,6 +6,7 @@ import math
 import threading
 import archinfo
 import syzbot_analyzer.interface.utilities as utilities
+import datetime
 
 from syzbot_analyzer.interface.vm import VM
 from math import e
@@ -40,6 +41,7 @@ class SymExec(MemInstrument):
     def setup_vm(self, linux, arch, port, image, gdb_port, mon_port, hash_tag, proj_path='/tmp/', mem="2G", cpu="2", key=None, opts=None, log_name="vm.log", log_suffix="", logger=None, timeout=None):
         self.gdb_port = gdb_port
         self.mon_port = mon_port
+        self.proj_path = proj_path
         if timeout != None:
             self._timeout = timeout
         self.vm = VM(linux=linux, arch=arch, port=port, image=image, proj_path=proj_path, mem=mem, cpu=cpu, key=key, gdb_port=gdb_port, mon_port=mon_port, opts=opts, log_name=log_name, log_suffix=log_suffix, hash_tag=hash_tag, debug=self.debug, timeout=timeout, logger=logger)
@@ -90,7 +92,7 @@ class SymExec(MemInstrument):
         """
         return p
 
-    def run_sym(self, path=[], raw_tracing=False, timeout=60*10):
+    def run_sym(self, path=[], dfs=True, raw_tracing=False, timeout=60*10):
         if timeout > self._timeout:
             self.logger.warning("Timeout of symbolic execution is longer than timeout of qemu")
         self._timeout = timeout
@@ -111,9 +113,9 @@ class SymExec(MemInstrument):
         # set a breakpoint at vulnerable site, resume the qemu
         # self.vm.reach_vul_site(self.vuln_site)
         self.vm.back_to_kasan_ret()
-        return self.symbolic_execute(self.target_site, path, raw_tracing)
+        return self.symbolic_execute(self.target_site, path, dfs=dfs, raw_tracing=raw_tracing)
     
-    def symbolic_execute(self, target_site, path, raw_tracing=False):
+    def symbolic_execute(self, target_site, path, dfs=True, raw_tracing=False):
         extras = {angr.options.REVERSE_MEMORY_NAME_MAP,
                   angr.options.TRACK_ACTION_HISTORY,
                   #angr.options.CONSERVATIVE_READ_STRATEGY,
@@ -130,10 +132,10 @@ class SymExec(MemInstrument):
         self._symbolize_vuln_mem(raw_tracing)
         if len(self._init_state.globals['sym']) == 0:
             return None
-        ret = self.explore(path, target_site, raw_tracing)
+        ret = self.explore(path, target_site, raw_tracing, dfs)
         return ret
 
-    def explore(self, path, target_site, raw_tracing):
+    def explore(self, path, target_site, raw_tracing, dfs):
         self._path = path
         self.logger.info("Initial state explore at {}".format(hex(self._init_state.addr)))
         self.hook_noisy_func(self.extra_noisy_func)
@@ -146,7 +148,7 @@ class SymExec(MemInstrument):
         self.get_current_state().inspect.b('symbolic_variable', when=angr.BP_BOTH, action=self.track_symbolic_variable)
         self.get_current_state().inspect.b('call', when=angr.BP_BEFORE, action=self.track_call)
 
-        ok, err = self.init_simgr(raw_tracing)
+        ok, err = self.init_simgr(raw_tracing, dfs)
         if not ok:
             self.logger.error(err)
             return self.state_privilege
@@ -159,7 +161,7 @@ class SymExec(MemInstrument):
                 #self.logger.info("time left: {}".format(current_time - start_time))
                 if current_time - start_time > self._timeout:
                     self.logger.info("Timeout, stop symbolic execution")
-                    return self.state_privilege
+                    flag_stop = True
 
             if len(self.simgr.active) == 1:
                 cur_state = self.get_state_index(self.get_current_state())
@@ -180,15 +182,54 @@ class SymExec(MemInstrument):
                 self.vm.inspect_code(self.simgr.active[0].addr, n)
             
             if self.simgr.unconstrained:
-                flag_stop = True
+                for each in self.simgr.unconstrained:
+                    self.state_privilege |= StateManager.CONTROL_FLOW_HIJACK
+                    n = self.update_states_globals(each.scratch.ins_addr, StateManager.FINITE_ADDR_WRITE, StateManager.G_VUL)
+                    prim_name = "{}-{}-{}".format(hex(each.addr), "CFH", n)
+                    prim_logger = self.init_primitive_logger(prim_name)
+                    prim_logger.warning("Control flow hijack found!")
+                    for addr in each.globals['sym']:
+                        size = each.globals['sym'][addr]
+                        bv = each.memory.load(addr, size=size, inspect=False, endness=archinfo.Endness.LE)
+                        prim_logger.info("addr {} eval to {}".format(hex(addr), hex(each.solver.eval(bv))))
+                    self.dump_state(each, prim_logger)
+                    self.dump_stack(each, prim_logger)
+                    flag_stop = True
 
             if len(self.simgr.active) == 0:
                 # No dfs no deferred
-                if len(self.simgr.deferred) == 0:
-                    self.logger.info("No active states")
-                    return self.state_privilege
+                #if len(self.simgr.deferred) == 0:
+                self.logger.info("No active states")
+                flag_stop = True
             
             if flag_stop:
+                self.logger.info("*******************primitives*******************\n")
+                running_time = time.time() - start_time
+                self.logger.info("Running for {}".format(str(datetime.timedelta(seconds=running_time))))
+                cur_state = self.get_current_state()
+                if 'vul' not in cur_state.globals:
+                    self.logger.info("There is no primitive found")
+                    return self.state_privilege
+                self.logger.info("Total {} primitives found during symbolic execution\n".format(len(cur_state.globals['vul'])))
+                n_AAW, n_AVW, n_FAW, n_FVW, n_CFH= 0, 0, 0, 0, 0
+                for addr in cur_state.globals['vul']:
+                    each_primitive = cur_state.globals['vul'][addr]
+                    if each_primitive == StateManager.ARBITRARY_ADDR_WRITE:
+                        n_AAW += 1
+                    if each_primitive == StateManager.ARBITRARY_VALUE_WRITE:
+                        n_AVW += 1
+                    if each_primitive == StateManager.FINITE_ADDR_WRITE:
+                        n_FAW += 1
+                    if each_primitive == StateManager.FINITE_VALUE_WRITE:
+                        n_FVW += 1
+                    if each_primitive == StateManager.CONTROL_FLOW_HIJACK:
+                        n_CFH += 1
+                self.logger.info("The number of arbitrary address write is {}\n".format(n_AAW))
+                self.logger.info("The number of arbitrary value write is {}\n".format(n_AVW))
+                self.logger.info("The number of finite address write is {}\n".format(n_FAW))
+                self.logger.info("The number of finite value write is {}\n".format(n_FVW))
+                self.logger.info("The number of control flow hijacking is {}\n".format(n_CFH))
+                self.logger.info("************************************************\n")
                 return self.state_privilege
     
     def _collect_propogating_results(self):
@@ -329,6 +370,15 @@ class SymExec(MemInstrument):
             succ.all_successors = []
             return succ
         successors = succ.successors
+        if len(succ.successors) == 1:
+            insns = self.proj.factory.block(state.addr).capstone.insns
+            n = len(insns)
+            # Only logging top-level function ret
+            if insns[n-1].mnemonic == 'ret' and state.callstack.next == None and successors[0].callstack.next == None:
+                func_name = self.vm.get_func_name(successors[0].addr)
+                file, line = self.vm.get_dbg_info(successors[0].addr)
+                self.update_states_globals(0, "{} {}:{}".format(func_name, file, line), StateManager.G_RET)
+
         self.transfer_state_globals(state, successors)
         if len(succ.successors) == 1:
             self.update_states(successors[0], self.get_state_index(state))
@@ -339,31 +389,30 @@ class SymExec(MemInstrument):
             #cap = self.proj.factory.block(each.addr).capstone
             #cap.pp()
 
-        if len(succ.successors) > 2:
-            self.logger.error("WTF")
-
         if self._path != [] and len(successors) > 1:
-            if state.callstack.next == None:
-                file, line = self.vm.get_dbg_info(state.addr)
-                next_file = ''
-                next_line = ''
-                for i in range(0, len(self._path)-1):
-                    bb = self._path[i]
-                    if file == bb['file'] and line == bb['line']:
-                        next_file = self._path[i+1]['file']
-                        next_line = self._path[i+1]['line']
-                        for each in successors:
-                            file, line = self.vm.get_dbg_info(each.addr)
-                            if file != next_file or line != next_line:
-                                self.logger.info("kill a off path state: state {}".format(self.get_state_index(each)))
-                                succ.successors.remove(each)
-                                if each in succ.flat_successors:
-                                    succ.flat_successors.remove(each)
-                                if each in succ.all_successors :
-                                    succ.all_successors.remove(each)
-                            else:
-                                self._path = self._path[i+1:]
-                        break
+            file, line = self.vm.get_dbg_info(state.addr)
+            next_file = ''
+            next_line = ''
+            for i in range(0, len(self._path)-1):
+                bb = self._path[i]
+                if file == bb['file'] and line == bb['line']:
+                    next_file = self._path[i+1]['file']
+                    next_line = self._path[i+1]['line']
+                    dead_states = []
+                    for each in successors:
+                        file, line = self.vm.get_dbg_info(each.addr)
+                        if file != next_file or line != next_line:
+                            self.logger.info("kill a off path state: state {}".format(self.get_state_index(each)))
+                            dead_states.append(each)
+                        else:
+                            self._path = self._path[i+1:]
+                    for each in dead_states:
+                        succ.successors.remove(each)
+                        if each in succ.flat_successors:
+                            succ.flat_successors.remove(each)
+                        if each in succ.all_successors :
+                            succ.all_successors.remove(each)
+                    break
         self.cur_cond_jmp = 0
         return succ
     

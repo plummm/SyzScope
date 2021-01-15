@@ -78,21 +78,33 @@ class MemInstrument(StateManager):
         if self._is_symbolic(bv_addr):
             if self.is_under_constrained(bv_addr):
                 self.state_privilege |= StateManager.FINITE_ADDR_WRITE
-                self.logger.warning("Finite address write found")
+                n = self.update_states_globals(state.scratch.ins_addr, StateManager.FINITE_ADDR_WRITE, StateManager.G_VUL)
+                prim_name = "{}-{}-{}".format(hex(state.addr), "FAW", n)
+                prim_logger = self.init_primitive_logger(prim_name)
+                prim_logger.warning("Finite address write found")
             else:
                 self.state_privilege |= StateManager.ARBITRARY_ADDR_WRITE
-                self.logger.warning("Arbitrary address write found")
-            self.dump_state(state)
-            self.dump_stack(state)
+                n = self.update_states_globals(state.scratch.ins_addr, StateManager.ARBITRARY_ADDR_WRITE, StateManager.G_VUL)
+                prim_name = "{}-{}-{}".format(hex(state.addr), "AAW", n)
+                prim_logger = self.init_primitive_logger(prim_name)
+                prim_logger.warning("Arbitrary address write found")
+            self.dump_state(state, prim_logger)
+            self.dump_stack(state, prim_logger)
         if self._is_symbolic(bv_expr):
             if self.is_under_constrained(bv_expr):
                 self.state_privilege |= StateManager.FINITE_VALUE_WRITE
-                self.logger.warning("Finite value write found")
+                n = self.update_states_globals(state.scratch.ins_addr, StateManager.FINITE_VALUE_WRITE, StateManager.G_VUL)
+                prim_name = "{}-{}-{}".format(hex(state.addr), "FVW", n)
+                prim_logger = self.init_primitive_logger(prim_name)
+                prim_logger.warning("Finite value write found")
             else:
                 self.state_privilege |= StateManager.ARBITRARY_VALUE_WRITE
-                self.logger.warning("Arbitrary value write found")
-            self.dump_state(state)
-            self.dump_stack(state)
+                n = self.update_states_globals(state.scratch.ins_addr, StateManager.ARBITRARY_VALUE_WRITE, StateManager.G_VUL)
+                prim_name = "{}-{}-{}".format(hex(state.addr), "AVW", n)
+                prim_logger = self.init_primitive_logger(prim_name)
+                prim_logger.warning("Arbitrary value write found")
+            self.dump_state(state, prim_logger)
+            self.dump_stack(state, prim_logger)
         if self.symbolic_tracing and self.ppg_handler.is_kasan_write(addr):
             if self._is_symbolic(bv_expr) and not self._is_symbolic(bv_addr) and state.solver.eval(bv_addr) not in state.globals['sym']:
                 stack = self.dump_stack(state)
@@ -104,13 +116,16 @@ class MemInstrument(StateManager):
     def track_call(self, state):
         if state.regs.rip.symbolic:
             self.state_privilege |= StateManager.CONTROL_FLOW_HIJACK
-            self.logger.warning("Control flow hijack found!")
+            n = self.update_states_globals(state.scratch.ins_addr, StateManager.CONTROL_FLOW_HIJACK, StateManager.G_VUL)
+            prim_name = "{}-{}-{}".format(hex(state.addr), "CFH", n)
+            prim_logger = self.init_primitive_logger(prim_name)
+            prim_logger.warning("Control flow hijack found!")
             for addr in state.globals['sym']:
                 size = state.globals['sym'][addr]
                 bv = state.memory.load(addr, size=size, inspect=False, endness=archinfo.Endness.LE)
-                self.logger.info("addr {} eval to {}".format(hex(addr), hex(state.solver.eval(bv))))
-            self.dump_state(state)
-            self.dump_stack(state)
+                prim_logger.info("addr {} eval to {}".format(hex(addr), hex(state.solver.eval(bv))))
+            self.dump_state(state, prim_logger)
+            self.dump_stack(state, prim_logger)
             return
 
     def track_instruction(self, state):
@@ -133,53 +148,66 @@ class MemInstrument(StateManager):
                 mem_inst = True
             if mem_inst:
                 n += 1
-        self.update_states_globals(addr, n, StateManager.G_IRSB)
+        #self.update_states_globals(addr, n, StateManager.G_IRSB)
 
-    def dump_state(self, state):
-        self.logger.info("rax: is_symbolic: {} {}".format(state.regs.rax.symbolic, hex(state.solver.eval(state.regs.rax))))
-        self.logger.info("rbx: is_symbolic: {} {}".format(state.regs.rbx.symbolic, hex(state.solver.eval(state.regs.rbx))))
-        self.logger.info("rcx: is_symbolic: {} {}".format(state.regs.rcx.symbolic, hex(state.solver.eval(state.regs.rcx))))
-        self.logger.info("rdx: is_symbolic: {} {}".format(state.regs.rdx.symbolic, hex(state.solver.eval(state.regs.rdx))))
-        self.logger.info("rsi: is_symbolic: {} {}".format(state.regs.rsi.symbolic, hex(state.solver.eval(state.regs.rsi))))
-        self.logger.info("rdi: is_symbolic: {} {}".format(state.regs.rdi.symbolic, hex(state.solver.eval(state.regs.rdi))))
-        self.logger.info("rsp: is_symbolic: {} {}".format(state.regs.rsp.symbolic, hex(state.solver.eval(state.regs.rsp))))
-        self.logger.info("rbp: is_symbolic: {} {}".format(state.regs.rbp.symbolic, hex(state.solver.eval(state.regs.rbp))))
-        self.logger.info("r8: is_symbolic: {} {}".format(state.regs.r8.symbolic, hex(state.solver.eval(state.regs.r8))))
-        self.logger.info("r9: is_symbolic: {} {}".format(state.regs.r9.symbolic, hex(state.solver.eval(state.regs.r9))))
-        self.logger.info("r10: is_symbolic: {} {}".format(state.regs.r10.symbolic, hex(state.solver.eval(state.regs.r10))))
-        self.logger.info("r11: is_symbolic: {} {}".format(state.regs.r11.symbolic, hex(state.solver.eval(state.regs.r11))))
-        self.logger.info("r12: is_symbolic: {} {}".format(state.regs.r12.symbolic, hex(state.solver.eval(state.regs.r12))))
-        self.logger.info("r13: is_symbolic: {} {}".format(state.regs.r13.symbolic, hex(state.solver.eval(state.regs.r13))))
-        self.logger.info("r14: is_symbolic: {} {}".format(state.regs.r14.symbolic, hex(state.solver.eval(state.regs.r14))))
-        self.logger.info("r15: is_symbolic: {} {}".format(state.regs.r15.symbolic, hex(state.solver.eval(state.regs.r15))))
-        self.logger.info("rip: is_symbolic: {} {}".format(state.regs.rip.symbolic, hex(state.solver.eval(state.regs.rip))))
-        self.logger.info("gs: is_symbolic: {} {}".format(state.regs.gs.symbolic, hex(state.solver.eval(state.regs.gs))))
-        self.logger.info("================Thread-{} dump_state====================".format(self.index))
+    def dump_state(self, state, logger=None):
+        if logger == None:
+            logger = self.logger
+        logger.info("rax: is_symbolic: {} {}".format(state.regs.rax.symbolic, hex(state.solver.eval(state.regs.rax))))
+        logger.info("rbx: is_symbolic: {} {}".format(state.regs.rbx.symbolic, hex(state.solver.eval(state.regs.rbx))))
+        logger.info("rcx: is_symbolic: {} {}".format(state.regs.rcx.symbolic, hex(state.solver.eval(state.regs.rcx))))
+        logger.info("rdx: is_symbolic: {} {}".format(state.regs.rdx.symbolic, hex(state.solver.eval(state.regs.rdx))))
+        logger.info("rsi: is_symbolic: {} {}".format(state.regs.rsi.symbolic, hex(state.solver.eval(state.regs.rsi))))
+        logger.info("rdi: is_symbolic: {} {}".format(state.regs.rdi.symbolic, hex(state.solver.eval(state.regs.rdi))))
+        logger.info("rsp: is_symbolic: {} {}".format(state.regs.rsp.symbolic, hex(state.solver.eval(state.regs.rsp))))
+        logger.info("rbp: is_symbolic: {} {}".format(state.regs.rbp.symbolic, hex(state.solver.eval(state.regs.rbp))))
+        logger.info("r8: is_symbolic: {} {}".format(state.regs.r8.symbolic, hex(state.solver.eval(state.regs.r8))))
+        logger.info("r9: is_symbolic: {} {}".format(state.regs.r9.symbolic, hex(state.solver.eval(state.regs.r9))))
+        logger.info("r10: is_symbolic: {} {}".format(state.regs.r10.symbolic, hex(state.solver.eval(state.regs.r10))))
+        logger.info("r11: is_symbolic: {} {}".format(state.regs.r11.symbolic, hex(state.solver.eval(state.regs.r11))))
+        logger.info("r12: is_symbolic: {} {}".format(state.regs.r12.symbolic, hex(state.solver.eval(state.regs.r12))))
+        logger.info("r13: is_symbolic: {} {}".format(state.regs.r13.symbolic, hex(state.solver.eval(state.regs.r13))))
+        logger.info("r14: is_symbolic: {} {}".format(state.regs.r14.symbolic, hex(state.solver.eval(state.regs.r14))))
+        logger.info("r15: is_symbolic: {} {}".format(state.regs.r15.symbolic, hex(state.solver.eval(state.regs.r15))))
+        logger.info("rip: is_symbolic: {} {}".format(state.regs.rip.symbolic, hex(state.solver.eval(state.regs.rip))))
+        logger.info("gs: is_symbolic: {} {}".format(state.regs.gs.symbolic, hex(state.solver.eval(state.regs.gs))))
+        logger.info("================Thread-{} dump_state====================".format(self.index))
         insns = self.proj.factory.block(state.scratch.ins_addr).capstone.insns
         n = len(insns)
         t = self.vm.inspect_code(state.scratch.ins_addr, n)
-        self.logger.info(t)
+        logger.info(t)
         #cap = self.proj.factory.block(state.scratch.ins_addr).capstone
         #cap.pp()
     
-    def dump_stack(self, state):
+    def dump_stack(self, state, logger=None):
+        if logger == None:
+            logger = self.logger
+        calltrace = '\n'
         ret = []
+        if 'ret' in state.globals:
+            for i in range(0, len(state.globals['ret'])):
+                calltrace += '  '*(len(state.globals['ret'])-i-1) + '|' + state.globals['ret'][i] + '\n'
         callstack = state.callstack
         while True:
             if callstack.next == None:
                 if not callstack.state.regs.rip.symbolic:
                     func_name = self.vm.get_func_name(callstack.state.addr)
                     file, line = self.vm.get_dbg_info(callstack.state.addr)
-                    ret.append("{}\n{}:{}".format(func_name, file, line))
+                    ret.append("{} {}:{}".format(func_name, file, line))
                 break
             func_addr = callstack.current_function_address
             call_site = callstack.call_site_addr
             func_name = self.vm.get_func_name(func_addr)
             file, line = self.vm.get_dbg_info(call_site)
-            ret.append("{}\n{}:{}".format(func_name, file, line))
+            ret.append("{} {}:{}".format(func_name, file, line))
             callstack = callstack.next
-        for each in ret:
-            self.logger.info(each)
+        for i in range(0, len(ret)):
+            calltrace += '  '*i + '|' + ret[i] + '\n'
+        if not state.regs.rip.symbolic:
+            func_name = self.vm.get_func_name(state.addr)
+            file, line = self.vm.get_dbg_info(state.addr)
+            calltrace += '  '*(len(ret)-1) + '|' + "{} {}:{}".format(func_name, file, line)
+        logger.info(calltrace)
         return
         
 
@@ -274,14 +302,16 @@ class MemInstrument(StateManager):
                 index += 8
     
     def transfer_state_globals(self, state, successors):
-        if len(successors) == 1:
-            successors[0].globals['mem'] = state.globals['mem'].copy()
-            successors[0].globals['sym'] = state.globals['sym'].copy()
-        if len(successors) == 2:
-            successors[0].globals['mem'] = state.globals['mem'].copy()
-            successors[0].globals['sym'] = state.globals['sym'].copy()
-            successors[1].globals['mem'] = state.globals['mem'].copy()
-            successors[1].globals['sym'] = state.globals['sym'].copy()
+        for i in range(0, len(successors)):
+            if 'sym' in state.globals:
+                successors[i].globals['sym'] = state.globals['sym'].copy()
+            if 'mem' in state.globals:
+                successors[i].globals['mem'] = state.globals['mem'].copy()
+            if 'ret' in state.globals:
+                successors[i].globals['ret'] = state.globals['ret'].copy()
+            # 'val' is a global field for all states, we do not need to copy it.
+            if 'vul' in state.globals:
+                successors[i].globals['vul'] = state.globals['vul']
     
     def _instrument_mem_read(self, state, bv_addr, size):
         uninitialized = False
@@ -338,7 +368,9 @@ class MemInstrument(StateManager):
                     if not propagate_addr:
                         for each in val:
                             group = len(val)
-                            state.memory.store(addr, state.solver.BVV(each, round(size/group)*8), endness=archinfo.Endness.LE)
+                            for i in range(0, size):
+                                self.update_states_globals(addr+i, 0, StateManager.G_MEM)
+                            state.memory.store(addr, state.solver.BVV(each, round(size/group)*8), endness=archinfo.Endness.LE, inspect=False)
                     else:
                         self.make_symbolic(state, addr, size)
                         bv = state.memory.load(addr, size, inspect=False)
@@ -349,7 +381,7 @@ class MemInstrument(StateManager):
                     if self._is_symbolic(bv_addr):
                         self.logger.info("read from a symbolic address")
                     self.dump_state(state)
-                    #self.dump_stack(state)
+                    self.dump_stack(state)
 
                     self.logger.warning("page fault occur when access {}".format(hex(addr)))
                     self.purge_current_state()

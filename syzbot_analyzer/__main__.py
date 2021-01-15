@@ -38,7 +38,7 @@ def args_parse():
                             '(--parallel-max will be set to 1)')
     parser.add_argument('-r', '--replay', choices=['succeed', 'completed', 'incomplete', 'error'],
                         help='Replay crashes of each case in one directory')
-    parser.add_argument('--ssh-port', nargs='?',
+    parser.add_argument('--ssh', nargs='?',
                         default='33777',
                         help='The default port of ssh using by QEMU\n'
                         '(default value is 33777)')
@@ -86,9 +86,9 @@ def print_args_info(args):
     print("[*] alert: {}".format(args.alert))
 
     try:
-        int(args.ssh_port)
+        int(args.ssh)
     except:
-        print("[-] invalid argument value ssh_port: {}".format(args.ssh_port))
+        print("[-] invalid argument value ssh: {}".format(args.ssh))
         os._exit(1)
     
     try:
@@ -211,6 +211,6 @@ if __name__ == '__main__':
     l = list(crawler.cases.keys())
     total = len(l)
     for i in range(0,min(parallel_max,len(crawler.cases))):
-        deployer.append(Deployer(index=i, debug=args.debug, force=args.force, port=int(args.ssh_port), replay=args.replay, linux_index=int(args.linux), time=int(args.time), force_fuzz=args.force_fuzz, alert=args.alert, static_analysis=args.static_analysis, symbolic_tracing=args.disable_symbolic_tracing, gdb_port=int(args.gdb), qemu_monitor_port=int(args.qemu_monitor), max_compiling_kernel=int(args.max_compiling_kernel)))
+        deployer.append(Deployer(index=i, debug=args.debug, force=args.force, port=int(args.ssh), replay=args.replay, linux_index=int(args.linux), time=int(args.time), force_fuzz=args.force_fuzz, alert=args.alert, static_analysis=args.static_analysis, symbolic_tracing=args.disable_symbolic_tracing, gdb_port=int(args.gdb), qemu_monitor_port=int(args.qemu_monitor), max_compiling_kernel=int(args.max_compiling_kernel)))
         x = threading.Thread(target=deploy_one_case, args=(i,), name="lord-{}".format(i))
         x.start()

@@ -87,6 +87,12 @@ class Workers(Case):
 
             self.crash_checker.run_exp(case["syz_repro"], self.ssh_port, utilities.URL, ok, i386, 0, sym_logger)
             paths = []
+            paths.append({'file': 'kernel/bpf/sockmap.c', 'line': '1358'})
+            paths.append({'file': 'kernel/bpf/sockmap.c', 'line': '1359'})
+            paths.append({'file': 'net/ipv4/tcp_ulp.c', 'line': '124'})
+            paths.append({'file': 'net/ipv4/tcp_ulp.c', 'line': '126'})
+            paths.append({'file': 'net/ipv4/tcp_ulp.c', 'line': '129'})
+            paths.append({'file': 'net/ipv4/tcp_ulp.c', 'line': '130'})
             #paths.append({'file': 'net/tls/tls_main.c', 'line':'229'})
             #paths.append({'file': 'net/tls/tls_main.c', 'line':'231'})
             #paths.append({'file': 'net/tls/tls_main.c', 'line':'232'})
@@ -94,7 +100,7 @@ class Workers(Case):
             #paths.append({'file': 'net/tls/tls_main.c', 'line':'260'})
             sym.setup_bug_capture(offset, size)
             try:
-                ret = sym.run_sym(paths , raw_tracing, timeout=60*60)
+                ret = sym.run_sym(path=paths, dfs=False, raw_tracing=raw_tracing, timeout=60*60)
                 if ret == None:
                     self.cleanup(sym)
                     continue

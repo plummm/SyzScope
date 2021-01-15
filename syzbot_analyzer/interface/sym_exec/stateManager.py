@@ -1,9 +1,11 @@
 import angr
-
+import logging
+import os
 class StateManager:
     G_MEM = 0
     G_SYM = 1
-    G_IRSB = 2
+    G_RET = 2
+    G_VUL = 3
     NO_ADDITIONAL_USE = 0
     ARBITRARY_VALUE_WRITE = 1 << 0
     FINITE_VALUE_WRITE = 1 << 1
@@ -20,23 +22,44 @@ class StateManager:
         self.state_counter = 0
         self.add_constraints = False
         self.symbolic_tracing = False
+        self.dfs = True
+        self.proj_path = None
+    
+    def init_primitive_logger(self, name):
+        primitive_path = os.path.join(self.proj_path, "sym/primitives")
+        if not os.path.exists(primitive_path):
+            os.mkdir(primitive_path)
+        if self.proj_path != None:
+            handler = logging.FileHandler("{}/{}".format(primitive_path, name))
+            logger = logging.getLogger(name)
+            logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
+            logger.propagate = False
+            if self.debug:
+                logger.propagate = True
+                logger.setLevel(logging.DEBUG)
+        else:
+            return None
+        return logger
     
     def setup_current_state(self, init_state):
         self._current_state = init_state
 
-    def init_simgr(self, symbolic_tracing):
+    def init_simgr(self, symbolic_tracing, dfs):
+        self.dfs = dfs
         self.symbolic_tracing = symbolic_tracing
         if self._current_state == None:
             err = "setup current state before initializing simgr"
             return False, err
         self.update_states(self._current_state, None)
         self.simgr = self.proj.factory.simgr(self._current_state, save_unconstrained=True)
-        if not symbolic_tracing:
+        if not symbolic_tracing and dfs:
             self.add_constraints = True
-            legth_limiter = angr.exploration_techniques.LengthLimiter(max_length=10000, drop=True)
+            legth_limiter = angr.exploration_techniques.LengthLimiter(max_length=1000, drop=True)
             self.simgr.use_technique(legth_limiter)
-        dfs = angr.exploration_techniques.DFS()
-        self.simgr.use_technique(dfs)
+        if dfs:
+            dfs = angr.exploration_techniques.DFS()
+            self.simgr.use_technique(dfs)
         return True, None
     
     def get_current_state(self):
@@ -50,21 +73,31 @@ class StateManager:
             self.state_logger[state] = index
     
     def update_states_globals(self, addr, val, key):
+        n = 0
         if key == StateManager.G_MEM:
             if 'mem' not in self._current_state.globals:
                 self._current_state.globals['mem'] = {}
             self._current_state.globals['mem'][addr] = val
+            n = len(self._current_state.globals['mem'])
         if key == StateManager.G_SYM:
             if 'sym' not in self._current_state.globals:
                 self._current_state.globals['sym'] = {}
             self._current_state.globals['sym'][addr] = val
+            n = len(self._current_state.globals['sym'])
             if 'mem' not in self._current_state.globals:
                 self._current_state.globals['mem'] = {}
             self._current_state.globals['mem'][addr] = val
-        if key == StateManager.G_IRSB:
-            if 'irsb' not in self._current_state.globals:
-                self._current_state.globals['irsb'] = {}
-            self._current_state.globals['irsb'][addr] = val
+        if key == StateManager.G_RET:
+            if 'ret' not in self._current_state.globals:
+                self._current_state.globals['ret'] = []
+            self._current_state.globals['ret'].append(val)
+            n = len(self._current_state.globals['ret'])
+        if key == StateManager.G_VUL:
+            if 'vul' not in self._current_state.globals:
+                self._current_state.globals['vul'] = {}
+            self._current_state.globals['vul'][addr] = val
+            n = len(self._current_state.globals['vul'])
+        return n
     
     def get_states_globals(self, addr, key):
         val = None
@@ -76,6 +109,16 @@ class StateManager:
         if key == StateManager.G_SYM:
             try:
                 val = self._current_state.globals['sym'][addr]
+            except KeyError:
+                val = None
+        if key == StateManager.G_RET:
+            try:
+                val = self._current_state.globals['ret'][addr]
+            except KeyError:
+                val = None
+        if key == StateManager.G_VUL:
+            try:
+                val = self._current_state.globals['vul'][addr]
             except KeyError:
                 val = None
         return val
