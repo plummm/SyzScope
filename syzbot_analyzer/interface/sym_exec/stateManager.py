@@ -1,6 +1,7 @@
 import angr
 import logging
 import os
+import archinfo
 class StateManager:
     G_MEM = 0
     G_SYM = 1
@@ -18,12 +19,14 @@ class StateManager:
         self._current_state = None
         self.simgr = None
         self.state_logger = {}
+        self.fork_countor = {}
         self.state_privilege = 0
         self.state_counter = 0
         self.add_constraints = False
         self.symbolic_tracing = False
         self.dfs = True
         self.proj_path = None
+        self.stop_execution = False
     
     def init_primitive_logger(self, name):
         primitive_path = os.path.join(self.proj_path, "sym/primitives")
@@ -53,10 +56,11 @@ class StateManager:
             return False, err
         self.update_states(self._current_state, None)
         self.simgr = self.proj.factory.simgr(self._current_state, save_unconstrained=True)
-        if not symbolic_tracing and dfs:
+        if not symbolic_tracing:
             self.add_constraints = True
-            legth_limiter = angr.exploration_techniques.LengthLimiter(max_length=1000, drop=True)
-            self.simgr.use_technique(legth_limiter)
+            if dfs:
+                legth_limiter = angr.exploration_techniques.LengthLimiter(max_length=1000, drop=True)
+                self.simgr.use_technique(legth_limiter)
         if dfs:
             dfs = angr.exploration_techniques.DFS()
             self.simgr.use_technique(dfs)
@@ -64,6 +68,58 @@ class StateManager:
     
     def get_current_state(self):
         return self._current_state
+    
+    def wrap_high_risk_state(self, state, impact_type):
+        prim_logger = None
+        func_name = self.vm.get_func_name(state.scratch.ins_addr)
+        if func_name == None:
+            self.logger.info("{} does not have a valid function name".format(hex(state.scratch.ins_addr)))
+            func_name = 'UNKOWN_FUNC'
+            #self.dump_state(state)
+            #self.dump_stack(state)
+            #self.dump_trace(state)
+            self.purge_current_state()
+            return
+        file, line = self.vm.get_dbg_info(state.scratch.ins_addr)
+        key = "{}:{}".format(file, line)
+        self.target_site[key] = impact_type
+        if impact_type == StateManager.FINITE_ADDR_WRITE:
+            self.state_privilege |= impact_type
+            n = self.update_states_globals(state.scratch.ins_addr, impact_type, StateManager.G_VUL)
+            prim_name = "{}-{}-{}".format("FAW", func_name, n)
+            prim_logger = self.init_primitive_logger(prim_name)
+            prim_logger.warning("Finite address write found")
+        if impact_type == StateManager.ARBITRARY_ADDR_WRITE:
+            self.state_privilege |= impact_type
+            n = self.update_states_globals(state.scratch.ins_addr, impact_type, StateManager.G_VUL)
+            prim_name = "{}-{}-{}".format("AAW", func_name, n)
+            prim_logger = self.init_primitive_logger(prim_name)
+            prim_logger.warning("Arbitrary address write found")
+        if impact_type == StateManager.FINITE_VALUE_WRITE:
+            self.state_privilege |= impact_type
+            n = self.update_states_globals(state.scratch.ins_addr, impact_type, StateManager.G_VUL)
+            prim_name = "{}-{}-{}".format("FVW", func_name, n)
+            prim_logger = self.init_primitive_logger(prim_name)
+            prim_logger.warning("Finite value write found")
+        if impact_type == StateManager.ARBITRARY_VALUE_WRITE:
+            self.state_privilege |= impact_type
+            n = self.update_states_globals(state.scratch.ins_addr, impact_type, StateManager.G_VUL)
+            prim_name = "{}-{}-{}".format("AVW", func_name, n)
+            prim_logger = self.init_primitive_logger(prim_name)
+            prim_logger.warning("Arbitrary value write found")
+        if impact_type == StateManager.CONTROL_FLOW_HIJACK:
+            self.state_privilege |= impact_type
+            n = self.update_states_globals(state.scratch.ins_addr, impact_type, StateManager.G_VUL)
+            prim_name = "{}-{}-{}".format("CFH", func_name, n)
+            prim_logger = self.init_primitive_logger(prim_name)
+            prim_logger.warning("Control flow hijack found!")
+            for addr in state.globals['sym']:
+                size = state.globals['sym'][addr]
+                bv = state.memory.load(addr, size=size, inspect=False, endness=archinfo.Endness.LE)
+                prim_logger.info("addr {} eval to {}".format(hex(addr), hex(state.solver.eval(bv))))
+        self.dump_state(state, prim_logger)
+        self.dump_stack(state, prim_logger)
+        self.dump_trace(state, prim_logger)
     
     def update_states(self, state, index):
         if index == None:
@@ -131,6 +187,7 @@ class StateManager:
         return ret
     
     def is_under_constrained(self, bv):
+        # '0x100000000000000'
         sym_value_4_state = []
         sym_value_4_bv = []
         constraints = self._current_state.solver.constraints
@@ -156,6 +213,11 @@ class StateManager:
             ret.append(id(each_arg))
             ret.extend(self.iterate_constraints(each_arg))
         return ret
+    
+    def purge_state(self, state):
+        if state in self.simgr.active:
+            self.simgr.active.remove(state)
+            self.simgr.deadended.append(state)
 
     def purge_current_state(self):
         if self._current_state in self.simgr.active:
@@ -164,3 +226,72 @@ class StateManager:
     
     def cur_state_dead(self):
         return not self._current_state in self.simgr.active
+
+    def dump_state(self, state, logger=None):
+        if logger == None:
+            logger = self.logger
+        logger.info("rax: is_symbolic: {} {}".format(state.regs.rax.symbolic, hex(state.solver.eval(state.regs.rax))))
+        logger.info("rbx: is_symbolic: {} {}".format(state.regs.rbx.symbolic, hex(state.solver.eval(state.regs.rbx))))
+        logger.info("rcx: is_symbolic: {} {}".format(state.regs.rcx.symbolic, hex(state.solver.eval(state.regs.rcx))))
+        logger.info("rdx: is_symbolic: {} {}".format(state.regs.rdx.symbolic, hex(state.solver.eval(state.regs.rdx))))
+        logger.info("rsi: is_symbolic: {} {}".format(state.regs.rsi.symbolic, hex(state.solver.eval(state.regs.rsi))))
+        logger.info("rdi: is_symbolic: {} {}".format(state.regs.rdi.symbolic, hex(state.solver.eval(state.regs.rdi))))
+        logger.info("rsp: is_symbolic: {} {}".format(state.regs.rsp.symbolic, hex(state.solver.eval(state.regs.rsp))))
+        logger.info("rbp: is_symbolic: {} {}".format(state.regs.rbp.symbolic, hex(state.solver.eval(state.regs.rbp))))
+        logger.info("r8: is_symbolic: {} {}".format(state.regs.r8.symbolic, hex(state.solver.eval(state.regs.r8))))
+        logger.info("r9: is_symbolic: {} {}".format(state.regs.r9.symbolic, hex(state.solver.eval(state.regs.r9))))
+        logger.info("r10: is_symbolic: {} {}".format(state.regs.r10.symbolic, hex(state.solver.eval(state.regs.r10))))
+        logger.info("r11: is_symbolic: {} {}".format(state.regs.r11.symbolic, hex(state.solver.eval(state.regs.r11))))
+        logger.info("r12: is_symbolic: {} {}".format(state.regs.r12.symbolic, hex(state.solver.eval(state.regs.r12))))
+        logger.info("r13: is_symbolic: {} {}".format(state.regs.r13.symbolic, hex(state.solver.eval(state.regs.r13))))
+        logger.info("r14: is_symbolic: {} {}".format(state.regs.r14.symbolic, hex(state.solver.eval(state.regs.r14))))
+        logger.info("r15: is_symbolic: {} {}".format(state.regs.r15.symbolic, hex(state.solver.eval(state.regs.r15))))
+        logger.info("rip: is_symbolic: {} {}".format(state.regs.rip.symbolic, hex(state.solver.eval(state.regs.rip))))
+        logger.info("gs: is_symbolic: {} {}".format(state.regs.gs.symbolic, hex(state.solver.eval(state.regs.gs))))
+        logger.info("================Thread-{} dump_state====================".format(self.index))
+        insns = self.proj.factory.block(state.scratch.ins_addr).capstone.insns
+        n = len(insns)
+        t = self.vm.inspect_code(state.scratch.ins_addr, n)
+        logger.info(t)
+        #cap = self.proj.factory.block(state.scratch.ins_addr).capstone
+        #cap.pp()
+    
+    def dump_stack(self, state, logger=None):
+        if logger == None:
+            logger = self.logger
+        calltrace = '\n'
+        ret = []
+        if 'ret' in state.globals:
+            for i in range(0, len(state.globals['ret'])):
+                calltrace += '  '*(len(state.globals['ret'])-i-1) + '|' + state.globals['ret'][i] + '\n'
+        callstack = state.callstack
+        while True:
+            if callstack.next == None:
+                break
+            func_addr = callstack.current_function_address
+            call_site = callstack.call_site_addr
+            func_name = self.vm.get_func_name(func_addr)
+            file, line = self.vm.get_dbg_info(call_site)
+            ret.append("{} {}:{}".format(func_name, file, line))
+            callstack = callstack.next
+        for i in range(0, len(ret)):
+            calltrace += '  '*i + '|' + ret[::-1][i] + '\n'
+        if not state.regs.rip.symbolic:
+            func_name = self.vm.get_func_name(state.scratch.ins_addr)
+            file, line = self.vm.get_dbg_info(state.scratch.ins_addr)
+            calltrace += '  '*(len(ret)-1) + '|' + "{} {}:{}".format(func_name, file, line) + "\n"
+        logger.info(calltrace)
+        return
+    
+    def dump_trace(self, state, logger=None):
+        if logger == None:
+            logger = self.logger
+        for addr in state.history.bbl_addrs: 
+            func_name = self.vm.get_func_name(addr)
+            file, line = self.vm.get_dbg_info(addr)
+            if func_name == None or file == None or line == None:
+                continue
+            if 'kasan' not in file and 'kcov' not in file:
+                logger.info(hex(addr))
+                logger.info("{} {}:{}".format(func_name, file, line))
+                logger.info("--------------------------------------")

@@ -2,7 +2,8 @@ import logging
 import math
 import archinfo
 
-from angr import SimProcedure
+from angr import SimProcedure, SimValueError, SimUnsatError
+from pwn import *
 from .symTracing import PropagationHandler
 from .stateManager import StateManager
 from capstone.x86_const import X86_REG_GS, X86_REG_CS, X86_REG_SS, X86_REG_DS, X86_REG_ES, X86_REG_FS, X86_OP_MEM
@@ -16,7 +17,6 @@ class MemInstrument(StateManager):
     def __init__(self, index, logger=None):
         StateManager.__init__(self, index)
         self.ppg_handler = PropagationHandler()
-        self.cur_cond_jmp = 0
         self.sections = None
         if logger == None:
             self.logger = logging
@@ -55,9 +55,6 @@ class MemInstrument(StateManager):
                 return True
         return False
     
-    def instrument_cond_jump(self, state):
-        self.cur_cond_jmp = state.scratch.ins_addr
-    
     def exit_point(self, state):
         if state in self.simgr.active:
             self.simgr.active.remove(state)
@@ -73,59 +70,34 @@ class MemInstrument(StateManager):
         if not state.solver.unique(bv_addr):
             state.solver.add(bv_addr == addr)
         size = len(bv_expr) // 8
+        stack = state.solver.eval(state.regs.rsp)
+        if stack != addr:
+            # Finite address write includes write to UAF/OOB memory(addr is concrete but addr point to UAF/OOB memory)
+            # or write to an address that comes from UAF/OOB memory(addr is symbolic)
+            if (self._is_symbolic(bv_addr) or self.get_states_globals(addr, StateManager.G_SYM) != None ) \
+                    and self.get_states_globals(state.scratch.ins_addr, StateManager.G_VUL) == None:
+                if self.get_states_globals(addr, StateManager.G_SYM) or self.is_under_constrained(bv_addr) != None:
+                    self.wrap_high_risk_state(state, StateManager.FINITE_ADDR_WRITE)
+                else:
+                    self.wrap_high_risk_state(state, StateManager.ARBITRARY_ADDR_WRITE)
+            if self._is_symbolic(bv_expr) and self.get_states_globals(state.scratch.ins_addr, StateManager.G_VUL) == None:
+                if self.is_under_constrained(bv_expr):
+                    self.wrap_high_risk_state(state, StateManager.FINITE_VALUE_WRITE)
+                else:
+                    self.wrap_high_risk_state(state, StateManager.ARBITRARY_VALUE_WRITE)
         if not self._validate_inst(state):
             return
-        if self._is_symbolic(bv_addr):
-            if self.is_under_constrained(bv_addr):
-                self.state_privilege |= StateManager.FINITE_ADDR_WRITE
-                n = self.update_states_globals(state.scratch.ins_addr, StateManager.FINITE_ADDR_WRITE, StateManager.G_VUL)
-                prim_name = "{}-{}-{}".format(hex(state.addr), "FAW", n)
-                prim_logger = self.init_primitive_logger(prim_name)
-                prim_logger.warning("Finite address write found")
-            else:
-                self.state_privilege |= StateManager.ARBITRARY_ADDR_WRITE
-                n = self.update_states_globals(state.scratch.ins_addr, StateManager.ARBITRARY_ADDR_WRITE, StateManager.G_VUL)
-                prim_name = "{}-{}-{}".format(hex(state.addr), "AAW", n)
-                prim_logger = self.init_primitive_logger(prim_name)
-                prim_logger.warning("Arbitrary address write found")
-            self.dump_state(state, prim_logger)
-            self.dump_stack(state, prim_logger)
-        if self._is_symbolic(bv_expr):
-            if self.is_under_constrained(bv_expr):
-                self.state_privilege |= StateManager.FINITE_VALUE_WRITE
-                n = self.update_states_globals(state.scratch.ins_addr, StateManager.FINITE_VALUE_WRITE, StateManager.G_VUL)
-                prim_name = "{}-{}-{}".format(hex(state.addr), "FVW", n)
-                prim_logger = self.init_primitive_logger(prim_name)
-                prim_logger.warning("Finite value write found")
-            else:
-                self.state_privilege |= StateManager.ARBITRARY_VALUE_WRITE
-                n = self.update_states_globals(state.scratch.ins_addr, StateManager.ARBITRARY_VALUE_WRITE, StateManager.G_VUL)
-                prim_name = "{}-{}-{}".format(hex(state.addr), "AVW", n)
-                prim_logger = self.init_primitive_logger(prim_name)
-                prim_logger.warning("Arbitrary value write found")
-            self.dump_state(state, prim_logger)
-            self.dump_stack(state, prim_logger)
         if self.symbolic_tracing and self.ppg_handler.is_kasan_write(addr):
             if self._is_symbolic(bv_expr) and not self._is_symbolic(bv_addr) and state.solver.eval(bv_addr) not in state.globals['sym']:
-                stack = self.dump_stack(state)
-                self.ppg_handler.log_symbolic_propagation(state, stack)
+                self.dump_stack(state)
+                #self.ppg_handler.log_symbolic_propagation(state, stack)
                     #self.dump_state(state)
         for i in range(0, size):
             self.update_states_globals(addr+i, 0, StateManager.G_MEM)
     
     def track_call(self, state):
-        if state.regs.rip.symbolic:
-            self.state_privilege |= StateManager.CONTROL_FLOW_HIJACK
-            n = self.update_states_globals(state.scratch.ins_addr, StateManager.CONTROL_FLOW_HIJACK, StateManager.G_VUL)
-            prim_name = "{}-{}-{}".format(hex(state.addr), "CFH", n)
-            prim_logger = self.init_primitive_logger(prim_name)
-            prim_logger.warning("Control flow hijack found!")
-            for addr in state.globals['sym']:
-                size = state.globals['sym'][addr]
-                bv = state.memory.load(addr, size=size, inspect=False, endness=archinfo.Endness.LE)
-                prim_logger.info("addr {} eval to {}".format(hex(addr), hex(state.solver.eval(bv))))
-            self.dump_state(state, prim_logger)
-            self.dump_stack(state, prim_logger)
+        if state.regs.rip.symbolic and self.get_states_globals(state.scratch.ins_addr, StateManager.G_VUL) == None:
+            self.wrap_high_risk_state(state, StateManager.CONTROL_FLOW_HIJACK)
             return
 
     def track_instruction(self, state):
@@ -135,6 +107,9 @@ class MemInstrument(StateManager):
     def track_symbolic_variable(self, state):
         self.logger.warning("A new symbolic data: {} size: {} bit".format(state.inspect.symbolic_name, state.inspect.symbolic_size))
         #self.dump_state(state)
+    
+    def track_contraint(self, state):
+        self.logger.warning("A new constraint {} add to {}".format(state.inspect.added_constraints, hex(state.scratch.ins_addr)))
 
     def track_irsb(self, state):
         n = 0
@@ -150,73 +125,12 @@ class MemInstrument(StateManager):
                 n += 1
         #self.update_states_globals(addr, n, StateManager.G_IRSB)
 
-    def dump_state(self, state, logger=None):
-        if logger == None:
-            logger = self.logger
-        logger.info("rax: is_symbolic: {} {}".format(state.regs.rax.symbolic, hex(state.solver.eval(state.regs.rax))))
-        logger.info("rbx: is_symbolic: {} {}".format(state.regs.rbx.symbolic, hex(state.solver.eval(state.regs.rbx))))
-        logger.info("rcx: is_symbolic: {} {}".format(state.regs.rcx.symbolic, hex(state.solver.eval(state.regs.rcx))))
-        logger.info("rdx: is_symbolic: {} {}".format(state.regs.rdx.symbolic, hex(state.solver.eval(state.regs.rdx))))
-        logger.info("rsi: is_symbolic: {} {}".format(state.regs.rsi.symbolic, hex(state.solver.eval(state.regs.rsi))))
-        logger.info("rdi: is_symbolic: {} {}".format(state.regs.rdi.symbolic, hex(state.solver.eval(state.regs.rdi))))
-        logger.info("rsp: is_symbolic: {} {}".format(state.regs.rsp.symbolic, hex(state.solver.eval(state.regs.rsp))))
-        logger.info("rbp: is_symbolic: {} {}".format(state.regs.rbp.symbolic, hex(state.solver.eval(state.regs.rbp))))
-        logger.info("r8: is_symbolic: {} {}".format(state.regs.r8.symbolic, hex(state.solver.eval(state.regs.r8))))
-        logger.info("r9: is_symbolic: {} {}".format(state.regs.r9.symbolic, hex(state.solver.eval(state.regs.r9))))
-        logger.info("r10: is_symbolic: {} {}".format(state.regs.r10.symbolic, hex(state.solver.eval(state.regs.r10))))
-        logger.info("r11: is_symbolic: {} {}".format(state.regs.r11.symbolic, hex(state.solver.eval(state.regs.r11))))
-        logger.info("r12: is_symbolic: {} {}".format(state.regs.r12.symbolic, hex(state.solver.eval(state.regs.r12))))
-        logger.info("r13: is_symbolic: {} {}".format(state.regs.r13.symbolic, hex(state.solver.eval(state.regs.r13))))
-        logger.info("r14: is_symbolic: {} {}".format(state.regs.r14.symbolic, hex(state.solver.eval(state.regs.r14))))
-        logger.info("r15: is_symbolic: {} {}".format(state.regs.r15.symbolic, hex(state.solver.eval(state.regs.r15))))
-        logger.info("rip: is_symbolic: {} {}".format(state.regs.rip.symbolic, hex(state.solver.eval(state.regs.rip))))
-        logger.info("gs: is_symbolic: {} {}".format(state.regs.gs.symbolic, hex(state.solver.eval(state.regs.gs))))
-        logger.info("================Thread-{} dump_state====================".format(self.index))
-        insns = self.proj.factory.block(state.scratch.ins_addr).capstone.insns
-        n = len(insns)
-        t = self.vm.inspect_code(state.scratch.ins_addr, n)
-        logger.info(t)
-        #cap = self.proj.factory.block(state.scratch.ins_addr).capstone
-        #cap.pp()
-    
-    def dump_stack(self, state, logger=None):
-        if logger == None:
-            logger = self.logger
-        calltrace = '\n'
-        ret = []
-        if 'ret' in state.globals:
-            for i in range(0, len(state.globals['ret'])):
-                calltrace += '  '*(len(state.globals['ret'])-i-1) + '|' + state.globals['ret'][i] + '\n'
-        callstack = state.callstack
-        while True:
-            if callstack.next == None:
-                if not callstack.state.regs.rip.symbolic:
-                    func_name = self.vm.get_func_name(callstack.state.addr)
-                    file, line = self.vm.get_dbg_info(callstack.state.addr)
-                    ret.append("{} {}:{}".format(func_name, file, line))
-                break
-            func_addr = callstack.current_function_address
-            call_site = callstack.call_site_addr
-            func_name = self.vm.get_func_name(func_addr)
-            file, line = self.vm.get_dbg_info(call_site)
-            ret.append("{} {}:{}".format(func_name, file, line))
-            callstack = callstack.next
-        for i in range(0, len(ret)):
-            calltrace += '  '*i + '|' + ret[i] + '\n'
-        if not state.regs.rip.symbolic:
-            func_name = self.vm.get_func_name(state.addr)
-            file, line = self.vm.get_dbg_info(state.addr)
-            calltrace += '  '*(len(ret)-1) + '|' + "{} {}:{}".format(func_name, file, line)
-        logger.info(calltrace)
-        return
-        
-
     def hook_noisy_func(self, extra):    
         kcov_funcs = ["__sanitizer_cov_trace_pc", "__sanitizer_cov_trace_switch", \
             "__sanitizer_cov_trace_const_cmp1", "__sanitizer_cov_trace_const_cmp2", "__sanitizer_cov_trace_const_cmp4", "__sanitizer_cov_trace_const_cmp8", 
             "__sanitizer_cov_trace_cmp1", "__sanitizer_cov_trace_cmp2", "__sanitizer_cov_trace_cmp4", "__sanitizer_cov_trace_cmp8"] 
-        noisy_func = ["kasan_report_double_free", "kasan_check_read", "kasan_check_write","mutex_lock", "mutex_unlock", "queue_delayed_work_on", "pvclock_read_wallclock", "record_times", "update_rq_clock", "sched_clock_idle_sleep_event", \
-            "printk", "vprintk", "queued_spin_lock_slowpath", "__pv_queued_spin_lock_slowpath", "queued_read_lock_slowpath", "queued_write_lock_slowpath"]
+        noisy_func = ["__kasan_check_read", "__kasan_check_write","kasan_report_double_free", "kasan_check_read", "kasan_check_write", "kasan_unpoison_shadow", "queue_delayed_work_on", "pvclock_read_wallclock","mutex_lock", "__mutex_lock", "mutex_unlock", "__mutex_unlock", "record_times", "kfree", "update_rq_clock", "sched_clock_idle_sleep_event", \
+            "__warn_printk", "srm_printk", "snd_printk", "dbgp_printk", "ql4_printk", "printk", "vprintk", "__dump_page", "irq_stack_union", "queued_spin_lock_slowpath", "__pv_queued_spin_lock_slowpath", "queued_read_lock_slowpath", "queued_write_lock_slowpath"]
         noisy_func.extend(kcov_funcs)
         
         if type(extra) == list:
@@ -284,7 +198,7 @@ class MemInstrument(StateManager):
             self.update_states_globals(addr, size, StateManager.G_SYM)
             for i in range(0, size):
                 self.update_states_globals(addr+i, 0, StateManager.G_MEM)
-            state.memory.store(addr, sym, inspect=False)
+            state.memory.store(addr, sym, inspect=False, endness=archinfo.Endness.LE)
         else:
             index = 0
             while index < size:
@@ -298,7 +212,7 @@ class MemInstrument(StateManager):
                 self.update_states_globals(addr, size, StateManager.G_SYM)
                 for i in range(0, size):
                     self.update_states_globals(addr+i, 0, StateManager.G_MEM)
-                state.memory.store(addr, sym, inspect=False)
+                state.memory.store(addr, sym, inspect=False, endness=archinfo.Endness.LE)
                 index += 8
     
     def transfer_state_globals(self, state, successors):
@@ -314,82 +228,68 @@ class MemInstrument(StateManager):
                 successors[i].globals['vul'] = state.globals['vul']
     
     def _instrument_mem_read(self, state, bv_addr, size):
-        uninitialized = False
-        addr = state.solver.eval(bv_addr)
-        propagate_addr = False
-        #addr = self._access_seg_regs(state, addr, False)
-        if self._is_symbolic(bv_addr):
+        addrs = []
+        single_addr = state.solver.eval(bv_addr)
+        if state.solver.unique(bv_addr):
+            addrs.append(single_addr)
+        else:
             if self.add_constraints:
-                try:
-                    if self._is_ctr_addr(addr):
-                        state.solver.add(bv_addr == addr)
-                    else:
+                if self._is_ctr_addr(single_addr):
+                    state.solver.add(bv_addr == single_addr)
+                    addrs.append(single_addr)
+                else:
+                    try:
+                        state.solver.eval(bv_addr, extra_constraints=[(bv_addr == MemInstrument.CTR_ADDR)])
                         state.solver.add(bv_addr == MemInstrument.CTR_ADDR)
-                        if state.satisfiable():
-                            addr = state.solver.eval(bv_addr)
-                            self._updateCtrAddr()
-                        else:
-                            state.se.constraints.pop()
-                            state.se.reload_solver()
-                            state.solver.add(bv_addr == addr)
-                            #print("Symbolic data invoke")
-                            # if a symbolic value has more than 1 solution
-                            # current concrete value may not be the one used for reading
-                            # this leads to an angr warning which is annoying
-                            # Probably we can fix this by listing all the solution of this symbolic value
-                except:
-                    return
+                        addrs.append(MemInstrument.CTR_ADDR)
+                        self._updateCtrAddr()
+                    except SimUnsatError:
+                        state.solver.add(bv_addr == single_addr)
+                        addrs.append(single_addr)
             else:
                 propagate_addr = True
-
-        #if self.is_section(addr):
-        #    return
-        i = 0
-        for i in range(0, size):
-            if self.get_states_globals(addr+i, StateManager.G_MEM) == None:
-                uninitialized = True
-                break
-        if uninitialized:
-            """
-            if i != 0:
-                self.logger.info("i: {} addr {} -> {}".format(i, hex(addr), hex(addr + i)))
-            addr += i
-            size -= i
-            for j in range(0, size):
-                self.update_states_globals(addr+j, 0, StateManager.G_MEM)
-            """
-            if self._is_ctr_addr(addr):
-                self.make_symbolic(state, addr, size)
-                self.logger.info("Make symbolic at {}".format(hex(state.scratch.ins_addr)))
-            else:
-                val = self.vm.read_mem(addr, size)
-                #self.logger.info('Store at', hex(addr), ' with value ', val)
-                if len(val) > 0:
-                    if not propagate_addr:
-                        for each in val:
-                            group = len(val)
-                            for i in range(0, size):
-                                self.update_states_globals(addr+i, 0, StateManager.G_MEM)
-                            state.memory.store(addr, state.solver.BVV(each, round(size/group)*8), endness=archinfo.Endness.LE, inspect=False)
-                    else:
-                        self.make_symbolic(state, addr, size)
-                        bv = state.memory.load(addr, size, inspect=False)
-                        state.solver.add(bv == val[0])
-                    #self.dump_state(state)
-                elif not self._is_ctr_addr(addr):
-                    self.logger.warning("Dump last site")
-                    if self._is_symbolic(bv_addr):
-                        self.logger.info("read from a symbolic address")
-                    self.dump_state(state)
-                    self.dump_stack(state)
-
-                    self.logger.warning("page fault occur when access {}".format(hex(addr)))
-                    self.purge_current_state()
-
-                    # In case that unconstrained symbolic variable pop up
+        
+        for addr in addrs:
+            i = 0
+            uninitialized = False
+            propagate_addr = False
+            for i in range(0, size):
+                if self.get_states_globals(addr+i, StateManager.G_MEM) == None:
+                    uninitialized = True
+                    break
+            if uninitialized:
+                if self._is_ctr_addr(addr):
                     self.make_symbolic(state, addr, size)
-                    #bv = state.memory.load(addr, size, inspect=False, endness=archinfo.Endness.LE)
-                    #self.logger.info(hex(state.solver.eval(bv)))
+                    self.logger.info("Make symbolic at {}".format(hex(state.scratch.ins_addr)))
+                else:
+                    val = self.vm.read_mem(addr, size)
+                    #self.logger.info('Store at', hex(addr), ' with value ', val)
+                    if len(val) > 0:
+                        if not propagate_addr:
+                            for each in val:
+                                group = len(val)
+                                for i in range(0, size):
+                                    self.update_states_globals(addr+i, 0, StateManager.G_MEM)
+                                
+                                state.memory.store(addr, state.solver.BVV(each, round(size/group)*8), inspect=False, endness=archinfo.Endness.LE)
+                        else:
+                            self.make_symbolic(state, addr, size)
+                            bv = state.memory.load(addr, size, inspect=False, endness=archinfo.Endness.LE)
+                            state.solver.add(bv == val[0])
+                        #self.dump_state(state)
+                    elif not self._is_ctr_addr(addr):
+                        self.logger.warning("page fault occur when access {}".format(hex(addr)))
+                        self.logger.warning("Dump last site")
+                        if self._is_symbolic(bv_addr):
+                            self.logger.info("read from a symbolic address")
+                            #self.dump_state(state)
+                            #self.dump_stack(state)
+                            #self.dump_trace(state)
+                        self.purge_current_state()
+
+                        # In case that unconstrained symbolic variable pop up
+                        self.make_symbolic(state, addr, size)
+        return
     
     def _is_symbolic(self, bv):
         return type(bv) != int and bv.symbolic

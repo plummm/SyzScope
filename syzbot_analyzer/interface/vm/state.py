@@ -8,6 +8,7 @@ from .monitor import Monitor
 class VMState:
     ADDRESS = 1
     INITIAL = 0
+    KERNEL_BASE = 0
 
     def __init__(self, linux, gdb_port, arch, log_suffix="", proj_path=None, debug=False):
         self.linux = os.path.join(linux, "vmlinux")
@@ -22,8 +23,11 @@ class VMState:
         self.gdb = None
         self.mon = None
         self.debug = debug
+        self.addr_info = {}
+        VMState.KERNEL_BASE = 0x7fffffffffffffff
         if arch == 'i386':
             self.addr_bytes = 4
+            VMState.KERNEL_BASE = 0x7fffffff
         self._sections = None
         self.stack_addr = [0,0]
         self.kasan_addr = [0,[]]
@@ -186,16 +190,32 @@ class VMState:
     def get_func_name(self, addr):
         if self.__check_initialization():
             return
-        return self.gdb.get_func_name(addr)
+        func_name = None
+        if addr not in self.addr_info or 'func' not in self.addr_info[addr]:
+            func_name = self.gdb.get_func_name(addr)
+            if func_name != None:
+                if addr not in self.addr_info:
+                    self.addr_info[addr] = {}
+                self.addr_info[addr]['func'] = func_name
+        else:
+            func_name = self.addr_info[addr]['func']
+        return func_name
     
     def get_dbg_info(self, addr):
         if self.__check_initialization():
             return
         file = None
         line = None
-        ret = self.gdb.get_dbg_info(addr)
-        if len(ret) == 2:
-            file, line = ret[0], ret[1]
+        if addr not in self.addr_info or 'dbg' not in self.addr_info[addr]:
+            ret = self.gdb.get_dbg_info(addr)
+            if len(ret) == 2:
+                file, line = ret[0], ret[1]
+                if addr not in self.addr_info:
+                    self.addr_info[addr] = {}
+                self.addr_info[addr]['dbg'] = ret
+        else:
+            file = self.addr_info[addr]['dbg'][0]
+            line = self.addr_info[addr]['dbg'][1]
         return file, line
 
     def waitfor_pwndbg(self, timeout=5):

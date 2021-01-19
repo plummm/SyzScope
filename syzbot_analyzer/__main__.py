@@ -69,9 +69,19 @@ def args_parse():
     parser.add_argument('--qemu-monitor', nargs='?',
                         default='9700',
                         help='Default port of qemu monitor')
-    parser.add_argument('--max-compiling-kernel', nargs='?',
+    parser.add_argument('--max-compiling-kernel-concurrently', nargs='?',
                         default='-1',
                         help='maximum of kernel that compiling at the same time. Default is unlimited.')
+    parser.add_argument('--timeout-dynamic-validation', nargs='?',
+                        default='1800',
+                        help='The timeout(by second) of static analysis and symbolic execution\n'
+                            'You can specify the timeout of static analysis separatly as well\n'
+                            'Thus the the rest time is for symbolic execution\n'
+                            'Default timeout is 60 mins')
+    parser.add_argument('--timeout-static-analysis', nargs='?',
+                        default='900',
+                        help='The timeout(by second) of static analysis\n'
+                            'Default timeout is 30 mins')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug mode')
 
@@ -211,6 +221,10 @@ if __name__ == '__main__':
     l = list(crawler.cases.keys())
     total = len(l)
     for i in range(0,min(parallel_max,len(crawler.cases))):
-        deployer.append(Deployer(index=i, debug=args.debug, force=args.force, port=int(args.ssh), replay=args.replay, linux_index=int(args.linux), time=int(args.time), force_fuzz=args.force_fuzz, alert=args.alert, static_analysis=args.static_analysis, symbolic_tracing=args.disable_symbolic_tracing, gdb_port=int(args.gdb), qemu_monitor_port=int(args.qemu_monitor), max_compiling_kernel=int(args.max_compiling_kernel)))
+        deployer.append(Deployer(index=i, debug=args.debug, force=args.force, port=int(args.ssh), replay=args.replay, \
+            linux_index=int(args.linux), time=int(args.time), force_fuzz=args.force_fuzz, alert=args.alert, \
+            static_analysis=args.static_analysis, symbolic_tracing=args.disable_symbolic_tracing, gdb_port=int(args.gdb), \
+            qemu_monitor_port=int(args.qemu_monitor), max_compiling_kernel=int(args.max_compiling_kernel_concurrently), \
+            timeout_dynamic_validation=int(args.timeout_dynamic_validation), timeout_static_analysis=int(args.timeout_static_analysis)))
         x = threading.Thread(target=deploy_one_case, args=(i,), name="lord-{}".format(i))
         x.start()

@@ -9,20 +9,28 @@ from subprocess import Popen, PIPE, STDOUT, TimeoutExpired, call
 from .error import CompilingError
 
 class StaticAnalysis:
-    def __init__(self, logger, proj_path, index, case_path, linux_folder):
+    def __init__(self, logger, proj_path, index, case_path, linux_folder, timeout=30*60):
         self.case_logger = logger
         self.proj_path = proj_path
         self.package_path = os.path.join(proj_path, "syzbot_analyzer")
         self.case_path = case_path
         self.index = index
         self.linux_folder = linux_folder
+        self.timeout = timeout
 
     def prepare_static_analysis(self, case, vul_site, func_site):
+        exitcode = 0
         bc_path = ''
         commit = case["commit"]
         config = case["config"]
         vul_file, tmp = vul_site.split(':')
         func_file, tmp = func_site.split(':')
+
+        if not os.path.exists("{}/paths".format(self.case_path)):
+            os.mkdir("{}/paths".format(self.case_path))
+        if os.path.exists("{}/one.bc".format(self.case_path)):
+            return exitcode
+
         if os.path.splitext(vul_file)[1] == '.h':
             bc_path = os.path.dirname(func_file)
         else:
@@ -49,7 +57,7 @@ class StaticAnalysis:
                 stdout=PIPE,
                 stderr=STDOUT
                 )
-        x = threading.Thread(target=self.monitor_execution, args=(p,))
+        x = threading.Thread(target=self.monitor_execution, args=(p, 30*60))
         x.start()
         with p.stdout:
             self.__log_subprocess_output(p.stdout, logging.INFO)
@@ -58,9 +66,9 @@ class StaticAnalysis:
         self.case_logger.info("script/deploy-bc.sh is done with exitcode {}".format(exitcode))
         return exitcode
     
-    def monitor_execution(self, p):
+    def monitor_execution(self, p, seconds):
         count = 0
-        while (count <180):
+        while (count < seconds // 10):
             count += 1
             time.sleep(10)
             poll = p.poll()
@@ -271,22 +279,29 @@ class StaticAnalysis:
         vul_file, vul_line = vul_site.split(':')
         func_file, func_line = func_site.split(':')
         calltrace = os.path.join(self.case_path, 'CallTrace')
-        cmd = ["opt", "-load", "{}/llvm_passes/build/generateInput/libgenerateInput.so".format(self.package_path), 
-                "-generateInput", "-disable-output", "{}/one.bc".format(self.case_path),
+        cmd = ["opt", "-load", "{}/tools/dr_checker/build/SoundyAliasAnalysis/libSoundyAliasAnalysis.so".format(self.proj_path), 
+                "-dr_checker", "-disable-output", "{}/one.bc".format(self.case_path),
                 "-CalltraceFile={}".format(calltrace),
                 "-VulFile={}".format(vul_file), "-VulLine={}".format(vul_line), 
                 "-FuncFile={}".format(func_file), "-FuncLine={}".format(func_line),
-                "-Func={}".format(func), "-Offset={}".format(offset)]
+                "-Func={}".format(func), "-Offset={}".format(offset),
+                "-PrintPathDir={}/paths".format(self.case_path)]
         if size != None:
             cmd.append("-Size={}".format(size))
+        self.case_logger.info("====================Here comes the taint analysis====================")
         self.case_logger.info(" ".join(cmd))
         p = Popen(cmd,
                   stdout=PIPE,
                   stderr=STDOUT
                   )
+        x = threading.Thread(target=self.monitor_execution, args=(p, self.timeout))
+        x.start()
+        start_time = time.time()
         with p.stdout:
             self.__log_subprocess_output(p.stdout, logging.INFO)
         exitcode = p.wait()
+        end_time = time.time()
+        self.case_logger.info("Taint analysis took {}".format(time.strftime('%M:%S', time.gmtime(end_time-start_time))))
         return exitcode
     
     def _fix_asm_volatile_goto(self):

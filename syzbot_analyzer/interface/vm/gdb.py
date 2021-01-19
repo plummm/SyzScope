@@ -162,7 +162,7 @@ class GDBHelper:
         return raw
     
     def get_func_name(self, addr):
-        func_name_regx = r'0x[a-f0-9]+ <(.+)>:'
+        func_name_regx = r'0x[a-f0-9]+ <([a-zA-Z0-9_\.]+)(\+\d+)?>:'
         raw = self.print_code(addr, 1)
         ret = None
         for line in raw.split('\n'):

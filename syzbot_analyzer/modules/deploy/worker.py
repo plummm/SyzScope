@@ -18,8 +18,10 @@ from syzbot_analyzer.interface.sym_exec.error import VulnerabilityNotTrigger, Ex
 from syzbot_analyzer.interface.vm.monitor import QemuIsDead
 
 class Workers(Case):
-    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False, symbolic_tracing=True, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1):
+    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False, symbolic_tracing=True, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=60*30, timeout_static_analysis=30*30):
         Case.__init__(self, index, debug, force, port, replay, linux_index, time, force_fuzz, alert, static_analysis, symbolic_tracing, gdb_port, qemu_monitor_port, max_compiling_kernel)
+        self.timeout_dynamic_validation=timeout_dynamic_validation
+        self.timeout_static_analysis=timeout_static_analysis
 
     def do_symbolic_tracing(self, case, i386, max_round=3, raw_tracing=False):
         self.logger.info("initial environ of symbolic execution")
@@ -51,7 +53,9 @@ class Workers(Case):
             arch = 'i386'
 
         is_propagating_global = False
+        result = StateManager.NO_ADDITIONAL_USE
         exception_count = 0
+        flag_stop_execution = False
         for i in range(0, max_round):
             sym_folder = os.path.join(self.current_case_path, "sym")
             if not os.path.isdir(sym_folder):
@@ -86,34 +90,31 @@ class Workers(Case):
                 continue
 
             self.crash_checker.run_exp(case["syz_repro"], self.ssh_port, utilities.URL, ok, i386, 0, sym_logger)
-            paths = []
-            paths.append({'file': 'kernel/bpf/sockmap.c', 'line': '1358'})
-            paths.append({'file': 'kernel/bpf/sockmap.c', 'line': '1359'})
-            paths.append({'file': 'net/ipv4/tcp_ulp.c', 'line': '124'})
-            paths.append({'file': 'net/ipv4/tcp_ulp.c', 'line': '126'})
-            paths.append({'file': 'net/ipv4/tcp_ulp.c', 'line': '129'})
-            paths.append({'file': 'net/ipv4/tcp_ulp.c', 'line': '130'})
-            #paths.append({'file': 'net/tls/tls_main.c', 'line':'229'})
-            #paths.append({'file': 'net/tls/tls_main.c', 'line':'231'})
-            #paths.append({'file': 'net/tls/tls_main.c', 'line':'232'})
-            #paths.append({'file': 'net/tls/tls_main.c', 'line':'259'})
-            #paths.append({'file': 'net/tls/tls_main.c', 'line':'260'})
             sym.setup_bug_capture(offset, size)
             try:
-                ret = sym.run_sym(path=paths, dfs=False, raw_tracing=raw_tracing, timeout=60*60)
+                static_analysis_result_paths = os.path.join(self.current_case_path, "paths")
+                if not os.path.isdir(static_analysis_result_paths):
+                    path_files = [None]
+                else:
+                    path_files = os.listdir(static_analysis_result_paths)
+                    if path_files == []:
+                        path_files = [None]
+                if path_files != [None]:
+                    self.logger.info("Running under-constrained symbolic execution with guided paths")
+                else:
+                    self.logger.info("Running under-constrained symbolic execution")
+
+                paths = []
+                for each_file in path_files:
+                    if each_file != None:
+                        guided_path = os.path.join(static_analysis_result_paths, each_file)
+                        paths.append(self.retrieve_guided_paths(guided_path))
+                ret = sym.run_sym(path=paths, raw_tracing=raw_tracing, timeout=60*60)
                 if ret == None:
+                    self.logger.warning("Can not locate the vulnerable memory")
                     self.cleanup(sym)
                     continue
-                if ret & StateManager.CONTROL_FLOW_HIJACK:
-                    self.logger.warning("Control flow hijack found")
-                if ret & StateManager.ARBITRARY_VALUE_WRITE:
-                    self.logger.warning("Arbitrary value write found")
-                if ret & StateManager.FINITE_VALUE_WRITE:
-                    self.logger.warning("Finite value write found")
-                if ret & StateManager.ARBITRARY_ADDR_WRITE:
-                    self.logger.warning("Arbitrary address write found")
-                if ret & StateManager.FINITE_ADDR_WRITE:
-                    self.logger.warning("Finite address write found")
+                result |= ret
                 if ret == 0:
                     self.logger.warning("No additional use")
                 self.cleanup(sym)
@@ -135,6 +136,16 @@ class Workers(Case):
         if max_round == exception_count:
             self.logger.warning("Can not trigger vulnerability. Abaondoned")
             return
+        if result & StateManager.CONTROL_FLOW_HIJACK:
+            self.logger.warning("Control flow hijack found")
+        if result & StateManager.ARBITRARY_VALUE_WRITE:
+            self.logger.warning("Arbitrary value write found")
+        if result & StateManager.FINITE_VALUE_WRITE:
+            self.logger.warning("Finite value write found")
+        if result & StateManager.ARBITRARY_ADDR_WRITE:
+            self.logger.warning("Arbitrary address write found")
+        if result & StateManager.FINITE_ADDR_WRITE:
+            self.logger.warning("Finite address write found")
         """if is_propagating_global:
             if raw_tracing:
                 self.logger.warning("{} access to global/local variables on symbolic tracing".format(self.hash_val))
@@ -148,9 +159,32 @@ class Workers(Case):
         
         self.create_finished_symbolic_tracing_stamp()
         return
+    
+    def retrieve_guided_paths(self, guided_path):
+        paths = []
+        if guided_path != None:
+            with open(guided_path, 'r') as f:
+                text = f.readlines()
+                for site in text:
+                    site = site.strip('\n')
+                    tmp = site.split(' ')
+                    if site == '$':
+                        break
+                    if len(tmp) == 1:
+                        t = tmp[0].split(':')
+                        file = t[0]
+                        line = t[1]
+                        paths.append({'file': file, 'line': line})
+                        break
+                    cond = tmp[0].split(':')
+                    correct = tmp[1].split(':')
+                    wrong = tmp[2].split(':')
+                    paths.append({'cond': {'file': cond[0], 'line': cond[1], 'feasible': True}, 'correct': {'file': correct[0], 'line': correct[1], 'feasible': True}, 'wrong': {'file': wrong[0], 'line': wrong[1], 'feasible': False}})
+        return paths
+
 
     def do_static_analysis(self, case):
-        self.sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.index, self.current_case_path, self.linux_folder)
+        self.sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.index, self.current_case_path, self.linux_folder, self.timeout_static_analysis)
         res = utilities.request_get(case['report'])
         offset = case['vul_offset']
         size = case['obj_size']

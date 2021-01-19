@@ -40,8 +40,8 @@ syz_config_template="""
 }}"""
 
 class Deployer(Workers):
-    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False, symbolic_tracing=True, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1):
-        Workers.__init__(self, index, debug, force, port, replay, linux_index, time, force_fuzz, alert, static_analysis, symbolic_tracing, gdb_port, qemu_monitor_port, max_compiling_kernel)
+    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False, symbolic_tracing=True, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=60*30, timeout_static_analysis=30*30):
+        Workers.__init__(self, index, debug, force, port, replay, linux_index, time, force_fuzz, alert, static_analysis, symbolic_tracing, gdb_port, qemu_monitor_port, max_compiling_kernel, timeout_dynamic_validation, timeout_static_analysis)
         self.clone_linux()
     
     def init_replay_crash(self, hash_val):
@@ -86,6 +86,16 @@ class Deployer(Workers):
                 self.store_read = False
             self.init_crash_checker(self.ssh_port)
 
+            need_patch = 0
+            #if self.__need_kasan_patch(case['title']):
+            #    need_patch = 1
+
+            r = self.__run_delopy_script(hash_val[:7], case, need_patch)
+            if r != 0:
+                self.logger.error("Error occur in deploy.sh")
+                self.__save_error(hash_val)
+                return
+
             if self.static_analysis:
                 if not self.finished_static_analysis(hash_val, 'incomplete'):
                     try:
@@ -94,10 +104,6 @@ class Deployer(Workers):
                         self.logger.error("Encounter an error when doing static analysis")
                         return
                 return
-
-            need_patch = 0
-            #if self.__need_kasan_patch(case['title']):
-            #    need_patch = 1
 
             ### DEBUG SYMEXEC ###
             if self.symbolic_tracing:
@@ -110,12 +116,6 @@ class Deployer(Workers):
                     self.do_symbolic_tracing(case, i386)
                 return
             ### DEBUG SYMEXEC ###
-
-            r = self.__run_delopy_script(hash_val[:7], case, need_patch)
-            if r != 0:
-                self.logger.error("Error occur in deploy.sh")
-                self.__save_error(hash_val)
-                return
             
             title = None
             if not self.reproduced_ori_poc(hash_val, 'incomplete'):

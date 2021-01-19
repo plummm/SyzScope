@@ -68,41 +68,24 @@ git checkout -f $COMMIT || (git pull https://github.com/torvalds/linux.git maste
 #Add a rejection detector in future
 curl $CONFIG > .config
 
+else
+
+#export LLVM_COMPILER=clang
+#export LLVM_COMPILER_PATH=$PROJECT_PATH/tools/llvm/build/bin/
+CLANG=$PROJECT_PATH/tools/llvm/build/bin/clang
+#pip list | grep wllvm || pip install wllvm
 CONFIGKEYSDISABLE="
 CONFIG_KASAN
 CONFIG_KCOV
 CONFIG_BUG_ON_DATA_CORRUPTION
 "
-
 for key in $CONFIGKEYSDISABLE;
 do
     config_disable $key
 done
 
-else
-
-export LLVM_COMPILER=clang
-export LLVM_COMPILER_PATH=$PROJECT_PATH/tools/llvm/build/bin/
-pip list | grep wllvm || pip install wllvm
-make olddefconfig CC=wllvm
-ERROR=0
-make -j16 CC=wllvm > make.log 2>&1 || ERROR=1 && copy_log_then_exit make.log
-if [ $ERROR == "0" ]; then
-  #build bc
-  extract-bc vmlinux
-  mv vmlinux.bc $CASE_PATH/one.bc
-else
-  echo "error occur at compiling...try to extract specific bc file"
-  #make clean CC=wllvm
-  find -type f -name '*.o' -delete
-  find -type f -name '*.bc' ! -name "timeconst.bc" -delete
-  # restore some kernel files end with .o or .bc 
-  #git stash
-  make -n CC=wllvm > wllvm_log || find -type f -name '*.bc' ! -name "timeconst.bc" -delete
-  exit 1
-  #cd $BC_PATH
-  #llvm-link -o one.bc `find ./ -name "*.bc" ! -name "timeconst.bc"` || exit 1
-  #mv one.bc $CASE_PATH
-fi
-exit 0
-fi
+make olddefconfig CC=$CLANG
+find -type f -name '*.o' -delete
+find -type f -name '*.bc' ! -name "timeconst.bc" -delete
+make -n CC=$CLANG > wllvm_log || echo "It's OK"
+exit 1
