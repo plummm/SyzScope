@@ -6,13 +6,13 @@ stamp_finish_fuzzing = "FINISH_FUZZING"
 stamp_build_syzkaller = "BUILD_SYZKALLER"
 stamp_build_kernel = "BUILD_KERNEL"
 stamp_reproduce_ori_poc = "REPRO_ORI_POC"
-stamp_symbolic_tracing = "FINISH_SYM_TRACING"
+stamp_symbolic_execution = "FINISH_SYM_EXEC"
 stamp_static_analysis = "FINISH_STATIC_ANALYSIS"
 
 max_qemu_for_one_case = 4
 
 class Case:
-    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False, symbolic_tracing=True, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1):
+    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1):
         self.linux_folder = "linux"
         self.project_path = ""
         self.package_path = None
@@ -34,7 +34,7 @@ class Case:
         self.force_fuzz = force_fuzz
         self.alert = alert
         self.static_analysis = static_analysis
-        self.symbolic_tracing = symbolic_tracing
+        self.symbolic_execution = symbolic_execution
         self.max_compiling_kernel = max_compiling_kernel
         self.max_qemu_for_one_case = max_qemu_for_one_case
         self.sa = None

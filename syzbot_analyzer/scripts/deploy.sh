@@ -134,6 +134,14 @@ if [ ! -d ".stamp" ]; then
   mkdir .stamp
 fi
 
+if [ ! -d "compiler" ]; then
+  mkdir compiler
+fi
+cd compiler
+if [ ! -f "$CASE_PATH/compiler/compiler" ]; then
+  ln -s $COMPILER ./compiler
+fi
+
 #Building for syzkaller
 echo "[+] Building syzkaller"
 if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then

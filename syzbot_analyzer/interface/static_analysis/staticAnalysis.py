@@ -44,13 +44,6 @@ class StaticAnalysis:
         utilities.chmodX(script_path)
         index = str(self.index)
         self.case_logger.info("run: scripts/deploy-bc.sh")
-        p = Popen([script_path, self.linux_folder, index, self.case_path, commit, config, bc_path, "0"],
-                stdout=PIPE,
-                stderr=STDOUT
-                )
-        with p.stdout:
-            self.__log_subprocess_output(p.stdout, logging.INFO)
-        exitcode = p.wait()
         self.adjust_kernel_for_clang()
 
         p = Popen([script_path, self.linux_folder, index, self.case_path, commit, config, bc_path, "1"],
@@ -62,8 +55,25 @@ class StaticAnalysis:
         with p.stdout:
             self.__log_subprocess_output(p.stdout, logging.INFO)
         exitcode = p.wait()
-
         self.case_logger.info("script/deploy-bc.sh is done with exitcode {}".format(exitcode))
+
+        if exitcode == 1:
+            if self.compile_bc_extra() != 0:
+                self.case_logger.error("Error occur when compiling bc or linking them")
+                return exitcode
+        elif exitcode != 0:
+            self.case_logger.error("Error occur in deploy-bc.sh")
+            return exitcode
+        
+        # Restore CONFIG_KCOV CONFIG_KASAN CONFIG_BUG_ON_DATA_CORRUPTION
+        # Kernel fuzzing and symbolic execution depends on some of them
+        p = Popen([script_path, self.linux_folder, index, self.case_path, commit, config, bc_path, "0"],
+                stdout=PIPE,
+                stderr=STDOUT
+                )
+        with p.stdout:
+            self.__log_subprocess_output(p.stdout, logging.INFO)
+        exitcode = p.wait()
         return exitcode
     
     def monitor_execution(self, p, seconds):
@@ -85,7 +95,7 @@ class StaticAnalysis:
     def compile_bc_extra(self):
         regx = r'echo \'[ \t]*CC[ \t]*(([A-Za-z0-9_\-.]+\/)+([A-Za-z0-9_.\-]+))\';'
         base = os.path.join(self.case_path, 'linux')
-        path = os.path.join(base, 'wllvm_log')
+        path = os.path.join(base, 'clang_log')
         with open(path, 'r') as f:
             lines = f.readlines()
             procs = []
@@ -102,12 +112,16 @@ class StaticAnalysis:
                 #print("CC {}".format(p2obj))
                 new_cmd = []
                 try:
-                    idx1 = line.index('wllvm')
+                    clang_path = '{}/tools/llvm/build/bin/clang'.format(self.proj_path)
+                    idx1 = line.index(clang_path)
                     idx2 = line[idx1:].index(';')
                     cmd = line[idx1:idx1+idx2].split(' ')
-                    if cmd[0] == 'wllvm':
-                        new_cmd.append('{}/tools/llvm/build/bin/clang'.format(self.proj_path))
+                    if cmd[0] == clang_path:
+                        new_cmd.append(cmd[0])
                         new_cmd.append('-emit-llvm')
+                    #if cmd[0] == 'wllvm':
+                    #    new_cmd.append('{}/tools/llvm/build/bin/clang'.format(self.proj_path))
+                    #    new_cmd.append('-emit-llvm')
                     new_cmd.extend(cmd[1:])
                 except ValueError:
                     self.case_logger.error('No \'wllvm\' or \';\' found in \'{}\''.format(line))
@@ -120,22 +134,21 @@ class StaticAnalysis:
                     self.case_logger.error("{} is not end with .o".format(new_cmd[idx_obj]))
                     continue
                 # Somehow Popen(cmd) stuck sometime for unknow reason
-                if len(procs) >= 16:
+                if len(procs) >= 64:
                     for p in procs:
                         if p.poll() != None:
                             procs.remove(p)
-                procs.append(Popen(['/bin/bash','-c'," ".join(new_cmd)], cwd=base, stdout=PIPE, stderr=PIPE))
+                procs.append(Popen(new_cmd, cwd=base, stdout=PIPE, stderr=PIPE))
                 #call(new_cmd, cwd=base)
             for p in procs:
                 try:
-                    p.wait(timeout=5)
+                    p.wait(timeout=2)
                 except TimeoutExpired:
-                    self.case_logger.info("It takes too long to compile, skip thic bc")
                     p.kill()
             self.case_logger.info("About to link bc")
             if os.path.exists(os.path.join(self.case_path,'one.bc')):
                 os.remove(os.path.join(self.case_path,'one.bc'))
-            link_cmd = '{}/tools/llvm/build/bin/llvm-link -o one.bc `find ./ -name "*.bc" ! -name "timeconst.bc"` && mv one.bc {}'.format(self.proj_path, self.case_path)
+            link_cmd = '{}/tools/llvm/build/bin/llvm-link --only-needed -o one.bc `find ./ -name "*.bc" ! -name "timeconst.bc"` && mv one.bc {}'.format(self.proj_path, self.case_path)
             p = Popen(['/bin/bash','-c', link_cmd], stdout=PIPE, stderr=PIPE, cwd=base)
             with p.stdout:
                 self.__log_subprocess_output(p.stdout, logging.INFO)
@@ -235,46 +248,8 @@ class StaticAnalysis:
                         e = j+1
                         return s, e
                 self.case_logger.error("Incorrect range of {}()".format(func))
-            """
-            func_list = utilities.regx_getall(utilities.kernel_func_def_regx, text)
-            for each in func_list[::-1]:
-                expr = each[0]
-                func_name = each[11]
-                try:
-                    n = text.index(expr)
-                    if text[n+len(expr)] == ';':
-                        n += len(expr) + text[n+len(expr):].index(expr)
-                    left_bracket = n+len(expr)+1
-                except ValueError:
-                    continue
-                # if the left bracket is before target line,
-                # current function must be the function that contain target line
-                # We don't use func_name because function name in source file may
-                # not be the name in Kasan report
-                if len(text[:left_bracket].split('\n')) < lo_line or func_name == func:
-                    tmp = text
-                    idx = 0
-
-                    if tmp[left_bracket] != '{':
-                        continue
-                    else:
-                        idx += n
-                    head = text[:idx]
-                    s = len(head.split('\n'))
-                    n = 0
-                    for line in text[idx:].split('\n'):
-                        if line == '}':
-                            e = s+n
-                            break
-                        n += 1
-                    if s > lo_line or e < lo_line:
-                        self.case_logger.error("Incorrect range of {}()".format(func))
-                        return 0, 0
-                    return s, e"""
         return s ,e
 
-
-    
     def run_static_analysis(self, vul_site, func_site, func, offset, size):
         vul_file, vul_line = vul_site.split(':')
         func_file, func_line = func_site.split(':')
@@ -301,8 +276,9 @@ class StaticAnalysis:
             self.__log_subprocess_output(p.stdout, logging.INFO)
         exitcode = p.wait()
         end_time = time.time()
-        self.case_logger.info("Taint analysis took {}".format(time.strftime('%M:%S', time.gmtime(end_time-start_time))))
-        return exitcode
+        time_on_static_analysis = end_time-start_time
+        self.case_logger.info("Taint analysis took {}".format(time.strftime('%M:%S', time.gmtime(time_on_static_analysis))))
+        return exitcode, time_on_static_analysis
     
     def _fix_asm_volatile_goto(self):
         regx = r'#define asm_volatile_goto'

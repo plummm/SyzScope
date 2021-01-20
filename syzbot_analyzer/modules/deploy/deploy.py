@@ -40,8 +40,8 @@ syz_config_template="""
 }}"""
 
 class Deployer(Workers):
-    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False, symbolic_tracing=True, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=60*30, timeout_static_analysis=30*30):
-        Workers.__init__(self, index, debug, force, port, replay, linux_index, time, force_fuzz, alert, static_analysis, symbolic_tracing, gdb_port, qemu_monitor_port, max_compiling_kernel, timeout_dynamic_validation, timeout_static_analysis)
+    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None):
+        Workers.__init__(self, index, debug, force, port, replay, linux_index, time, force_fuzz, alert, static_analysis, symbolic_execution, gdb_port, qemu_monitor_port, max_compiling_kernel, timeout_dynamic_validation, timeout_static_analysis, timeout_symbolic_execution)
         self.clone_linux()
     
     def init_replay_crash(self, hash_val):
@@ -95,6 +95,14 @@ class Deployer(Workers):
                 self.logger.error("Error occur in deploy.sh")
                 self.__save_error(hash_val)
                 return
+            
+            ### DEBUG SYMEXEC ###
+            if self.symbolic_execution:
+                if not self.finished_symbolic_execution(hash_val, 'incomplete'):
+                    self.do_symbolic_execution(case, i386, timeout=60*60)
+                if os.path.exists("{}/sym".format(self.current_case_path)):
+                    shutil.move("{}/sym".format(self.current_case_path), "{}/sym_only".format(self.current_case_path))
+            ### DEBUG SYMEXEC ###
 
             if self.static_analysis:
                 if not self.finished_static_analysis(hash_val, 'incomplete'):
@@ -103,17 +111,10 @@ class Deployer(Workers):
                     except CompilingError:
                         self.logger.error("Encounter an error when doing static analysis")
                         return
-                return
 
             ### DEBUG SYMEXEC ###
-            if self.symbolic_tracing:
-                if not self.finished_symbolic_tracing(hash_val, 'incomplete'):
-                    r = self.__run_delopy_script(hash_val[:7], case, need_patch)
-                    if r != 0:
-                        self.logger.error("Error occur in deploy.sh")
-                        self.__save_error(hash_val)
-                        return
-                    self.do_symbolic_tracing(case, i386)
+            if self.symbolic_execution:
+                self.do_symbolic_execution(case, i386)
                 return
             ### DEBUG SYMEXEC ###
             

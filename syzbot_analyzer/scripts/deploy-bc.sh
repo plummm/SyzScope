@@ -9,7 +9,7 @@ echo "running deploy-bc.sh"
 
 function copy_log_then_exit() {
   LOG=$1
-  cp $LOG $CASE_PATH/wllvm-$LOG
+  cp $LOG $CASE_PATH/clang-$LOG
 }
 
 function config_disable() {
@@ -53,27 +53,23 @@ if [ "$OLD_INDEX" != "$INDEX" ]; then
 fi
 
 cd linux
-if [ -f "THIS_KERNEL_IS_BEING_USED" ]; then
-    echo "This kernel is using by other thread"
-    exit 1
-fi
 
 if [ "$COMPILE" != "1" ]; then
-git stash
 
-find -type f -name '*.bc' ! -name "timeconst.bc" -delete
-git clean -fdx -e THIS_KERNEL_IS_BEING_USED > /dev/null || echo "cleanning interrupt"
-git checkout -f $COMMIT || (git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1 && git checkout -f $COMMIT)
-
-#Add a rejection detector in future
-curl $CONFIG > .config
+  if [ -f "$CASE_PATH/config" ]; then
+    rm .config
+    mv $CASE_PATH/config .config
+    if [ ! -f "$CASE_PATH/compiler/compiler" ]; then
+      echo "No compiler found in $CASE_PATH"
+      exit 1
+    fi
+    COMPILER=$CASE_PATH/compiler/compiler
+    make -j16 CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
+    exit 0
+  fi
 
 else
 
-#export LLVM_COMPILER=clang
-#export LLVM_COMPILER_PATH=$PROJECT_PATH/tools/llvm/build/bin/
-CLANG=$PROJECT_PATH/tools/llvm/build/bin/clang
-#pip list | grep wllvm || pip install wllvm
 CONFIGKEYSDISABLE="
 CONFIG_KASAN
 CONFIG_KCOV
@@ -84,8 +80,12 @@ do
     config_disable $key
 done
 
+CLANG=$PROJECT_PATH/tools/llvm/build/bin/clang
 make olddefconfig CC=$CLANG
-find -type f -name '*.o' -delete
+#export LLVM_COMPILER=clang
+#export LLVM_COMPILER_PATH=$PROJECT_PATH/tools/llvm/build/bin/
+#pip list | grep wllvm || pip install wllvm
 find -type f -name '*.bc' ! -name "timeconst.bc" -delete
-make -n CC=$CLANG > wllvm_log || echo "It's OK"
+make -n CC=$CLANG > clang_log || echo "It's OK"
 exit 1
+fi

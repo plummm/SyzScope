@@ -2,11 +2,12 @@ import angr
 import logging
 import os
 import archinfo
+from datetime import datetime
+from angr import SimUnsatError
 class StateManager:
     G_MEM = 0
     G_SYM = 1
     G_RET = 2
-    G_VUL = 3
     NO_ADDITIONAL_USE = 0
     ARBITRARY_VALUE_WRITE = 1 << 0
     FINITE_VALUE_WRITE = 1 << 1
@@ -27,6 +28,7 @@ class StateManager:
         self.dfs = True
         self.proj_path = None
         self.stop_execution = False
+        self.exploitable_state = {}
     
     def init_primitive_logger(self, name):
         primitive_path = os.path.join(self.proj_path, "sym/primitives")
@@ -35,7 +37,8 @@ class StateManager:
         if self.proj_path != None:
             handler = logging.FileHandler("{}/{}".format(primitive_path, name))
             logger = logging.getLogger(name)
-            logger.addHandler(handler)
+            if len(logger.handlers) == 0:
+                logger.addHandler(handler)
             logger.setLevel(logging.INFO)
             logger.propagate = False
             if self.debug:
@@ -43,6 +46,10 @@ class StateManager:
                 logger.setLevel(logging.DEBUG)
         else:
             return None
+
+        now = datetime.now()
+        current_time = now.strftime("%m/%d/%y %H:%M:%S")
+        logger.info("Primitive found at {}".format(current_time))
         return logger
     
     def setup_current_state(self, init_state):
@@ -83,34 +90,30 @@ class StateManager:
         file, line = self.vm.get_dbg_info(state.scratch.ins_addr)
         key = "{}:{}".format(file, line)
         self.target_site[key] = impact_type
+        self.exploitable_state[state.scratch.ins_addr] = impact_type
         if impact_type == StateManager.FINITE_ADDR_WRITE:
             self.state_privilege |= impact_type
-            n = self.update_states_globals(state.scratch.ins_addr, impact_type, StateManager.G_VUL)
-            prim_name = "{}-{}-{}".format("FAW", func_name, n)
+            prim_name = "{}-{}-{}".format("FAW", func_name, hex(state.scratch.ins_addr))
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("Finite address write found")
         if impact_type == StateManager.ARBITRARY_ADDR_WRITE:
             self.state_privilege |= impact_type
-            n = self.update_states_globals(state.scratch.ins_addr, impact_type, StateManager.G_VUL)
-            prim_name = "{}-{}-{}".format("AAW", func_name, n)
+            prim_name = "{}-{}-{}".format("AAW", func_name, hex(state.scratch.ins_addr))
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("Arbitrary address write found")
         if impact_type == StateManager.FINITE_VALUE_WRITE:
             self.state_privilege |= impact_type
-            n = self.update_states_globals(state.scratch.ins_addr, impact_type, StateManager.G_VUL)
-            prim_name = "{}-{}-{}".format("FVW", func_name, n)
+            prim_name = "{}-{}-{}".format("FVW", func_name, hex(state.scratch.ins_addr))
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("Finite value write found")
         if impact_type == StateManager.ARBITRARY_VALUE_WRITE:
             self.state_privilege |= impact_type
-            n = self.update_states_globals(state.scratch.ins_addr, impact_type, StateManager.G_VUL)
-            prim_name = "{}-{}-{}".format("AVW", func_name, n)
+            prim_name = "{}-{}-{}".format("AVW", func_name, hex(state.scratch.ins_addr))
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("Arbitrary value write found")
         if impact_type == StateManager.CONTROL_FLOW_HIJACK:
             self.state_privilege |= impact_type
-            n = self.update_states_globals(state.scratch.ins_addr, impact_type, StateManager.G_VUL)
-            prim_name = "{}-{}-{}".format("CFH", func_name, n)
+            prim_name = "{}-{}-{}".format("CFH", func_name, hex(state.scratch.ins_addr))
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("Control flow hijack found!")
             for addr in state.globals['sym']:
@@ -148,11 +151,6 @@ class StateManager:
                 self._current_state.globals['ret'] = []
             self._current_state.globals['ret'].append(val)
             n = len(self._current_state.globals['ret'])
-        if key == StateManager.G_VUL:
-            if 'vul' not in self._current_state.globals:
-                self._current_state.globals['vul'] = {}
-            self._current_state.globals['vul'][addr] = val
-            n = len(self._current_state.globals['vul'])
         return n
     
     def get_states_globals(self, addr, key):
@@ -172,11 +170,6 @@ class StateManager:
                 val = self._current_state.globals['ret'][addr]
             except KeyError:
                 val = None
-        if key == StateManager.G_VUL:
-            try:
-                val = self._current_state.globals['vul'][addr]
-            except KeyError:
-                val = None
         return val
         
     def get_state_index(self, state):
@@ -188,6 +181,10 @@ class StateManager:
     
     def is_under_constrained(self, bv):
         # '0x100000000000000'
+        if bv.depth > 10:
+            # Too many depth (8^10) make the recursive a blackhol
+            return self._current_state.solver.solution(bv, 0) and \
+                self._current_state.solver.solution(bv, 0x100000000000000)
         sym_value_4_state = []
         sym_value_4_bv = []
         constraints = self._current_state.solver.constraints
@@ -286,7 +283,9 @@ class StateManager:
     def dump_trace(self, state, logger=None):
         if logger == None:
             logger = self.logger
+        n = 0
         for addr in state.history.bbl_addrs: 
+            n += 1
             func_name = self.vm.get_func_name(addr)
             file, line = self.vm.get_dbg_info(addr)
             if func_name == None or file == None or line == None:
@@ -295,3 +294,4 @@ class StateManager:
                 logger.info(hex(addr))
                 logger.info("{} {}:{}".format(func_name, file, line))
                 logger.info("--------------------------------------")
+        logger.info("Total {} basic block".format(n))

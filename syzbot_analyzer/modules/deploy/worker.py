@@ -13,18 +13,38 @@ from subprocess import call, Popen, PIPE, STDOUT
 from syzbot_analyzer.modules.crash import CrashChecker
 from syzbot_analyzer.interface.utilities import chmodX
 from dateutil import parser as time_parser
-from .case import Case, stamp_build_kernel, stamp_build_syzkaller, stamp_finish_fuzzing, stamp_reproduce_ori_poc, stamp_symbolic_tracing, stamp_static_analysis
+from .case import Case, stamp_build_kernel, stamp_build_syzkaller, stamp_finish_fuzzing, stamp_reproduce_ori_poc, stamp_symbolic_execution, stamp_static_analysis
 from syzbot_analyzer.interface.sym_exec.error import VulnerabilityNotTrigger, ExecutionError, AbnormalGDBBehavior
+from syzbot_analyzer.interface.static_analysis.error import CompilingError
 from syzbot_analyzer.interface.vm.monitor import QemuIsDead
 
-class Workers(Case):
-    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False, symbolic_tracing=True, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=60*30, timeout_static_analysis=30*30):
-        Case.__init__(self, index, debug, force, port, replay, linux_index, time, force_fuzz, alert, static_analysis, symbolic_tracing, gdb_port, qemu_monitor_port, max_compiling_kernel)
-        self.timeout_dynamic_validation=timeout_dynamic_validation
-        self.timeout_static_analysis=timeout_static_analysis
+TIMEOUT_DYNAMIC_VALIDATION=60*60
+TIMEOUT_STATIC_ANALYSIS=60*30
 
-    def do_symbolic_tracing(self, case, i386, max_round=3, raw_tracing=False):
+class Workers(Case):
+    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None):
+        Case.__init__(self, index, debug, force, port, replay, linux_index, time, force_fuzz, alert, static_analysis, symbolic_execution, gdb_port, qemu_monitor_port, max_compiling_kernel)
+        if timeout_dynamic_validation == None:
+            self.timeout_dynamic_validation=TIMEOUT_DYNAMIC_VALIDATION
+        else:
+            self.timeout_dynamic_validation=int(timeout_dynamic_validation)
+        if timeout_static_analysis == None:
+            self.timeout_static_analysis = TIMEOUT_STATIC_ANALYSIS
+        else:
+            self.timeout_static_analysis=int(timeout_static_analysis)
+        if timeout_symbolic_execution != None:
+            self.timeout_symbolic_execution = int(timeout_symbolic_execution)
+            self.timeout_dynamic_validation = self.timeout_symbolic_execution + self.timeout_static_analysis
+        else:
+            if timeout_dynamic_validation != None and timeout_static_analysis != None:
+                self.timeout_symbolic_execution = None
+            else:
+                self.timeout_symbolic_execution = 365*24*60*60
+
+    def do_symbolic_execution(self, case, i386, max_round=3, raw_tracing=False, timeout=None):
         self.logger.info("initial environ of symbolic execution")
+        if timeout != None:
+            self.timeout_symbolic_execution = timeout
         self.sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.index, self.current_case_path, self.linux_folder)
         #self.init_crash_checker(self.ssh_port, False)
         r = utilities.request_get(case['report'])
@@ -56,15 +76,16 @@ class Workers(Case):
         result = StateManager.NO_ADDITIONAL_USE
         exception_count = 0
         flag_stop_execution = False
+        self.timeout_symbolic_execution = self.timeout_dynamic_validation - self.timeout_static_analysis
         for i in range(0, max_round):
             sym_folder = os.path.join(self.current_case_path, "sym")
             if not os.path.isdir(sym_folder):
                 os.mkdir(sym_folder)
-            cur_sym_log = sym_folder + "/symbolic_tracing.log" + "-" + str(i)
+            cur_sym_log = sym_folder + "/symbolic_execution.log" + "-" + str(i)
             sym_logger = self.__init_logger(cur_sym_log)
             sym_logger.info("round {}: symbolic tracing".format(i))
             sym = sym_exec.SymExec(logger=sym_logger, index=self.index, debug=self.debug)
-            sym.setup_vm(linux_path, arch, self.ssh_port, self.image_path, self.gdb_port, self.qemu_monitor_port, proj_path=self.current_case_path, cpu="2", logger=self.case_logger, hash_tag=self.hash_val[:7], log_name="sym/vm.log", log_suffix="-{}".format(i),  timeout=70*60)
+            sym.setup_vm(linux_path, arch, self.ssh_port, self.image_path, self.gdb_port, self.qemu_monitor_port, proj_path=self.current_case_path, cpu="2", logger=self.case_logger, hash_tag=self.hash_val[:7], log_name="sym/vm.log", log_suffix="-{}".format(i),  timeout=self.timeout_symbolic_execution+5*60)
             p = None
             try:
                 p = sym.run_vm()
@@ -109,7 +130,7 @@ class Workers(Case):
                     if each_file != None:
                         guided_path = os.path.join(static_analysis_result_paths, each_file)
                         paths.append(self.retrieve_guided_paths(guided_path))
-                ret = sym.run_sym(path=paths, raw_tracing=raw_tracing, timeout=60*60)
+                ret = sym.run_sym(path=paths, raw_tracing=raw_tracing, timeout=self.timeout_symbolic_execution)
                 if ret == None:
                     self.logger.warning("Can not locate the vulnerable memory")
                     self.cleanup(sym)
@@ -149,15 +170,15 @@ class Workers(Case):
         """if is_propagating_global:
             if raw_tracing:
                 self.logger.warning("{} access to global/local variables on symbolic tracing".format(self.hash_val))
-            #self.__create_stamp(stamp_symbolic_tracing)
+            #self.__create_stamp(stamp_symbolic_execution)
         elif exception_count < max_round:
             if raw_tracing:
                 self.logger.warning("{} has no access to variables".format(self.hash_val))
-            #self.__create_stamp(stamp_symbolic_tracing)
+            #self.__create_stamp(stamp_symbolic_execution)
         else:
             self.logger.warning("Can not trigger vulnerability. Abaondoned")"""
         
-        self.create_finished_symbolic_tracing_stamp()
+        self.create_finished_symbolic_execution_stamp()
         return
     
     def retrieve_guided_paths(self, guided_path):
@@ -195,21 +216,20 @@ class Workers(Case):
         if vul_site == None or func_site == None or func == None:
             self.logger.error("No valid Calltrace for static analysis")
             return
+        
+        self.logger.info("prepare for static analysis")
         r = self.sa.prepare_static_analysis(case, vul_site, func_site)
-        if r == 1:
-            if self.sa.compile_bc_extra() != 0:
-                self.logger.error("Error occur in deploy-bc.sh")
-                return
-        elif r != 0:
-            self.logger.error("Error occur in deploy-bc.sh")
-            return
+        if r != 0:
+            raise CompilingError
         # Before save the Calltrace, we need to checkout to a right commit
         report_list = res.text.split('\n')
         trace = utilities.extrace_call_trace(report_list)
         self.sa.saveCallTrace2File(trace, vul_site)
-        r = self.sa.run_static_analysis(vul_site, func_site, func, offset, size)
+        r, time_on_static_analysis = self.sa.run_static_analysis(vul_site, func_site, func, offset, size)
         if r != 0:
             self.logger.error("Error occur when getting pointer in IR")
+        if self.timeout_symbolic_execution == None:
+            self.timeout_symbolic_execution = self.timeout_dynamic_validation - time_on_static_analysis
         self.create_finished_static_analysis_stamp()
     
     def do_reproducing_ori_poc(self, case, hash_val, i386):
@@ -291,8 +311,8 @@ class Workers(Case):
     def finished_fuzzing(self, hash_val, folder):
         return self.__check_stamp(stamp_finish_fuzzing, hash_val[:7], folder)
     
-    def finished_symbolic_tracing(self, hash_val, folder):
-        return self.__check_stamp(stamp_symbolic_tracing, hash_val[:7], folder)
+    def finished_symbolic_execution(self, hash_val, folder):
+        return self.__check_stamp(stamp_symbolic_execution, hash_val[:7], folder)
     
     def finished_static_analysis(self, hash_val, folder):
         return self.__check_stamp(stamp_static_analysis, hash_val[:7], folder)
@@ -300,8 +320,8 @@ class Workers(Case):
     def create_finished_fuzzing_stamp(self):
         return self.__create_stamp(stamp_finish_fuzzing)
     
-    def create_finished_symbolic_tracing_stamp(self):
-        return self.__create_stamp(stamp_symbolic_tracing)
+    def create_finished_symbolic_execution_stamp(self):
+        return self.__create_stamp(stamp_symbolic_execution)
 
     def create_finished_static_analysis_stamp(self):
         return self.__create_stamp(stamp_static_analysis)

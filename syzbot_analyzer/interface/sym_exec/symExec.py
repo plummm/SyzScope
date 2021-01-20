@@ -160,7 +160,7 @@ class SymExec(MemInstrument):
         self.logger.info("*******************primitives*******************\n")
         running_time = time.time() - start_time
         self.logger.info("Running for {}".format(str(datetime.timedelta(seconds=running_time))))
-        if self.impacts_collector == []:
+        if len(self.impacts_collector) == 0:
             self.logger.info("There is no primitive found")
             return
         self.logger.info("Total {} primitives found during symbolic execution\n".format(len(self.impacts_collector)))
@@ -227,7 +227,7 @@ class SymExec(MemInstrument):
                 killed_state = []
                 for each in self.simgr.unconstrained:
                     if each.regs.rip.symbolic:
-                        if self.get_states_globals(each.scratch.ins_addr, StateManager.G_VUL) == None:
+                        if each.scratch.ins_addr not in self.exploitable_state:
                             self.wrap_high_risk_state(each, StateManager.CONTROL_FLOW_HIJACK)
                         killed_state.append(each)
                     for each in killed_state:
@@ -235,16 +235,15 @@ class SymExec(MemInstrument):
 
             if len(self.simgr.active) == 0:
                 # No dfs no deferred
-                #if len(self.simgr.deferred) == 0:
-                self.logger.info("No active states")
-                self.stop_execution = True
+                if dfs and len(self.simgr.deferred) == 0:
+                    self.logger.info("No active states")
+                    self.stop_execution = True
+                else:
+                    self.logger.info("No active states")
+                    self.stop_execution = True
             
             if self.stop_execution:
-                cur_state = self.get_current_state()
-                if 'vul' in cur_state.globals:
-                    for addr in cur_state.globals['vul']:
-                        each_primitive = cur_state.globals['vul'][addr]
-                        self.impacts_collector[addr] = each_primitive
+                self.impacts_collector = self.exploitable_state
                 return
     
     def _collect_propogating_results(self):
@@ -262,12 +261,12 @@ class SymExec(MemInstrument):
 
 
     def _symbolize_vuln_mem(self, raw_tracing):
-        for i in range(0, self.vul_mem_size):
+        for i in range(0, self.vul_mem_size, self.vm.addr_bytes):
             val = self.vm.read_mem(self.vul_mem_start + i, 1)
             if len(val) == 1:
-                self.make_symbolic(self._init_state, self.vul_mem_start + i, 1, "s_obj_{}".format(i))
+                self.make_symbolic(self._init_state, self.vul_mem_start + i, self.vm.addr_bytes, "s_obj_{}".format(self.vul_mem_start + i))
                 if raw_tracing:
-                    bv = self._init_state.memory.load(self.vul_mem_start + i, size=1, inspect=False, endness=archinfo.Endness.LE)
+                    bv = self._init_state.memory.load(self.vul_mem_start + i, size=self.vm.addr_bytes, inspect=False, endness=archinfo.Endness.LE)
                     if not bv.symbolic:
                         self.logger.info("Vulnerable memory ({}) is not symbolic".format(hex(self.vul_mem_start + i)))
                         continue
@@ -422,7 +421,8 @@ class SymExec(MemInstrument):
         try:
             succ = state.step()
         except Exception as e:
-            self.logger.error("Execution error at {}: {}".format(hex(state.scratch.ins_addr), e))
+            self.logger.error("Execution error at {}".format(hex(state.scratch.ins_addr)))
+            self.logger.error(e)
             self.purge_current_state()
             raise ExecutionError
         #if self.dfs and self.cur_state_dead():
@@ -458,7 +458,7 @@ class SymExec(MemInstrument):
         if len(successors) > 1:
             self._update_fork_countor(state)
             if self._is_loop_fork(state):
-                self.logger.info("kill a loop forking at {}".format(state.addr))
+                self.logger.info("kill a loop forking at {}".format(hex(state.addr)))
                 dead_states.extend(successors)
         # kill states on particular branches
         if len(self._branches) > 0 and self._is_branch(state.addr):

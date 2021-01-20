@@ -37,6 +37,7 @@ bug_desc_end_regx = r'The buggy address belongs to the page'
 offset_desc_regx = r'The buggy address is located (\d+) bytes ((inside)|(to the right)|(to the left)) of'
 size_desc_regx = r'which belongs to the cache [a-z0-9\-_]+ of size (\d+)'
 kernel_func_def_regx= r'(^(static )?(__always_inline |const |inline )?(struct )?\w+( )?(\*)?( |\n)(([a-zA-Z0-9:_]*( |\n))?(\*)*)?([a-zA-Z0-9:_]+)\([a-zA-Z0-9*_,\(\)\[\]<>&\-\n\t ]*\))'
+case_hash_syzbot_regx = r'https:\/\/syzkaller\.appspot\.com\/bug\?id=([a-z0-9]+)'
 
 def get_hash_from_log(path):
     with open(path, "r") as f:
@@ -463,20 +464,28 @@ def update_img_for_case(hash, folder, time):
     os.symlink(os.path.join(src,image+".img"), os.path.join(des, "stretch.img"))
     os.symlink(os.path.join(src,image+".img.key"), os.path.join(des, "stretch.img.key"))
 
-def get_case_from_file(path):
+def get_case_from_file(path, workdir):
     res = []
-    race = os.path.join(path,"race")
-    non_race = os.path.join(path, "non-race")
-    with open(race, 'r') as f:
+    with open(path, 'r') as f:
         text = f.readlines()
         for line in text:
             line = line.strip('\n')
-            res.append(line)
-    with open(non_race, 'r') as f:
-        text = f.readlines()
-        for line in text:
-            line = line.strip('\n')
-            res.append(line)
+            case_path = None
+            if os.path.isdir('{}/incomplete/{}'.format(workdir, line)):
+                case_path = '{}/incomplete/{}'.format(workdir, line)
+            if os.path.isdir('{}/completed/{}'.format(workdir, line)):
+                case_path = '{}/completed/{}'.format(workdir, line)
+            if os.path.isdir('{}/succeed/{}'.format(workdir, line)):
+                case_path = '{}/succeed/{}'.format(workdir, line)
+            if os.path.isdir('{}/error/{}'.format(workdir, line)):
+                case_path = '{}/error/{}'.format(workdir, line)
+            with open(case_path, 'r') as f_log:
+                line = f_log.readline()
+                case_hash = regx_get(case_hash_syzbot_regx, line, 0)
+                if case_hash != None:
+                    res.append(case_hash)
+                else:
+                    print("No hash found on case: {}".format(case_hash))
     return res
 
 def check_keyword_on_patch(hash):

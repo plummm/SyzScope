@@ -23,10 +23,10 @@ index b2886786..4aa96370 100644
  extract: bin/syz-extract
 diff --git a/courier/queue.go b/courier/queue.go
 new file mode 100644
-index 00000000..b060f598
+index 00000000..773c97e0
 --- /dev/null
 +++ b/courier/queue.go
-@@ -0,0 +1,69 @@
+@@ -0,0 +1,80 @@
 +package courier
 +
 +import (
@@ -39,6 +39,7 @@ index 00000000..b060f598
 +	Mutating = 0
 +	Commands = 1
 +	S2E      = 2
++	Critical = 3
 +)
 +
 +type S2EArgs struct {
@@ -47,6 +48,7 @@ index 00000000..b060f598
 +}
 +
 +var MutateArgsQueue = make([]rpctype.ProgQueue, 0)
++var CriticalPoCQueue = make([]rpctype.ProgQueue, 0)
 +
 +var CommandsQueue = make([]string, 0)
 +var S2EArgsQueue = make([]S2EArgs, 0)
@@ -60,6 +62,15 @@ index 00000000..b060f598
 +		PocProg:  pocProg,
 +	}
 +	MutateArgsQueue = append(MutateArgsQueue, a)
++}
++
++func AppendCriticalPoCQueue(p []byte) {
++	a := rpctype.ProgQueue{
++		Prog:     p,
++		NOfCalls: 0,
++		PocProg:  p,
++	}
++	CriticalPoCQueue = append(CriticalPoCQueue, a)
 +}
 +
 +func AppendCommandsQueue(p []byte) {
@@ -294,7 +305,7 @@ index 4e413636..857dd80d 100644
  	var arr []int
  	for id := range syscalls {
 diff --git a/pkg/report/linux.go b/pkg/report/linux.go
-index 07c061ff..d853ce53 100644
+index 07c061ff..32bdea36 100644
 --- a/pkg/report/linux.go
 +++ b/pkg/report/linux.go
 @@ -129,7 +129,7 @@ func (ctx *linux) ContainsCrash(output []byte) bool {
@@ -311,7 +322,7 @@ index 07c061ff..d853ce53 100644
  }
  
 +func (ctx *linux) findCriticalOops(output []byte) (oops *oops, startPos int, context string) {
-+	index := chooseCriticalCrash(output)
++	index := ChooseCriticalCrash(output)
 +	for pos, next := 0, 0; pos < len(output); pos = next + 1 {
 +		next = bytes.IndexByte(output[pos:], '\n')
 +		if next != -1 {
@@ -340,7 +351,7 @@ index 07c061ff..d853ce53 100644
 +	return
 +}
 +
-+func chooseCriticalCrash(output []byte) [][]int {
++func ChooseCriticalCrash(output []byte) [][]int {
 +	var index [][]int
 +	var crashRegx []*regexp.Regexp
 +	//kasanRegx := regexp.MustCompile(`BUG: KASAN: ([a-z\\-]+) in ([a-zA-Z0-9_]+).*`)
@@ -1596,7 +1607,7 @@ index 62648336..e31b664a 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index 2a0b7dd4..1cf92bb7 100644
+index 2a0b7dd4..3fa0ab98 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
 @@ -6,6 +6,7 @@ package main
@@ -1697,7 +1708,7 @@ index 2a0b7dd4..1cf92bb7 100644
  			if res.err != nil && shutdown != nil {
  				log.Logf(0, "%v", res.err)
  			}
-@@ -396,9 +430,11 @@ func (mgr *Manager) vmLoop() {
+@@ -396,12 +430,19 @@ func (mgr *Manager) vmLoop() {
  			// which we detect as "lost connection". Don't save that as crash.
  			if shutdown != nil && res.crash != nil {
  				needRepro := mgr.saveCrash(res.crash)
@@ -1712,7 +1723,15 @@ index 2a0b7dd4..1cf92bb7 100644
  				}
  			}
  		case res := <-reproDone:
-@@ -423,6 +459,28 @@ func (mgr *Manager) vmLoop() {
++			if (isCriticalCrash(res.res.Report.Title, storeRead) | abMemRead) == 1 {
++				prog := res.res.Prog.Serialize()
++				courier.AppendCriticalPoCQueue(prog)
++				flagExtraMutating = true
++			}
+ 			atomic.AddUint32(&mgr.numReproducing, ^uint32(0))
+ 			crepro := false
+ 			title := ""
+@@ -423,6 +464,28 @@ func (mgr *Manager) vmLoop() {
  				}
  			} else {
  				mgr.saveRepro(res.res, res.stats, res.hub)
@@ -1741,7 +1760,7 @@ index 2a0b7dd4..1cf92bb7 100644
  			}
  		case <-shutdown:
  			log.Logf(1, "loop: shutting down...")
-@@ -528,7 +586,7 @@ func (mgr *Manager) loadCorpus() {
+@@ -528,7 +591,7 @@ func (mgr *Manager) loadCorpus() {
  	mgr.phase = phaseLoadedCorpus
  }
  
@@ -1750,7 +1769,7 @@ index 2a0b7dd4..1cf92bb7 100644
  	mgr.checkUsedFiles()
  	inst, err := mgr.vmPool.Create(index)
  	if err != nil {
-@@ -569,14 +627,18 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
+@@ -569,14 +632,18 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
  	defer atomic.AddUint32(&mgr.numFuzzing, ^uint32(0))
  	cmd := instance.FuzzerCmd(fuzzerBin, executorCmd, fmt.Sprintf("vm-%v", index),
  		mgr.cfg.TargetOS, mgr.cfg.TargetArch, fwdAddr, mgr.cfg.Sandbox, procs, fuzzerV,
@@ -1771,7 +1790,7 @@ index 2a0b7dd4..1cf92bb7 100644
  		// This is the only "OK" outcome.
  		log.Logf(0, "vm-%v: running for %v, restarting", index, time.Since(start))
  		return nil, nil
-@@ -845,6 +907,12 @@ func (mgr *Manager) saveRepro(res *repro.Result, stats *repro.Stats, hub bool) {
+@@ -845,6 +912,12 @@ func (mgr *Manager) saveRepro(res *repro.Result, stats *repro.Stats, hub bool) {
  	if len(cprogText) > 0 {
  		osutil.WriteFile(filepath.Join(dir, "repro.cprog"), cprogText)
  	}
@@ -1784,7 +1803,7 @@ index 2a0b7dd4..1cf92bb7 100644
  	saveReproStats(filepath.Join(dir, "repro.stats"), stats)
  }
  
-@@ -1187,3 +1255,28 @@ func publicWebAddr(addr string) string {
+@@ -1187,3 +1260,28 @@ func publicWebAddr(addr string) string {
  	}
  	return "http://" + addr
  }
@@ -1890,10 +1909,10 @@ index 91e31dbd..19e92b93 100644
 +}
 diff --git a/syz-manager/utilities.go b/syz-manager/utilities.go
 new file mode 100644
-index 00000000..b55b3b1a
+index 00000000..99e72a15
 --- /dev/null
 +++ b/syz-manager/utilities.go
-@@ -0,0 +1,96 @@
+@@ -0,0 +1,119 @@
 +package main
 +
 +import (
@@ -1911,6 +1930,7 @@ index 00000000..b55b3b1a
 +
 +var TestcasePath string
 +var flagParseTestcase = false
++var flagExtraMutating = false
 +
 +//Read and parse testcase, send it to fuzzer
 +func (mgr *Manager) parseCustomizedTestcase(a rpctype.GetCallsFromFuzzerArgs, ch chan int) {
@@ -1961,12 +1981,17 @@ index 00000000..b55b3b1a
 +				p.Mutate(rnd, prog.RecommendedCalls, choiceTable, corpus)
 +				courier.AppendTestcase(p.Serialize(), []byte(prog.PocProg), prog.NOfCalls)
 +			}
++			rnd = rand.New(rand.NewSource(time.Now().UnixNano() + int64(4)*1e12))
 +			if !prog.ExecutePoCOnly {
 +				for {
 +					p := p.Clone()
 +					p.Mutate(rnd, prog.RecommendedCalls, choiceTable, corpus)
 +					courier.AppendTestcase(p.Serialize(), []byte(prog.PocProg), prog.NOfCalls)
 +					time.Sleep(1 * time.Second)
++					if flagExtraMutating {
++						mgr.doExtraMutate(choiceTable, corpus)
++						flagExtraMutating = false
++					}
 +				}
 +			}
 +			ch <- 0
@@ -1975,6 +2000,23 @@ index 00000000..b55b3b1a
 +	}
 +	log.Logf(0, "Error occur at parseCustomizedTestcase: %v\n", err)
 +	return
++}
++
++func (mgr *Manager) doExtraMutate(choiceTable *prog.ChoiceTable, corpus []*prog.Prog) {
++	pq := courier.RetrieveFirstArg(courier.Critical)
++	if pq != nil {
++		testcase := pq.(rpctype.ProgQueue).Prog
++		oriP, err := mgr.target.Deserialize(testcase, prog.NonStrict)
++		if err != nil {
++			return
++		}
++		rnd := rand.New(rand.NewSource(time.Now().UnixNano() + int64(4)*1e12))
++		for i := 1; i < 500; i++ {
++			p := oriP.Clone()
++			p.Mutate(rnd, prog.RecommendedCalls, choiceTable, corpus)
++			courier.AppendTestcase(p.Serialize(), testcase, len(oriP.Calls))
++		}
++	}
 +}
 +
 +func createTemplatePatch(base string) {

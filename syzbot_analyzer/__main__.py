@@ -54,15 +54,18 @@ def args_parse():
     parser.add_argument('-ff', '--force-fuzz',
                         action='store_true',
                         help='Force to do fuzzing even detect write without mutating')
-    parser.add_argument('--static-analysis',
+    parser.add_argument('-SA', '--static-analysis',
                         action='store_true',
-                        help='Run static analysis before fuzzing')
+                        help='Enable static analysis separatly')
+    parser.add_argument('-SE', '--symbolic-execution',
+                        action='store_true',
+                        help='Enable symbolic execution separatly')
+    parser.add_argument('-DV', '--dynamic-validation',
+                        action='store_true',
+                        help='Enable symbolic execution separatly')
     parser.add_argument('--use-cache',
                         action='store_true',
                         help='Read cases from cache, this will overwrite the --input feild')
-    parser.add_argument('--disable-symbolic-tracing',
-                        action='store_false',
-                        help='Disable symbolic tracing before fuzzing')
     parser.add_argument('--gdb', nargs='?',
                         default='1235',
                         help='Default gdb port for attaching')
@@ -73,15 +76,18 @@ def args_parse():
                         default='-1',
                         help='maximum of kernel that compiling at the same time. Default is unlimited.')
     parser.add_argument('--timeout-dynamic-validation', nargs='?',
-                        default='1800',
                         help='The timeout(by second) of static analysis and symbolic execution\n'
-                            'You can specify the timeout of static analysis separatly as well\n'
-                            'Thus the the rest time is for symbolic execution\n'
+                            'If you specify the timeout of static analysis or symbolic execution individually\n'
+                            'the the rest time is for the other one\n'
+                            'If you specify the timeout of both static analysis or symbolic execution'
+                            'This arugment will be ignored'
                             'Default timeout is 60 mins')
     parser.add_argument('--timeout-static-analysis', nargs='?',
-                        default='900',
                         help='The timeout(by second) of static analysis\n'
                             'Default timeout is 30 mins')
+    parser.add_argument('--timeout-symbolic-execution', nargs='?',
+                        help='The timeout(by second) of symbolic execution\n'
+                            'Default timeout is (timeout_dynamic_validation - timeout_static_analysis)')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug mode')
 
@@ -214,6 +220,9 @@ if __name__ == '__main__':
     install_requirments()
     if not args.use_cache:
         cache_cases(crawler.cases)
+    if args.dynamic_validation:
+        args.symbolic_execution = True
+        args.static_analysis = True
     deployer = []
     parallel_max = int(args.parallel_max)
     parallel_count = 0
@@ -223,8 +232,9 @@ if __name__ == '__main__':
     for i in range(0,min(parallel_max,len(crawler.cases))):
         deployer.append(Deployer(index=i, debug=args.debug, force=args.force, port=int(args.ssh), replay=args.replay, \
             linux_index=int(args.linux), time=int(args.time), force_fuzz=args.force_fuzz, alert=args.alert, \
-            static_analysis=args.static_analysis, symbolic_tracing=args.disable_symbolic_tracing, gdb_port=int(args.gdb), \
+            static_analysis=args.static_analysis, symbolic_execution=args.symbolic_execution, gdb_port=int(args.gdb), \
             qemu_monitor_port=int(args.qemu_monitor), max_compiling_kernel=int(args.max_compiling_kernel_concurrently), \
-            timeout_dynamic_validation=int(args.timeout_dynamic_validation), timeout_static_analysis=int(args.timeout_static_analysis)))
+            timeout_dynamic_validation=args.timeout_dynamic_validation, timeout_static_analysis=args.timeout_static_analysis, \
+            timeout_symbolic_execution=args.timeout_symbolic_execution))
         x = threading.Thread(target=deploy_one_case, args=(i,), name="lord-{}".format(i))
         x.start()

@@ -75,12 +75,12 @@ class MemInstrument(StateManager):
             # Finite address write includes write to UAF/OOB memory(addr is concrete but addr point to UAF/OOB memory)
             # or write to an address that comes from UAF/OOB memory(addr is symbolic)
             if (self._is_symbolic(bv_addr) or self.get_states_globals(addr, StateManager.G_SYM) != None ) \
-                    and self.get_states_globals(state.scratch.ins_addr, StateManager.G_VUL) == None:
+                    and state.scratch.ins_addr not in self.exploitable_state:
                 if self.get_states_globals(addr, StateManager.G_SYM) or self.is_under_constrained(bv_addr) != None:
                     self.wrap_high_risk_state(state, StateManager.FINITE_ADDR_WRITE)
                 else:
                     self.wrap_high_risk_state(state, StateManager.ARBITRARY_ADDR_WRITE)
-            if self._is_symbolic(bv_expr) and self.get_states_globals(state.scratch.ins_addr, StateManager.G_VUL) == None:
+            if self._is_symbolic(bv_expr) and state.scratch.ins_addr not in self.exploitable_state:
                 if self.is_under_constrained(bv_expr):
                     self.wrap_high_risk_state(state, StateManager.FINITE_VALUE_WRITE)
                 else:
@@ -96,7 +96,7 @@ class MemInstrument(StateManager):
             self.update_states_globals(addr+i, 0, StateManager.G_MEM)
     
     def track_call(self, state):
-        if state.regs.rip.symbolic and self.get_states_globals(state.scratch.ins_addr, StateManager.G_VUL) == None:
+        if state.regs.rip.symbolic and state.scratch.ins_addr not in self.exploitable_state:
             self.wrap_high_risk_state(state, StateManager.CONTROL_FLOW_HIJACK)
             return
 
@@ -106,7 +106,10 @@ class MemInstrument(StateManager):
     
     def track_symbolic_variable(self, state):
         self.logger.warning("A new symbolic data: {} size: {} bit".format(state.inspect.symbolic_name, state.inspect.symbolic_size))
-        #self.dump_state(state)
+        self.dump_state(state)
+        self.dump_stack(state)
+        self.dump_trace(state)
+        self.purge_current_state()
     
     def track_contraint(self, state):
         self.logger.warning("A new constraint {} add to {}".format(state.inspect.added_constraints, hex(state.scratch.ins_addr)))
@@ -238,12 +241,11 @@ class MemInstrument(StateManager):
                     state.solver.add(bv_addr == single_addr)
                     addrs.append(single_addr)
                 else:
-                    try:
-                        state.solver.eval(bv_addr, extra_constraints=[(bv_addr == MemInstrument.CTR_ADDR)])
+                    if state.solver.solution(bv_addr, MemInstrument.CTR_ADDR):
                         state.solver.add(bv_addr == MemInstrument.CTR_ADDR)
                         addrs.append(MemInstrument.CTR_ADDR)
                         self._updateCtrAddr()
-                    except SimUnsatError:
+                    else:
                         state.solver.add(bv_addr == single_addr)
                         addrs.append(single_addr)
             else:
