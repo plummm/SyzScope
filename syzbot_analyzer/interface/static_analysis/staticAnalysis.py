@@ -1,9 +1,11 @@
 import os, stat
+from socket import timeout
 import logging
 import shutil
 import syzbot_analyzer.interface.utilities as utilities
 import threading
 import time
+import queue
 
 from subprocess import Popen, PIPE, STDOUT, TimeoutExpired, call
 from .error import CompilingError
@@ -16,6 +18,8 @@ class StaticAnalysis:
         self.case_path = case_path
         self.index = index
         self.linux_folder = linux_folder
+        self.cmd_queue = queue.Queue()
+        self.bc_ready = False
         self.timeout = timeout
 
     def prepare_static_analysis(self, case, vul_site, func_site):
@@ -96,9 +100,14 @@ class StaticAnalysis:
         regx = r'echo \'[ \t]*CC[ \t]*(([A-Za-z0-9_\-.]+\/)+([A-Za-z0-9_.\-]+))\';'
         base = os.path.join(self.case_path, 'linux')
         path = os.path.join(base, 'clang_log')
+
+        procs = []
+        #for _ in range(0, 16):
+        #    x = threading.Thread(target=self.executor, args={base,})
+        #    x.start()
+        #    procs.append(x)
         with open(path, 'r') as f:
             lines = f.readlines()
-            procs = []
             for line in lines:
                 p2obj = utilities.regx_get(regx, line, 0)
                 obj = utilities.regx_get(regx, line, 2)
@@ -130,22 +139,20 @@ class StaticAnalysis:
                 st = new_cmd[idx_obj]
                 if st[len(st)-1] == 'o':
                     new_cmd[idx_obj] = st[:len(st)-1] + 'bc'
+                    if os.path.exists(os.path.join(base, p2obj)):
+                        continue
                 else:
                     self.case_logger.error("{} is not end with .o".format(new_cmd[idx_obj]))
                     continue
-                # Somehow Popen(cmd) stuck sometime for unknow reason
-                if len(procs) >= 64:
-                    for p in procs:
-                        if p.poll() != None:
-                            procs.remove(p)
-                procs.append(Popen(new_cmd, cwd=base, stdout=PIPE, stderr=PIPE))
-                #call(new_cmd, cwd=base)
-            for p in procs:
-                try:
-                    p.wait(timeout=2)
-                except TimeoutExpired:
+                #self.cmd_queue.put(new_cmd)
+                p = Popen(new_cmd, cwd=base, stdout=PIPE, stderr=PIPE)
+                p.wait(timeout=5)
+                if p.poll() == None:
                     p.kill()
-            self.case_logger.info("About to link bc")
+            
+            #self.bc_ready=True
+            #for p in procs:
+            #    p.join()
             if os.path.exists(os.path.join(self.case_path,'one.bc')):
                 os.remove(os.path.join(self.case_path,'one.bc'))
             link_cmd = '{}/tools/llvm/build/bin/llvm-link --only-needed -o one.bc `find ./ -name "*.bc" ! -name "timeconst.bc"` && mv one.bc {}'.format(self.proj_path, self.case_path)
@@ -156,6 +163,20 @@ class StaticAnalysis:
             if exitcode != 0:
                 self.case_logger.error("Fail to construct a monolithic bc")
             return exitcode
+    
+    def executor(self, base):
+        while not self.bc_ready or not self.cmd_queue.empty():
+            try:
+                cmd = self.cmd_queue.get(block=True, timeout=5)
+                p = Popen(cmd, cwd=base, stdout=PIPE, stderr=PIPE)
+                p.wait(timeout=5)
+                print("CC {}".format(cmd))
+                if p.poll() == None:
+                    p.kill()
+            except queue.Empty:
+                # get() is multithreads safe
+                # 
+                break
 
     def KasanVulnChecker(self, report):
         vul_site = ''

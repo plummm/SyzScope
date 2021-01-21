@@ -99,8 +99,10 @@ class Deployer(Workers):
             ### DEBUG SYMEXEC ###
             if self.symbolic_execution:
                 if not self.finished_symbolic_execution(hash_val, 'incomplete'):
-                    self.do_symbolic_execution(case, i386, timeout=60*60)
-                if os.path.exists("{}/sym".format(self.current_case_path)):
+                    r = self.do_symbolic_execution(case, i386, timeout=60*60)
+                    if r == 1:
+                        return
+                if os.path.exists("{}/sym".format(self.current_case_path)) and not os.path.exists("{}/sym_only".format(self.current_case_path)):
                     shutil.move("{}/sym".format(self.current_case_path), "{}/sym_only".format(self.current_case_path))
             ### DEBUG SYMEXEC ###
 

@@ -33,12 +33,17 @@ class SymExec(MemInstrument):
         self._context_ready = False
         self.cus_sections = sections
         self.impacts_collector = {}
-        self._branches = {}
-        self.target_site = {}
+        self._branches = None
+        self.target_site = None
         if logger == None:
             self.logger = logging
         else:
             self.logger = logger
+    
+    def init_execution(self):
+        self.init_StateManager()
+        self._branches = {}
+        self.target_site = {}
 
     def setup_vm(self, linux, arch, port, image, gdb_port, mon_port, hash_tag, proj_path='/tmp/', mem="2G", cpu="2", key=None, opts=None, log_name="vm.log", log_suffix="", logger=None, timeout=None):
         self.gdb_port = gdb_port
@@ -96,7 +101,7 @@ class SymExec(MemInstrument):
     def run_sym(self, path=[], raw_tracing=False, timeout=60*10):
         if timeout > self._timeout:
             self.logger.warning("Timeout of symbolic execution is longer than timeout of qemu")
-        dfs = False
+        dfs = True
         if path == []:
             dfs = False
         self._timeout = timeout
@@ -153,9 +158,9 @@ class SymExec(MemInstrument):
         #self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff826c98fd)
         #self._init_state.inspect.b('constraints', when=angr.BP_BEFORE, action=self.track_contraint)
 
-        self.build_path_table(path)
         start_time = time.time()
-        self._run_simgr(dfs, raw_tracing, start_time)
+        for each_path in path:
+            self._run_simgr(dfs, [each_path], raw_tracing, start_time)
         
         self.logger.info("*******************primitives*******************\n")
         running_time = time.time() - start_time
@@ -186,14 +191,20 @@ class SymExec(MemInstrument):
 
         return self.state_privilege
     
-    def _run_simgr(self, dfs, raw_tracing, start_time):
+    def _run_simgr(self, dfs, path, raw_tracing, start_time):
+        self.init_execution()
+        #self.build_path_fence(path)
+        self.build_path_table(path)
+        self.setup_current_state(self._init_state.copy())
         ok, err = self.init_simgr(raw_tracing, dfs)
         if not ok:
             self.logger.error(err)
             return
 
         last_state = 0
+        self.reset_state_bb()
 
+        self.logger.info("Time limit: {} seconds".format(self._timeout))
         while True:
             if self._timeout != None:
                 current_time = time.time()
@@ -222,6 +233,8 @@ class SymExec(MemInstrument):
                 insns = self.proj.factory.block(self.simgr.active[0].addr).capstone.insns
                 n = len(insns)
                 self.vm.inspect_code(self.simgr.active[0].addr, n)
+                #file, line = self.vm.get_dbg_info(self.simgr.active[0].scratch.ins_addr)
+                #print(file, line)
             
             if self.simgr.unconstrained:
                 killed_state = []
@@ -243,6 +256,7 @@ class SymExec(MemInstrument):
                     self.stop_execution = True
             
             if self.stop_execution:
+                self.stop_execution = False
                 self.impacts_collector = self.exploitable_state
                 return
     
@@ -360,12 +374,20 @@ class SymExec(MemInstrument):
         error_opcode = ['ud0', 'ud1', 'ud2', 'rdtsc', 'in', 'out']
         insns = self.proj.factory.block(addr).capstone.insns
         if len(insns) == 0:
-            if not self.proj.is_hooked(addr):
-                self.skip_insn(addr, 1)
+            code = self.vm.inspect_code(addr, 1)
+            if 'int3' in code:
+                self.purge_current_state()
                 return
+            else:
+                if not self.proj.is_hooked(addr):
+                    self.skip_insn(addr, 1)
+                    return
         offset = 0
         for inst in insns:
             opcode = inst.mnemonic
+            if opcode in 'int3':
+                self.purge_current_state()
+                return
             if opcode in error_opcode:
                 if not self.proj.is_hooked(addr+offset):
                     self.skip_insn(addr+offset, 2)
@@ -376,6 +398,14 @@ class SymExec(MemInstrument):
             return True
         return False
     
+    def build_path_fence(self, paths):
+        self._branches['correct'] = {}
+        self._branches['wrong'] = {}
+        for each_path in paths:
+            for each_node in each_path:
+                self._branches['correct'][each_node['correct']] = 0
+                self._branches['wrong'][each_node['wrong']] = 0
+
     def build_path_table(self, paths):
         for each_path in paths:
             for i in range(0, len(each_path)-1):
@@ -402,6 +432,15 @@ class SymExec(MemInstrument):
             if len(each_path) > 0:
                 key = "{}:{}".format(each_path[len(each_path)-1]['file'], each_path[len(each_path)-1]['line'])
                 self.target_site[key] = StateManager.NO_ADDITIONAL_USE
+
+    def _match_fense(self, next_state):
+        addr = next_state.addr
+        insns = self.proj.factory.block(addr).capstone.insns
+        for each_inst in insns:
+            if addr in self._branches['wrong']:
+                return True
+            addr += each_inst.size
+        return addr in self._branches['wrong']
     
     def _match_next_bb_on_path(self, state, next_state):
         file, line = self.vm.get_dbg_info(state.addr)
@@ -409,11 +448,19 @@ class SymExec(MemInstrument):
         next_file, next_line = self.vm.get_dbg_info(next_state.addr)
         if key in self._branches:
             for each_bb in self._branches[key]:
+                if each_bb['file'] == next_file and each_bb['line'] == next_line and each_bb['feasible']:
+                    return True
+        else:
+            return True
+        return False
+        """if key in self._branches:
+            for each_bb in self._branches[key]:
                 if each_bb['file'] == next_file and each_bb['line'] == next_line \
                         and not each_bb['feasible'] \
                         and (next_file != file or next_line != line): # Sometimes the dbg info messed up, do not kill the state
                     return False
         return True
+        """
     
     def _my_successor_func(self, state):
         self.setup_current_state(state)
@@ -425,11 +472,11 @@ class SymExec(MemInstrument):
             self.logger.error(e)
             self.purge_current_state()
             raise ExecutionError
-        #if self.dfs and self.cur_state_dead():
-        #    self.logger.warning("current state is dead")
-        #    succ.flat_successors = []
-        #    succ.all_successors = []
-        #   return succ
+        if self.dfs and (self.cur_state_dead() or self.is_fallen_state()):
+            self.logger.warning("current state is dead")
+            succ.flat_successors = []
+            succ.all_successors = []
+            return succ
         successors = succ.successors
         if len(succ.successors) == 1:
             insns = self.proj.factory.block(state.addr).capstone.insns
@@ -456,6 +503,8 @@ class SymExec(MemInstrument):
             dead_states.extend(successors)
         # kill states with multiple forking
         if len(successors) > 1:
+            for i in range(0, len(successors)):
+                successors[i].globals['bb'] = 0
             self._update_fork_countor(state)
             if self._is_loop_fork(state):
                 self.logger.info("kill a loop forking at {}".format(hex(state.addr)))
@@ -463,7 +512,8 @@ class SymExec(MemInstrument):
         # kill states on particular branches
         if len(self._branches) > 0 and self._is_branch(state.addr):
             for each in successors:
-                if not self._match_next_bb_on_path(state, each):
+                if not self._match_next_bb_on_path(state, each) and len(successors) > 1:
+                #if self._match_fense(each):
                     self.logger.info("kill a off path state: state {}".format(self.get_state_index(each)))
                     dead_states.append(each)
         for each in dead_states:

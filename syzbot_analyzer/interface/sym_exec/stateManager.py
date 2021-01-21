@@ -8,6 +8,8 @@ class StateManager:
     G_MEM = 0
     G_SYM = 1
     G_RET = 2
+    G_BB = 3
+    MAX_BB_WITHOUT_SYM = 1000
     NO_ADDITIONAL_USE = 0
     ARBITRARY_VALUE_WRITE = 1 << 0
     FINITE_VALUE_WRITE = 1 << 1
@@ -19,16 +21,22 @@ class StateManager:
         self.index = index
         self._current_state = None
         self.simgr = None
-        self.state_logger = {}
-        self.fork_countor = {}
-        self.state_privilege = 0
-        self.state_counter = 0
+        self.state_logger = None
+        self.fork_countor = None
+        self.state_privilege = None
+        self.state_counter = None
         self.add_constraints = False
         self.symbolic_tracing = False
         self.dfs = True
         self.proj_path = None
         self.stop_execution = False
         self.exploitable_state = {}
+    
+    def init_StateManager(self):
+        self.state_logger = {}
+        self.fork_countor = {}
+        self.state_privilege = 0
+        self.state_counter = 0
     
     def init_primitive_logger(self, name):
         primitive_path = os.path.join(self.proj_path, "sym/primitives")
@@ -65,9 +73,9 @@ class StateManager:
         self.simgr = self.proj.factory.simgr(self._current_state, save_unconstrained=True)
         if not symbolic_tracing:
             self.add_constraints = True
-            if dfs:
-                legth_limiter = angr.exploration_techniques.LengthLimiter(max_length=1000, drop=True)
-                self.simgr.use_technique(legth_limiter)
+            #if dfs:
+                #legth_limiter = angr.exploration_techniques.LengthLimiter(max_length=3000, drop=True)
+                #self.simgr.use_technique(legth_limiter)
         if dfs:
             dfs = angr.exploration_techniques.DFS()
             self.simgr.use_technique(dfs)
@@ -116,10 +124,13 @@ class StateManager:
             prim_name = "{}-{}-{}".format("CFH", func_name, hex(state.scratch.ins_addr))
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("Control flow hijack found!")
+            """
             for addr in state.globals['sym']:
                 size = state.globals['sym'][addr]
                 bv = state.memory.load(addr, size=size, inspect=False, endness=archinfo.Endness.LE)
-                prim_logger.info("addr {} eval to {}".format(hex(addr), hex(state.solver.eval(bv))))
+                val = state.solver.eval(bv)
+                prim_logger.info("addr {} eval to {} with {} bytes".format(hex(addr), hex(val), size))
+            """
         self.dump_state(state, prim_logger)
         self.dump_stack(state, prim_logger)
         self.dump_trace(state, prim_logger)
@@ -151,6 +162,11 @@ class StateManager:
                 self._current_state.globals['ret'] = []
             self._current_state.globals['ret'].append(val)
             n = len(self._current_state.globals['ret'])
+        if key == StateManager.G_BB:
+            if 'bb' not in self._current_state.globals:
+                self._current_state.globals['bb'] = 0
+            self._current_state.globals['bb'] += 1
+            n = 0
         return n
     
     def get_states_globals(self, addr, key):
@@ -168,6 +184,11 @@ class StateManager:
         if key == StateManager.G_RET:
             try:
                 val = self._current_state.globals['ret'][addr]
+            except KeyError:
+                val = None
+        if key == StateManager.G_BB:
+            try:
+                val = self._current_state.globals['bb']
             except KeyError:
                 val = None
         return val
@@ -210,6 +231,14 @@ class StateManager:
             ret.append(id(each_arg))
             ret.extend(self.iterate_constraints(each_arg))
         return ret
+    
+    def is_fallen_state(self):
+        self.update_states_globals(0, 0, StateManager.G_BB)
+        n = self.get_states_globals(0, StateManager.G_BB)
+        return n > StateManager.MAX_BB_WITHOUT_SYM
+    
+    def reset_state_bb(self):
+        self._current_state.globals['bb'] = 0
     
     def purge_state(self, state):
         if state in self.simgr.active:

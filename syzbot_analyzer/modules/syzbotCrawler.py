@@ -124,8 +124,8 @@ class Crawler:
                             crash['Reported'] = stats[4].text
                             try:
                                 patch_url = commit_list.contents[1].contents[1].attrs['href']
-                                crash['Closed'] = stats[5].text
                                 crash['Patch'] = patch_url
+                                crash['Closed'] = stats[4].text
                             except:
                                 # patch only works on fixed cases
                                 pass

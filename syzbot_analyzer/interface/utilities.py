@@ -479,7 +479,7 @@ def get_case_from_file(path, workdir):
                 case_path = '{}/succeed/{}'.format(workdir, line)
             if os.path.isdir('{}/error/{}'.format(workdir, line)):
                 case_path = '{}/error/{}'.format(workdir, line)
-            with open(case_path, 'r') as f_log:
+            with open(case_path+'/log', 'r') as f_log:
                 line = f_log.readline()
                 case_hash = regx_get(case_hash_syzbot_regx, line, 0)
                 if case_hash != None:
@@ -620,32 +620,55 @@ def retrieve_cases_match_regx(dirOfCases, regx):
     
     return res
 
+def calculate_patch_info(each):
+    if 'Patch' in each:
+        r = request_get(each['Patch'])
+        soup = BeautifulSoup(r.text, "html.parser")
+        commit_info = soup.find_all('table', {'class': 'commit-info'})
+        if len(commit_info) > 0:
+            try:
+                commit_date_time_str = commit_info[0].contents[1].contents[2].contents[0]
+                merge_date_time_str = commit_info[0].contents[3].contents[2].contents[0]
+            except:
+                print(each, 'has no valid commit date')
+                return None
+            import datetime
+            from dateutil.tz import UTC
+            commit_date_time_obj = datetime.datetime.strptime(commit_date_time_str, '%Y-%m-%d %H:%M:%S %z').astimezone(UTC)
+            merge_date_time_obj = datetime.datetime.strptime(merge_date_time_str, '%Y-%m-%d %H:%M:%S %z').astimezone(UTC)
+            patched_commit = datetime.datetime.today().astimezone(UTC) - commit_date_time_obj
+            patched_merge = datetime.datetime.today().astimezone(UTC) - merge_date_time_obj
+            reported = regx_get(r'(\d+)d', each['Reported'], 0)
+            if reported == None:
+                return None
+            reported = int(reported)
+            if reported > patched_commit.days:
+                each['days_patch_commit'] = reported - patched_commit.days
+            else:
+                each['days_patch_commit'] = -1
+            if reported > patched_merge.days:
+                each['days_patch_merge'] = reported - patched_merge.days
+            else:
+                each['days_patch_merge'] = -1
+            if each['days_patch_commit']>each['days_patch_merge']:
+                return None
+            return each
+    return None
+
 def save_cases_as_json(key, max_num):
-    from syzbot_analyzer.modules import Crawler
-    crawler = Crawler(keyword=key, max_retrieve=max_num)
+    import importlib.util
+    pwd = os.getcwd()
+    spec = importlib.util.spec_from_file_location("syzbotCrawler", pwd+"/syzbot_analyzer/modules/syzbotCrawler.py")
+    foo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(foo)
+    foo.Crawler()
+    crawler = foo.Crawler(keyword=key, max_retrieve=max_num, debug=True)
     cases = crawler.gather_cases()
-    with open('cases_{}.json'.format("-".join(key)), 'w') as f:
+    with open(pwd+'/cases_{}.json'.format("-".join(key)), 'w') as f:
         for each in cases:
-            r = request_get(each['Patch'])
-            soup = BeautifulSoup(r.text, "html.parser")
-            commit_info = soup.find_all('table', {'class': 'commit-info'})
-            if len(commit_info) > 0:
-                try:
-                    date_time_str = commit_info[0].contents[1].contents[2].contents[0]
-                except:
-                    print(each, 'has no valid commit date')
-                    continue
-                import datetime
-                date_time_obj = datetime.datetime.strptime(date_time_str, '%Y-%m-%d %H:%M:%S -%f')
-                patched = datetime.datetime.today() - date_time_obj
-                reported = regx_get(r'(\d+)d', each['Reported'], 0)
-                if reported == None:
-                    continue
-                reported = int(reported)
-                if reported > patched.days:
-                    each['how_long_to_fix'] = reported - patched.days
-                else:
-                    each['how_long_to_fix'] = -1
+            #new_each = calculate_patch_info(each)
+            #if new_each == None:
+            #    continue
             json.dump(each, f)
             f.write('\n')
     return cases
@@ -661,53 +684,99 @@ def load_cases_from_json(path):
     return res
 
 def cmp_case_with_last_day(case):
-    days = regx_get('(\d+)d',case['Last'],0)
-    if days != None:
-        return int(days)
-    return -1
+    try:
+        a = case['days_patch_merge']
+    except:
+        print(case['Title'])
+    return case['days_patch_merge']
+
+def percentage_of_each_bug(crashes):
+    bug_types = ['use-after-free Write', 'use-after-free Read', 'out-of-bounds Write', 'out-of-bounds Read',
+                 'invalid-free', 'null-ptr-deref', 'WARNING', 'INFO', 'general protection fault', 'KMSAN',
+                 'possible deadlock',
+                 'KCSAN', 'BUG', 'memory leak', 'inconsistent lock state', 'suspicious RCU usage', 'kernel-infoleak',
+                 'divide error']
+    n = {}
+    rest = []
+    print(len(crashes))
+    for type in bug_types:
+        n[type] = 0
+    for each in crashes:
+        found = False
+        for type in bug_types:
+            if type in each['Title']:
+                n[type] += 1
+                found = True
+                break
+        if not found:
+            rest.append(each['Title'])
+    for type in bug_types:
+        print(type, n[type], str(n[type] / len(crashes) * 100) + "%")
+    for each in rest:
+        print(each)
+
+def type_of_bug(title, bug_types):
+    for each in bug_types:
+        if each in title:
+            return each
+    return None
+
+def get_median_average(sorted_cases, keyword, bug_name=None):
+    d = 0
+    n = 0
+    p = {}
+    unduplicated = []
+    median = 0
+    if bug_name == None:
+        keys = []
+    else:
+        keys = bug_name.split(' && ')
+    for i in range(0, len(sorted_cases)):
+        if sorted_cases[i]['Patch'] not in p:
+            same_type = True
+            for j in range(0, len(keys)):
+                key = keys[j]
+                if key in sorted_cases[i]['Title']:
+                    break
+                if j == len(keys) - 1:
+                    same_type = False
+            if not same_type:
+                continue
+            n += 1
+            d += sorted_cases[i][keyword]
+            p[sorted_cases[i]['Patch']] = 1
+            unduplicated.append(sorted_cases[i])
+    median = unduplicated[len(unduplicated) // 2][keyword]
+    average = d / n
+    return median, average, unduplicated
 
 if __name__ == '__main__':
-    #res = urlsOfCases("/home/xzou017/projects/SyzbotAnalyzer/work/error/")
-    #for each in res:
-    #    print(each)
-    crashes = save_cases_as_json([], 999999999)
-    #crashes = load_cases_from_json('/home/xzou017/projects/SyzbotAnalyzer/cases_.json')
-    sorted_cases = sorted(crashes, key=cmp_case_with_last_day)
-    # libraries
-    import numpy as np
-    import seaborn as sns
-    import matplotlib.pyplot as plt
-    sns.set_style("whitegrid")
-    
-    # Color palette
-    blue, = sns.color_palette("muted", 1)
-    
-    # Create data
-    x_data = [0]
-    y_data = []
-    last = 0
-    count = {}
-    count[0]=0
-    for each in sorted_cases:
-        days = regx_get('(\d+)d',each['Last'],0)
-        if days != None:
-            if days not in count:
-                count[days] = 1
-            else:
-                count[days] += 1
-            if days != last:
-                x_data.append(days)
-                y_data.append(count[last])
-                last = days
-    y_data.append(count[last])
-    
-    x = np.array(x_data)
-    y = np.array(y_data)
-    # Make the plot
-    fig, ax = plt.subplots()
-    ax.plot(x, y)
-    #ax.fill_between(x, 0, y, alpha=.3)
-    ax.set(xlim=(0, len(x) - 1), ylim=(0, None), xticks=x)
+    p = '/home/xzou017/projects/results_of_syzbot_analysis/WARNING_LATEST/'
+    l = get_case_from_file(p+'/ConfirmedAbnormallyMemWrite', p)
+    uni_l1 = unique(l)
+    l = get_case_from_file(p+'/ConfirmedAbnormallyMemRead', p)
+    uni_l2 = unique(l)
+    uni_l2.extend(uni_l1)
+
+    patch2case = {}
+    #cases = save_cases_as_json([''], 999999)
+    cases = load_cases_from_json(os.getcwd()+'/cases_.json')
+    for each in cases:
+        if 'Patch' not in each:
+            continue
+        patch = each['Patch']
+        if patch not in patch2case:
+            patch2case[patch] = []
+        patch2case[patch].append(each)
+    for each_hash in uni_l2:
+        for each_case in cases:
+            if each_hash == each_case['Hash']:
+                if 'Patch' not in each_case:
+                    continue
+                patch = each_case['Patch']
+                for dup in patch2case[patch]:
+                    if 'use-after-free' in dup['Title'] or 'out-of-bounds' in dup or 'double-free' in dup:
+                        print(each_hash, dup['Title'])
     
 
     

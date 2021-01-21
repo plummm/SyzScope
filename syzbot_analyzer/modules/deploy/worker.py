@@ -45,6 +45,8 @@ class Workers(Case):
         self.logger.info("initial environ of symbolic execution")
         if timeout != None:
             self.timeout_symbolic_execution = timeout
+        else:
+            self.timeout_symbolic_execution = self.timeout_dynamic_validation - self.timeout_static_analysis
         self.sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.index, self.current_case_path, self.linux_folder)
         #self.init_crash_checker(self.ssh_port, False)
         r = utilities.request_get(case['report'])
@@ -76,7 +78,6 @@ class Workers(Case):
         result = StateManager.NO_ADDITIONAL_USE
         exception_count = 0
         flag_stop_execution = False
-        self.timeout_symbolic_execution = self.timeout_dynamic_validation - self.timeout_static_analysis
         for i in range(0, max_round):
             sym_folder = os.path.join(self.current_case_path, "sym")
             if not os.path.isdir(sym_folder):
@@ -129,7 +130,16 @@ class Workers(Case):
                 for each_file in path_files:
                     if each_file != None:
                         guided_path = os.path.join(static_analysis_result_paths, each_file)
-                        paths.append(self.retrieve_guided_paths(guided_path))
+                        p = self.retrieve_guided_paths(guided_path)
+                        if p != []:
+                            paths.append(p)
+                """p = []
+                p.append({'cond': 0xffffffff83234a29, 'correct': 0xffffffff83234a2b, 'wrong': 0xffffffff832349a9})
+                p.append({'cond': 0xffffffff83234a2b, 'correct': 0xffffffff83234a5a, 'wrong': 0xffffffff832349a9})
+                p.append({'cond': 0xffffffff83e62f10, 'correct': 0xffffffff83e62e39, 'wrong': 0xffffffff83e7d5f0})
+                p.append({'cond': 0xffffffff83e5fe76, 'correct': 0xffffffff83e5fe8b, 'wrong': 0xffffffff83e7ba0e})
+                p.append({'cond': 0xffffffff83e5fea3, 'correct': 0xffffffff83e5feb5, 'wrong': 0xffffffff83e5fec0})
+                paths = [p]"""
                 ret = sym.run_sym(path=paths, raw_tracing=raw_tracing, timeout=self.timeout_symbolic_execution)
                 if ret == None:
                     self.logger.warning("Can not locate the vulnerable memory")
@@ -156,7 +166,7 @@ class Workers(Case):
             time.sleep(1)
         if max_round == exception_count:
             self.logger.warning("Can not trigger vulnerability. Abaondoned")
-            return
+            return 1
         if result & StateManager.CONTROL_FLOW_HIJACK:
             self.logger.warning("Control flow hijack found")
         if result & StateManager.ARBITRARY_VALUE_WRITE:
@@ -179,7 +189,7 @@ class Workers(Case):
             self.logger.warning("Can not trigger vulnerability. Abaondoned")"""
         
         self.create_finished_symbolic_execution_stamp()
-        return
+        return 0
     
     def retrieve_guided_paths(self, guided_path):
         paths = []
@@ -187,6 +197,7 @@ class Workers(Case):
             with open(guided_path, 'r') as f:
                 text = f.readlines()
                 for site in text:
+                    fesible_condition = False
                     site = site.strip('\n')
                     tmp = site.split(' ')
                     if site == '$':
@@ -197,10 +208,16 @@ class Workers(Case):
                         line = t[1]
                         paths.append({'file': file, 'line': line})
                         break
-                    cond = tmp[0].split(':')
-                    correct = tmp[1].split(':')
-                    wrong = tmp[2].split(':')
+                    base_index = 0
+                    if tmp[0] == '*':
+                        fesible_condition = True
+                        base_index = 1
+                    cond = tmp[base_index].split(':')
+                    correct = tmp[base_index+1].split(':')
+                    wrong = tmp[base_index+2].split(':')
                     paths.append({'cond': {'file': cond[0], 'line': cond[1], 'feasible': True}, 'correct': {'file': correct[0], 'line': correct[1], 'feasible': True}, 'wrong': {'file': wrong[0], 'line': wrong[1], 'feasible': False}})
+                    if fesible_condition:
+                        paths.append({'cond': {'file': cond[0], 'line': cond[1], 'feasible': True}, 'wrong': {'file': correct[0], 'line': correct[1], 'feasible': True}, 'correct': {'file': wrong[0], 'line': wrong[1], 'feasible': False}})
         return paths
 
 

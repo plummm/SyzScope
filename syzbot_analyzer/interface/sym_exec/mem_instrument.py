@@ -66,6 +66,8 @@ class MemInstrument(StateManager):
     def track_mem_write(self, state):
         bv_addr = state.inspect.mem_write_address
         bv_expr = state.inspect.mem_write_expr
+        if self._is_symbolic(bv_addr) or self._is_symbolic(bv_expr):
+            self.reset_state_bb()
         addr = state.solver.eval(bv_addr)
         if not state.solver.unique(bv_addr):
             state.solver.add(bv_addr == addr)
@@ -133,7 +135,7 @@ class MemInstrument(StateManager):
             "__sanitizer_cov_trace_const_cmp1", "__sanitizer_cov_trace_const_cmp2", "__sanitizer_cov_trace_const_cmp4", "__sanitizer_cov_trace_const_cmp8", 
             "__sanitizer_cov_trace_cmp1", "__sanitizer_cov_trace_cmp2", "__sanitizer_cov_trace_cmp4", "__sanitizer_cov_trace_cmp8"] 
         noisy_func = ["__kasan_check_read", "__kasan_check_write","kasan_report_double_free", "kasan_check_read", "kasan_check_write", "kasan_unpoison_shadow", "queue_delayed_work_on", "pvclock_read_wallclock","mutex_lock", "__mutex_lock", "mutex_unlock", "__mutex_unlock", "record_times", "kfree", "update_rq_clock", "sched_clock_idle_sleep_event", \
-            "__warn_printk", "srm_printk", "snd_printk", "dbgp_printk", "ql4_printk", "printk", "vprintk", "__dump_page", "irq_stack_union", "queued_spin_lock_slowpath", "__pv_queued_spin_lock_slowpath", "queued_read_lock_slowpath", "queued_write_lock_slowpath"]
+            "dump_stack", "__warn_printk", "srm_printk", "snd_printk", "__pv_queued_spin_unlock_slowpath", "dbgp_printk", "ql4_printk", "printk", "vprintk", "__dump_page", "irq_stack_union", "queued_spin_lock_slowpath", "__pv_queued_spin_lock_slowpath", "queued_read_lock_slowpath", "queued_write_lock_slowpath"]
         noisy_func.extend(kcov_funcs)
         
         if type(extra) == list:
@@ -226,12 +228,13 @@ class MemInstrument(StateManager):
                 successors[i].globals['mem'] = state.globals['mem'].copy()
             if 'ret' in state.globals:
                 successors[i].globals['ret'] = state.globals['ret'].copy()
-            # 'val' is a global field for all states, we do not need to copy it.
-            if 'vul' in state.globals:
-                successors[i].globals['vul'] = state.globals['vul']
+            if 'bb' in state.globals:
+                successors[i].globals['bb'] = state.globals['bb'] + 1
     
     def _instrument_mem_read(self, state, bv_addr, size):
         addrs = []
+        if self._is_symbolic(bv_addr):
+            self.reset_state_bb()
         single_addr = state.solver.eval(bv_addr)
         if state.solver.unique(bv_addr):
             addrs.append(single_addr)
@@ -274,6 +277,7 @@ class MemInstrument(StateManager):
                                     self.update_states_globals(addr+i, 0, StateManager.G_MEM)
                                 
                                 state.memory.store(addr, state.solver.BVV(each, round(size/group)*8), inspect=False, endness=archinfo.Endness.LE)
+                                self._current_state.memory.store(addr, state.solver.BVV(each, round(size/group)*8), inspect=False, endness=archinfo.Endness.LE)
                         else:
                             self.make_symbolic(state, addr, size)
                             bv = state.memory.load(addr, size, inspect=False, endness=archinfo.Endness.LE)

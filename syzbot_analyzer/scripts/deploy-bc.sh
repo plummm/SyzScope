@@ -57,6 +57,7 @@ cd linux
 if [ "$COMPILE" != "1" ]; then
 
   if [ -f "$CASE_PATH/config" ]; then
+    git stash
     rm .config
     mv $CASE_PATH/config .config
     if [ ! -f "$CASE_PATH/compiler/compiler" ]; then
@@ -74,18 +75,34 @@ CONFIGKEYSDISABLE="
 CONFIG_KASAN
 CONFIG_KCOV
 CONFIG_BUG_ON_DATA_CORRUPTION
+CONFIG_DRM_I915
 "
 for key in $CONFIGKEYSDISABLE;
 do
     config_disable $key
 done
 
+# save the dry run log
 CLANG=$PROJECT_PATH/tools/llvm/build/bin/clang
 make olddefconfig CC=$CLANG
-#export LLVM_COMPILER=clang
-#export LLVM_COMPILER_PATH=$PROJECT_PATH/tools/llvm/build/bin/
-#pip list | grep wllvm || pip install wllvm
 find -type f -name '*.bc' ! -name "timeconst.bc" -delete
 make -n CC=$CLANG > clang_log || echo "It's OK"
-exit 1
+
+# First try if wllvm can compile it
+export LLVM_COMPILER=clang
+export LLVM_COMPILER_PATH=$PROJECT_PATH/tools/llvm/build/bin/
+pip list | grep wllvm || pip install wllvm
+make olddefconfig CC=wllvm
+ERROR=0
+make -j16 CC=wllvm > make.log 2>&1 || ERROR=1 && copy_log_then_exit make.log
+if [ $ERROR == "0" ]; then
+  extract-bc vmlinux
+  mv vmlinux.bc $CASE_PATH/one.bc
+  exit 0
+else
+  # back to manual compile and link
+  find -type f -name '*.bc' ! -name "timeconst.bc" -delete
+  exit 1
 fi
+fi
+exit 1
