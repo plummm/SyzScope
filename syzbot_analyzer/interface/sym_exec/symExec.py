@@ -128,8 +128,8 @@ class SymExec(MemInstrument):
         return self.symbolic_execute(path, dfs=dfs, raw_tracing=raw_tracing)
     
     def symbolic_execute(self, path, dfs=True, raw_tracing=False):
-        extras = {angr.options.CONSERVATIVE_READ_STRATEGY,
-                  angr.options.CONSERVATIVE_WRITE_STRATEGY,
+        extras = {#angr.options.CONSERVATIVE_READ_STRATEGY,
+                  #angr.options.CONSERVATIVE_WRITE_STRATEGY,
                   #angr.options.SYMBOL_FILL_UNCONSTRAINED_MEMORY,
                   angr.options.KEEP_IP_SYMBOLIC,
                   angr.options.CONSTRAINT_TRACKING_IN_SOLVER,
@@ -371,27 +371,26 @@ class SymExec(MemInstrument):
         #self.vm.read_stack_range()
     
     def skip_unexpected_opcode(self, addr):
-        error_opcode = ['ud0', 'ud1', 'ud2', 'rdtsc', 'in', 'out']
+        skip_opcode = ['rdtsc', 'in', 'out']
+        error_opcode = ['ud0', 'ud1', 'ud2', 'int3']
         insns = self.proj.factory.block(addr).capstone.insns
         if len(insns) == 0:
             code = self.vm.inspect_code(addr, 1)
-            if 'int3' in code:
+            if 'ud' in code or 'int3' in code:
                 self.purge_current_state()
+            if not self.proj.is_hooked(addr):
+                self.skip_insn(addr, 1)
                 return
-            else:
-                if not self.proj.is_hooked(addr):
-                    self.skip_insn(addr, 1)
-                    return
         offset = 0
         for inst in insns:
             opcode = inst.mnemonic
-            if opcode in 'int3':
-                self.purge_current_state()
-                return
             if opcode in error_opcode:
+                self.purge_current_state()
+            if opcode in skip_opcode or opcode in error_opcode:
                 if not self.proj.is_hooked(addr+offset):
                     self.skip_insn(addr+offset, 2)
             offset += inst.size
+        return
 
     def _is_vul_mem(self, addr):
         if addr >= self.vul_mem_start and addr <= self.vul_mem_end:
@@ -442,17 +441,26 @@ class SymExec(MemInstrument):
             addr += each_inst.size
         return addr in self._branches['wrong']
     
-    def _match_next_bb_on_path(self, state, next_state):
+    def _match_next_bb_on_path(self, state, successor):
         file, line = self.vm.get_dbg_info(state.addr)
         key = "{}:{}".format(file, line)
-        next_file, next_line = self.vm.get_dbg_info(next_state.addr)
-        if key in self._branches:
-            for each_bb in self._branches[key]:
-                if each_bb['file'] == next_file and each_bb['line'] == next_line and each_bb['feasible']:
-                    return True
-        else:
-            return True
-        return False
+        self.logger.info("locate {}".format(key))
+        other = {}
+        other[successor[0]] = successor[1]
+        other[successor[1]] = successor[0]
+        for next_state in successor:
+            next_file, next_line = self.vm.get_dbg_info(next_state.addr)
+            if key in self._branches:
+                for each_bb in self._branches[key]:
+                    if each_bb['file'] == next_file and each_bb['line'] == next_line and each_bb['feasible']:
+                        self.logger.info("A correct branch detected {}:{}".format(next_file, next_line))
+                        return other[next_state]
+                    if each_bb['file'] == next_file and each_bb['line'] == next_line and not each_bb['feasible']:
+                        self.logger.info("A wrong branch detected {}:{}".format(next_file, next_line))
+                        return next_state
+            else:
+                return None
+            return None
         """if key in self._branches:
             for each_bb in self._branches[key]:
                 if each_bb['file'] == next_file and each_bb['line'] == next_line \
@@ -470,12 +478,13 @@ class SymExec(MemInstrument):
         except Exception as e:
             self.logger.error("Execution error at {}".format(hex(state.scratch.ins_addr)))
             self.logger.error(e)
-            self.purge_current_state()
+            self.kill_current_state = False
             raise ExecutionError
-        if self.dfs and (self.cur_state_dead() or self.is_fallen_state()):
-            self.logger.warning("current state is dead")
+        if self.dfs and self.is_fallen_state():
+            self.logger.warning("kill a fallen state")
             succ.flat_successors = []
             succ.all_successors = []
+            self.kill_current_state = False
             return succ
         successors = succ.successors
         if len(succ.successors) == 1:
@@ -499,7 +508,10 @@ class SymExec(MemInstrument):
 
         dead_states = []
         # kill states with non-kernel-space pc
-        if state.addr < self.vm.KERNEL_BASE:
+        if state.addr < self.vm.KERNEL_BASE or self.kill_current_state:
+            if self.kill_current_state:
+                self.logger.warning("state {} has been purged".format(self.get_state_index(state)))
+            self.kill_current_state = False
             dead_states.extend(successors)
         # kill states with multiple forking
         if len(successors) > 1:
@@ -510,12 +522,11 @@ class SymExec(MemInstrument):
                 self.logger.info("kill a loop forking at {}".format(hex(state.addr)))
                 dead_states.extend(successors)
         # kill states on particular branches
-        if len(self._branches) > 0 and self._is_branch(state.addr):
-            for each in successors:
-                if not self._match_next_bb_on_path(state, each) and len(successors) > 1:
-                #if self._match_fense(each):
-                    self.logger.info("kill a off path state: state {}".format(self.get_state_index(each)))
-                    dead_states.append(each)
+        if len(self._branches) > 0 and self._is_branch(state.addr) and len(successors) == 2:
+            wrong_state = self._match_next_bb_on_path(state, successors)
+            if wrong_state != None:
+                self.logger.info("kill a off path state: state {}".format(self.get_state_index(wrong_state)))
+                dead_states.append(wrong_state)
         for each in dead_states:
             if each in succ.successors:
                 succ.successors.remove(each)
@@ -527,14 +538,50 @@ class SymExec(MemInstrument):
         return succ
 
     def _is_loop_fork(self, state):
-        if state.addr not in self.fork_countor:
+        callstack = state.callstack
+        stack = [state.addr]
+        while True:
+            if callstack.next == None:
+                break
+            call_site = callstack.call_site_addr
+            callstack = callstack.next
+            stack.append(call_site)
+            if len(stack) > 2:
+                break
+        if len(stack) == 1:
+            stack.extend([0,0])
+        if len(stack) == 2:
+            stack.append(0)
+        if stack[0] not in self.fork_countor:
             return False
-        return self.fork_countor[state.addr] > 3
+        if stack[1] not in self.fork_countor[stack[0]]:
+            return False
+        if stack[2] not in self.fork_countor[stack[0]][stack[1]]:
+            return False
+        return self.fork_countor[stack[0]][stack[1]][stack[2]] > 3
     
     def _update_fork_countor(self, state):
-        if state.addr not in self.fork_countor:
-            self.fork_countor[state.addr] = 0
-        self.fork_countor[state.addr] += 1
+        callstack = state.callstack
+        stack = [state.addr]
+        while True:
+            if callstack.next == None:
+                break
+            call_site = callstack.call_site_addr
+            callstack = callstack.next
+            stack.append(call_site)
+            if len(stack) > 2:
+                break
+        if len(stack) == 1:
+            stack.extend([0,0])
+        if len(stack) == 2:
+            stack.append(0)
+        if stack[0] not in self.fork_countor:
+            self.fork_countor[stack[0]] = {}
+        if stack[1] not in self.fork_countor[stack[0]]:
+            self.fork_countor[stack[0]][stack[1]] = {}
+        if stack[2] not in self.fork_countor[stack[0]][stack[1]]:
+            self.fork_countor[stack[0]][stack[1]][stack[2]] = 0
+        self.fork_countor[stack[0]][stack[1]][stack[2]] += 1
     
     def _is_branch(self, addr):
         #jump_inst = [je', 'jne', 'jg', 'jge', 'ja', 'jae', 'jl', 'jle', 'jb', 'jbe',\

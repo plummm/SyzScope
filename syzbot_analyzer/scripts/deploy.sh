@@ -238,6 +238,7 @@ CONFIG_KASAN_INLINE
 CONFIG_RANDOMIZE_BASE
 CONFIG_PANIC_ON_OOPS
 CONFIG_X86_SMAP
+CONFIG_KCOV
 "
 #CONFIG_SOFTLOCKUP_DETECTOR
 #CONFIG_LOCKUP_DETECTOR
@@ -271,7 +272,7 @@ CONFIG_X86_SMAP
   if [ $MAX_COMPILING_KERNEL != "-1" ]; then
     wait_for_other_compiling
   fi 
-  make -j16 CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
+  make -j8 CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
   cp .config $CASE_PATH/config
   touch THIS_KERNEL_IS_BEING_USED
   touch $CASE_PATH/.stamp/BUILD_KERNEL

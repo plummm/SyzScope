@@ -16,7 +16,7 @@ from dateutil import parser as time_parser
 from .case import Case, stamp_build_kernel, stamp_build_syzkaller, stamp_finish_fuzzing, stamp_reproduce_ori_poc, stamp_symbolic_execution, stamp_static_analysis
 from syzbot_analyzer.interface.sym_exec.error import VulnerabilityNotTrigger, ExecutionError, AbnormalGDBBehavior
 from syzbot_analyzer.interface.static_analysis.error import CompilingError
-from syzbot_analyzer.interface.vm.monitor import QemuIsDead
+from syzbot_analyzer.interface.vm.error import QemuIsDead, AngrRefuseToLoadKernel
 
 TIMEOUT_DYNAMIC_VALIDATION=60*60
 TIMEOUT_STATIC_ANALYSIS=60*30
@@ -43,6 +43,7 @@ class Workers(Case):
 
     def do_symbolic_execution(self, case, i386, max_round=3, raw_tracing=False, timeout=None):
         self.logger.info("initial environ of symbolic execution")
+        self.case_logger.warning("Disabled KCOV for symbolic execution")
         if timeout != None:
             self.timeout_symbolic_execution = timeout
         else:
@@ -92,6 +93,10 @@ class Workers(Case):
                 p = sym.run_vm()
             except QemuIsDead:
                 self.logger.error("Error occur when executing symbolic tracing: QemuIsDead")
+            except AngrRefuseToLoadKernel:
+                self.logger.error("Error occur when loading kernel into angr: AngrRefuseToLoadKernel")
+                self.cleanup(sym)
+                continue
             if p == None:
                 self.logger.error("Fail to lauch qemu")
                 self.cleanup(sym)

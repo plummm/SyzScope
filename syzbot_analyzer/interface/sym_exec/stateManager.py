@@ -9,7 +9,7 @@ class StateManager:
     G_SYM = 1
     G_RET = 2
     G_BB = 3
-    MAX_BB_WITHOUT_SYM = 1000
+    MAX_BB_WITHOUT_SYM = 5000
     NO_ADDITIONAL_USE = 0
     ARBITRARY_VALUE_WRITE = 1 << 0
     FINITE_VALUE_WRITE = 1 << 1
@@ -30,6 +30,7 @@ class StateManager:
         self.dfs = True
         self.proj_path = None
         self.stop_execution = False
+        self.kill_current_state = False
         self.exploitable_state = {}
     
     def init_StateManager(self):
@@ -249,6 +250,7 @@ class StateManager:
         if self._current_state in self.simgr.active:
             self.simgr.active.remove(self._current_state)
             self.simgr.deadended.append(self._current_state)
+            self.kill_current_state = True
     
     def cur_state_dead(self):
         return not self._current_state in self.simgr.active

@@ -750,7 +750,7 @@ def get_median_average(sorted_cases, keyword, bug_name=None):
     average = d / n
     return median, average, unduplicated
 
-if __name__ == '__main__':
+def duplicated_warning():
     p = '/home/xzou017/projects/results_of_syzbot_analysis/WARNING_LATEST/'
     l = get_case_from_file(p+'/ConfirmedAbnormallyMemWrite', p)
     uni_l1 = unique(l)
@@ -777,6 +777,24 @@ if __name__ == '__main__':
                 for dup in patch2case[patch]:
                     if 'use-after-free' in dup['Title'] or 'out-of-bounds' in dup or 'double-free' in dup:
                         print(each_hash, dup['Title'])
+
+if __name__ == '__main__':
+    #cases = save_cases_as_json([''], 999999)
+    cases = load_cases_from_json(os.getcwd()+'/cases_.json')
+    meta = [30, 60, 90, 182, 365, 730, 1000,9999]
+    index = 0
+    for i in range(0, len(cases)):
+        case = cases[i]
+        reported_days = case['Reported']
+        day = int(regx_get('(\d+)d', reported_days, 0))
+        if day > meta[index]:
+            print("{} days with {} bugs: {} bugs/day".format(day, i, round(i/day, 2)))
+            if index+1 < len(meta):
+                index += 1
+    reported_days = cases[len(cases)-1]['Reported']
+    day = int(regx_get('(\d+)d', reported_days, 0))
+    print("{} days with {} bugs: {} bugs/day".format(day, len(cases), round(len(cases)/day, 2)))
+
     
 
     

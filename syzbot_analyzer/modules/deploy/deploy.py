@@ -90,6 +90,15 @@ class Deployer(Workers):
             #if self.__need_kasan_patch(case['title']):
             #    need_patch = 1
 
+            ### DEBUG SYMEXEC ###
+            offset = case["vul_offset"]
+            size = case["obj_size"]
+            if offset == None or size == None:
+                self.logger.info("No valid offset or size")
+                self.__move_to_completed()
+                return
+            ### DEBUG SYMEXEC ###
+
             r = self.__run_delopy_script(hash_val[:7], case, need_patch)
             if r != 0:
                 self.logger.error("Error occur in deploy.sh")
@@ -99,9 +108,11 @@ class Deployer(Workers):
             ### DEBUG SYMEXEC ###
             if self.symbolic_execution:
                 if not self.finished_symbolic_execution(hash_val, 'incomplete'):
-                    r = self.do_symbolic_execution(case, i386, timeout=60*60)
+                    r = self.do_symbolic_execution(case, i386)
                     if r == 1:
                         return
+                self.__move_to_succeed(0)
+                return
                 if os.path.exists("{}/sym".format(self.current_case_path)) and not os.path.exists("{}/sym_only".format(self.current_case_path)):
                     shutil.move("{}/sym".format(self.current_case_path), "{}/sym_only".format(self.current_case_path))
             ### DEBUG SYMEXEC ###
