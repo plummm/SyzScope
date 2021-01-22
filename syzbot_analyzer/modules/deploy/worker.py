@@ -43,7 +43,6 @@ class Workers(Case):
 
     def do_symbolic_execution(self, case, i386, max_round=3, raw_tracing=False, timeout=None):
         self.logger.info("initial environ of symbolic execution")
-        self.case_logger.warning("Disabled KCOV for symbolic execution")
         if timeout != None:
             self.timeout_symbolic_execution = timeout
         else:

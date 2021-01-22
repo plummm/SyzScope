@@ -142,6 +142,9 @@ if [ ! -f "$CASE_PATH/compiler/compiler" ]; then
   ln -s $COMPILER ./compiler
 fi
 
+####DEBUG SYMBOLIC#######
+touch $CASE_PATH/.stamp/BUILD_SYZKALLER 
+####DEBUG SYMBOLIC#######
 #Building for syzkaller
 echo "[+] Building syzkaller"
 if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then
@@ -238,7 +241,6 @@ CONFIG_KASAN_INLINE
 CONFIG_RANDOMIZE_BASE
 CONFIG_PANIC_ON_OOPS
 CONFIG_X86_SMAP
-CONFIG_KCOV
 "
 #CONFIG_SOFTLOCKUP_DETECTOR
 #CONFIG_LOCKUP_DETECTOR

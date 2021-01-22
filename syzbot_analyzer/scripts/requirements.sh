@@ -3,8 +3,10 @@
 #
 # Usage ./requirements.sh
 
-sudo apt-get update
-sudo apt-get -y install git qemu-system-x86 debootstrap flex bison libssl-dev libelf-dev
+if [ ! -f "$(pwd)/tools/.stamp/ENV_SETUP" ]; then
+  sudo apt-get update
+  sudo apt-get -y install git qemu-system-x86 debootstrap flex bison libssl-dev libelf-dev
+fi
 
 if [ ! -d "work/completed" ]; then
   mkdir -p work/completed
@@ -128,6 +130,8 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_LLVM" ]; then
   touch $TOOLS_PATH/.stamp/BUILD_LLVM
   cd ..
 fi
+
+touch $TOOLS_PATH/.stamp/ENV_SETUP
 
 #BUG: If multiple instances are running, may clean up others' flag
 echo "[+] Clean unfinished jobs"
