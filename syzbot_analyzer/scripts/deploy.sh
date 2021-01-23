@@ -142,9 +142,6 @@ if [ ! -f "$CASE_PATH/compiler/compiler" ]; then
   ln -s $COMPILER ./compiler
 fi
 
-####DEBUG SYMBOLIC#######
-touch $CASE_PATH/.stamp/BUILD_SYZKALLER 
-####DEBUG SYMBOLIC#######
 #Building for syzkaller
 echo "[+] Building syzkaller"
 if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then

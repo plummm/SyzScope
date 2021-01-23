@@ -17,8 +17,9 @@ class StateManager:
     FINITE_ADDR_WRITE = 1 << 3
     CONTROL_FLOW_HIJACK = 1 << 4
 
-    def __init__(self, index):
+    def __init__(self, index, workdir):
         self.index = index
+        self.workdir = workdir
         self._current_state = None
         self.simgr = None
         self.state_logger = None
@@ -40,7 +41,7 @@ class StateManager:
         self.state_counter = 0
     
     def init_primitive_logger(self, name):
-        primitive_path = os.path.join(self.proj_path, "sym/primitives")
+        primitive_path = os.path.join(self.workdir, "/primitives")
         if not os.path.exists(primitive_path):
             os.mkdir(primitive_path)
         if self.proj_path != None:

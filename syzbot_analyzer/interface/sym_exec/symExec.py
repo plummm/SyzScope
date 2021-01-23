@@ -15,8 +15,8 @@ from .mem_instrument import MemInstrument
 from .error import VulnerabilityNotTrigger, ExecutionError, AbnormalGDBBehavior
 
 class SymExec(MemInstrument):
-    def __init__(self, index, sections=None, logger=None, debug=False):
-        MemInstrument.__init__(self, index, logger)
+    def __init__(self, index, workdir, sections=None, logger=None, debug=False):
+        MemInstrument.__init__(self, index, workdir, logger)
         self.debug = debug
         self.vul_mem_offset = None
         self.vul_mem_size = None
@@ -159,8 +159,13 @@ class SymExec(MemInstrument):
         #self._init_state.inspect.b('constraints', when=angr.BP_BEFORE, action=self.track_contraint)
 
         start_time = time.time()
-        for each_path in path:
-            self._run_simgr(dfs, [each_path], raw_tracing, start_time)
+        if path != []:
+            # DFS
+            for each_path in path:
+                self._run_simgr(dfs, [each_path], raw_tracing, start_time)
+        else:
+            #BFS
+            self._run_simgr(dfs, [], raw_tracing, start_time)
         
         self.logger.info("*******************primitives*******************\n")
         running_time = time.time() - start_time
@@ -172,15 +177,15 @@ class SymExec(MemInstrument):
         n_AAW, n_AVW, n_FAW, n_FVW, n_CFH= 0, 0, 0, 0, 0
         for addr in self.impacts_collector:
             each_primitive = self.impacts_collector[addr]
-            if each_primitive & StateManager.ARBITRARY_ADDR_WRITE:
+            if each_primitive == StateManager.ARBITRARY_ADDR_WRITE:
                 n_AAW += 1
-            if each_primitive & StateManager.ARBITRARY_VALUE_WRITE:
+            if each_primitive == StateManager.ARBITRARY_VALUE_WRITE:
                 n_AVW += 1
-            if each_primitive & StateManager.FINITE_ADDR_WRITE:
+            if each_primitive == StateManager.FINITE_ADDR_WRITE:
                 n_FAW += 1
-            if each_primitive & StateManager.FINITE_VALUE_WRITE:
+            if each_primitive == StateManager.FINITE_VALUE_WRITE:
                 n_FVW += 1
-            if each_primitive & StateManager.CONTROL_FLOW_HIJACK:
+            if each_primitive == StateManager.CONTROL_FLOW_HIJACK:
                 n_CFH += 1
         self.logger.info("The number of arbitrary address write is {}\n".format(n_AAW))
         self.logger.info("The number of finite address write is {}\n".format(n_FAW))
@@ -244,7 +249,8 @@ class SymExec(MemInstrument):
                             self.wrap_high_risk_state(each, StateManager.CONTROL_FLOW_HIJACK)
                         killed_state.append(each)
                     for each in killed_state:
-                        self.simgr.unconstrained.remove(each)
+                        if each in self.simgr.unconstrained:
+                            self.simgr.unconstrained.remove(each)
 
             if len(self.simgr.active) == 0:
                 # No dfs no deferred
@@ -473,13 +479,13 @@ class SymExec(MemInstrument):
     def _my_successor_func(self, state):
         self.setup_current_state(state)
         self.skip_unexpected_opcode(state.addr)
-        #try:
-        succ = state.step()
-        #except Exception as e:
-        #    self.logger.error("Execution error at {}".format(hex(state.scratch.ins_addr)))
-        #    self.logger.error(e)
-        #    self.kill_current_state = False
-        #    raise ExecutionError
+        try:
+            succ = state.step()
+        except Exception as e:
+            self.logger.error("Execution error at {}".format(hex(state.scratch.ins_addr)))
+            self.logger.error(e)
+            self.kill_current_state = False
+            raise ExecutionError
         if self.dfs and self.is_fallen_state():
             self.logger.warning("kill a fallen state")
             succ.flat_successors = []

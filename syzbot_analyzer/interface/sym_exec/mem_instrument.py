@@ -14,8 +14,8 @@ class MemInstrument(StateManager):
     PAGE_SIZE = 0x1000
     CTR_ADDR = 0x40000000
 
-    def __init__(self, index, logger=None):
-        StateManager.__init__(self, index)
+    def __init__(self, index, workdir, logger=None):
+        StateManager.__init__(self, index, workdir)
         self.ppg_handler = PropagationHandler()
         self.sections = None
         if logger == None:

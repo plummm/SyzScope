@@ -42,6 +42,41 @@ class Workers(Case):
                 self.timeout_symbolic_execution = 365*24*60*60
 
     def do_symbolic_execution(self, case, i386, max_round=3, raw_tracing=False, timeout=None):
+        ever_execution = False
+        if self.store_read:
+            output = os.path.join(self.current_case_path, "output")
+            if os.path.exists(output):
+                all_cases = os.listdir(output)
+                for each_case in all_cases:
+                    case_base = os.path.join(output, each_case)
+                    description = os.path.join(case_base, "description")
+                    if not os.path.exists(description):
+                        continue
+                    f = open(description, 'r')
+                    title = f.readline()
+                    f.close()
+                    if utilities.regx_match(utilities.kasan_read_regx, title):
+                        report = os.path.join(case_base, "repro.report")
+                        if not os.path.exists(report):
+                            continue
+                        f = open(report, 'r')
+                        texts = f.readlines()
+                        offset, size = utilities.extract_vul_obj_offset_and_size("".join(texts))
+                        if offset != None or size != None:
+                            ever_execution = True
+                            hash_val = each_case[:7]
+                            self._do_symbolic_execution(case, i386, "sym-{}".format(hash_val), max_round, raw_tracing, timeout)
+        else:
+            offset = case["vul_offset"]
+            size = case["obj_size"]
+            if offset != None and size != None:
+                ever_execution = True
+                self._do_symbolic_execution(case, i386, "sym-ori", max_round, raw_tracing, timeout)
+        if not ever_execution:
+            self.logger.info("No valid offset or size")
+        return
+
+    def _do_symbolic_execution(self, case, i386, workdir, max_round=3, raw_tracing=False, timeout=None):
         self.logger.info("initial environ of symbolic execution")
         if timeout != None:
             self.timeout_symbolic_execution = timeout
@@ -51,11 +86,6 @@ class Workers(Case):
         #self.init_crash_checker(self.ssh_port, False)
         r = utilities.request_get(case['report'])
         #_, _, _, offset, size = self.sa.KasanVulnChecker(r.text)
-        offset = case["vul_offset"]
-        size = case["obj_size"]
-        if offset == None or size == None:
-            self.logger.info("No valid offset or size")
-            return
 
         linux_path = os.path.join(self.current_case_path, self.linux_folder)
         """target = os.path.join(self.package_path, "scripts/deploy_linux.sh")
@@ -79,14 +109,14 @@ class Workers(Case):
         exception_count = 0
         flag_stop_execution = False
         for i in range(0, max_round):
-            sym_folder = os.path.join(self.current_case_path, "sym")
+            sym_folder = os.path.join(self.current_case_path, workdir)
             if not os.path.isdir(sym_folder):
                 os.mkdir(sym_folder)
             cur_sym_log = sym_folder + "/symbolic_execution.log" + "-" + str(i)
             sym_logger = self.__init_logger(cur_sym_log)
             sym_logger.info("round {}: symbolic tracing".format(i))
-            sym = sym_exec.SymExec(logger=sym_logger, index=self.index, debug=self.debug)
-            sym.setup_vm(linux_path, arch, self.ssh_port, self.image_path, self.gdb_port, self.qemu_monitor_port, proj_path=self.current_case_path, cpu="2", logger=self.case_logger, hash_tag=self.hash_val[:7], log_name="sym/vm.log", log_suffix="-{}".format(i),  timeout=self.timeout_symbolic_execution+5*60)
+            sym = sym_exec.SymExec(logger=sym_logger, workdir=sym_folder, index=self.index, debug=self.debug)
+            sym.setup_vm(linux_path, arch, self.ssh_port, self.image_path, self.gdb_port, self.qemu_monitor_port, proj_path=sym_folder, cpu="2", logger=self.case_logger, hash_tag=self.hash_val[:7], log_name="vm.log", log_suffix="-{}".format(i),  timeout=self.timeout_symbolic_execution+5*60)
             p = None
             try:
                 p = sym.run_vm()

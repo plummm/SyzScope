@@ -23,7 +23,7 @@ class Monitor:
         if len(logger.handlers) != 0:
             for each_handler in logger.handlers:
                 logger.removeHandler(each_handler)
-        handler = logging.FileHandler("{}/sym/mon.log{}".format(log_path, self._log_suffix))
+        handler = logging.FileHandler("{}/mon.log{}".format(log_path, self._log_suffix))
         format = logging.Formatter('%(asctime)s %(message)s')
         handler.setFormatter(format)
         logger.setLevel(logging.INFO)

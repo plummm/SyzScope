@@ -30,7 +30,7 @@ class GDBHelper:
         if len(logger.handlers) != 0:
             for each_handler in logger.handlers:
                 logger.removeHandler(each_handler)
-        handler = logging.FileHandler("{}/sym/gdb.log{}".format(log_path, self._log_suffix))
+        handler = logging.FileHandler("{}/gdb.log{}".format(log_path, self._log_suffix))
         format = logging.Formatter('%(asctime)s %(message)s')
         handler.setFormatter(format)
         logger.setLevel(logging.INFO)
