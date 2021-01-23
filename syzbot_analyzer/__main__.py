@@ -153,7 +153,8 @@ def deploy_one_case(index):
             hash_val = g_cases.get(block=True, timeout=3)
             if hash_val in ignore:
                 continue
-            print("Thread {}: run case {} [{}/{}] left".format(index, hash_val, rest-1, total))
+            print("Thread {}: run case {} [{}/{}] left".format(index, hash_val, rest.value-1, total))
+            rest.value -= 1
             case = crawler.cases[hash_val]
             deployer[index].deploy(hash_val, case)
             remove_using_flag(index)

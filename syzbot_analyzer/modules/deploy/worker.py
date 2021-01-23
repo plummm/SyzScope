@@ -116,7 +116,7 @@ class Workers(Case):
             sym_logger = self.__init_logger(cur_sym_log)
             sym_logger.info("round {}: symbolic tracing".format(i))
             sym = sym_exec.SymExec(logger=sym_logger, workdir=sym_folder, index=self.index, debug=self.debug)
-            sym.setup_vm(linux_path, arch, self.ssh_port, self.image_path, self.gdb_port, self.qemu_monitor_port, proj_path=sym_folder, cpu="2", logger=self.case_logger, hash_tag=self.hash_val[:7], log_name="vm.log", log_suffix="-{}".format(i),  timeout=self.timeout_symbolic_execution+5*60)
+            sym.setup_vm(linux_path, arch, self.ssh_port, self.image_path, self.gdb_port, self.qemu_monitor_port, proj_path=sym_folder, cpu="2", mem="1G", logger=self.case_logger, hash_tag=self.hash_val[:7], log_name="vm.log", log_suffix="-{}".format(i),  timeout=self.timeout_symbolic_execution+5*60)
             p = None
             try:
                 p = sym.run_vm()
