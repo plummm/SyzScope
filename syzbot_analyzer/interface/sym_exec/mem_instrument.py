@@ -66,7 +66,7 @@ class MemInstrument(StateManager):
     def track_mem_write(self, state):
         bv_addr = state.inspect.mem_write_address
         bv_expr = state.inspect.mem_write_expr
-        if self._is_symbolic(bv_addr) or self._is_symbolic(bv_expr):
+        if self.is_symbolic(bv_addr) or self.is_symbolic(bv_expr):
             self.reset_state_bb()
         addr = state.solver.eval(bv_addr)
         if not state.solver.unique(bv_addr):
@@ -76,13 +76,13 @@ class MemInstrument(StateManager):
         if stack != addr:
             # Finite address write includes write to UAF/OOB memory(addr is concrete but addr point to UAF/OOB memory)
             # or write to an address that comes from UAF/OOB memory(addr is symbolic)
-            if (self._is_symbolic(bv_addr) or self.get_states_globals(addr, StateManager.G_SYM) != None ) \
+            if (self.is_symbolic(bv_addr) or self.get_states_globals(addr, StateManager.G_SYM) != None ) \
                     and state.scratch.ins_addr not in self.exploitable_state:
                 if self.get_states_globals(addr, StateManager.G_SYM) or self.is_under_constrained(bv_addr) != None:
                     self.wrap_high_risk_state(state, StateManager.FINITE_ADDR_WRITE)
                 else:
                     self.wrap_high_risk_state(state, StateManager.ARBITRARY_ADDR_WRITE)
-            if self._is_symbolic(bv_expr) and state.scratch.ins_addr not in self.exploitable_state:
+            if self.is_symbolic(bv_expr) and state.scratch.ins_addr not in self.exploitable_state:
                 if self.is_under_constrained(bv_expr):
                     self.wrap_high_risk_state(state, StateManager.FINITE_VALUE_WRITE)
                 else:
@@ -90,12 +90,14 @@ class MemInstrument(StateManager):
         if not self._validate_inst(state):
             return
         if self.symbolic_tracing and self.ppg_handler.is_kasan_write(addr):
-            if self._is_symbolic(bv_expr) and not self._is_symbolic(bv_addr) and state.solver.eval(bv_addr) not in state.globals['sym']:
+            if self.is_symbolic(bv_expr) and not self.is_symbolic(bv_addr) and state.solver.eval(bv_addr) not in state.globals['sym']:
                 self.dump_stack(state)
                 #self.ppg_handler.log_symbolic_propagation(state, stack)
                     #self.dump_state(state)
         for i in range(0, size):
             self.update_states_globals(addr+i, 0, StateManager.G_MEM)
+        if self.is_symbolic(bv_expr):
+            self.update_states_globals(addr, size, StateManager.G_SYM)
     
     def track_call(self, state):
         if state.regs.rip.symbolic and state.scratch.ins_addr not in self.exploitable_state:
@@ -156,17 +158,12 @@ class MemInstrument(StateManager):
         stack_addr = self.vm.stack_addr
         
         kasan = KasanAccess(stack_addr, self)
+        memcpy = MemCopy(mem_handler=self)
 
-        if self.proj.loader.find_symbol("kasan_report", True) != None:
-            kasan_func_name = "kasan_report"
-            ret = self.proj.hook_symbol(kasan_func_name, kasan)
-            if ret != None:
-                self.logger.info("Hook {} at {}".format(kasan_func_name, hex(ret)))
-        if self.proj.loader.find_symbol("__kasan_report", True) != None:
-            kasan_func_name = "__kasan_report"
-            ret = self.proj.hook_symbol(kasan_func_name, kasan)
-            if ret != None:
-                self.logger.info("Hook {} at {}".format(kasan_func_name, hex(ret)))
+        self._hook_kernel_func("kasan_report", kasan)
+        self._hook_kernel_func("__kasan_report", kasan)
+        self._hook_kernel_func("memcpy", memcpy)
+        self._hook_kernel_func("__memcpy", memcpy)
         
         
         kasan_1_r = KasanRead(size=1, stack_addr=stack_addr, mem_handler=self)
@@ -212,17 +209,16 @@ class MemInstrument(StateManager):
         else:
             index = 0
             while index < size:
+                alignment = self.vm.addr_bytes
                 if name == None:
                     name = "s_{}".format(hex(addr+index))
                 else:
                     name = "{}_{}".format(name, math.ceil(index / 8))
-                if index + 8 > size:
-                    size -= index
-                sym = state.solver.BVS(name, size * 8, inspect=False)
-                self.update_states_globals(addr, size, StateManager.G_SYM)
-                for i in range(0, size):
-                    self.update_states_globals(addr+i, 0, StateManager.G_MEM)
-                state.memory.store(addr, sym, inspect=False, endness=archinfo.Endness.LE)
+                sym = state.solver.BVS(name, alignment * 8, inspect=False)
+                self.update_states_globals(addr+index, alignment, StateManager.G_SYM)
+                for i in range(0, alignment):
+                    self.update_states_globals(addr+index+i, 0, StateManager.G_MEM)
+                state.memory.store(addr+index, sym, inspect=False, endness=archinfo.Endness.LE)
                 index += 8
     
     def transfer_state_globals(self, state, successors):
@@ -238,7 +234,7 @@ class MemInstrument(StateManager):
     
     def _instrument_mem_read(self, state, bv_addr, size):
         addrs = []
-        if self._is_symbolic(bv_addr):
+        if self.is_symbolic(bv_addr):
             self.reset_state_bb()
         single_addr = state.solver.eval(bv_addr)
         if state.solver.unique(bv_addr):
@@ -291,7 +287,7 @@ class MemInstrument(StateManager):
                     elif not self._is_ctr_addr(addr):
                         self.logger.warning("page fault occur when access {}".format(hex(addr)))
                         self.logger.warning("Dump last site")
-                        if self._is_symbolic(bv_addr):
+                        if self.is_symbolic(bv_addr):
                             self.logger.info("read from a symbolic address")
                             #self.dump_state(state)
                             #self.dump_stack(state)
@@ -302,8 +298,14 @@ class MemInstrument(StateManager):
                         self.make_symbolic(state, addr, size)
         return
     
-    def _is_symbolic(self, bv):
+    def is_symbolic(self, bv):
         return type(bv) != int and bv.symbolic
+    
+    def _hook_kernel_func(self, func_name, hook_class):
+        if self.proj.loader.find_symbol(func_name, True) != None:
+            ret = self.proj.hook_symbol(func_name, hook_class)
+            if ret != None:
+                self.logger.info("Hook {} at {}".format(func_name, hex(ret)))
 
     def _validate_inst(self, state):
         ins_addr = state.scratch.ins_addr
@@ -394,9 +396,48 @@ class MemCopy(HookInst):
         HookInst.__init__(self)
         self.mem = mem_handler
     
-    def run(self, des, src, size):
-        if type(src) != int and src.symbolic:
-            self.mem.make_symbolic(des, )
+    def run(self, bv_des, bv_src, bv_size):
+        des = self.state.solver.eval(bv_des)
+        size = self.state.solver.eval(bv_size)
+        if self.mem.is_symbolic(bv_src):
+            if self.mem.is_symbolic(bv_size):
+                prim_logger = self.mem.wrap_high_risk_state(self.state, StateManager.ARBITRARY_VALUE_WRITE)
+                if prim_logger != None:
+                    prim_logger.warning("Size of memcpy is controllable")
+                slab = [8, 16, 32, 64, 96, 128, 192, 256, 512, 1024, 1024*2]
+                base_size = 1024*2
+                for each_slab in slab:
+                    if self.state.solver.solution(bv_size, each_slab):
+                        base_size = each_slab
+                    elif base_size != 1024*2:
+                        break
+                if base_size == 1024*2:
+                    self.mem.make_symbolic(self.state, des, base_size)
+                #self.mem.purge_current_state()
+            else:
+                self.mem.make_symbolic(self.state, des, size)
+            return
+        src = self.state.solver.eval(bv_src)
+        if type(src) == int and src in self.state.globals['sym']:
+            # Is is possible that src is in the middle of a sym address?
+            # globals['sym'] has unit as field, not byte
+            index = 0
+            alignment_size = self.mem.vm.addr_bytes
+            while index < size:
+                if src+index in self.state.globals['sym']:
+                    sym_size = self.state.globals['sym'][src+index]
+                    sym = self.state.memory.load(src+index, sym_size, inspect=False, endness=archinfo.Endness.LE)
+                    for i in sym_size:
+                        self.update_states_globals(des+index+i, 0, StateManager.G_MEM)
+                    self.update_states_globals(des+index, sym_size, StateManager.G_SYM)
+                    self.state.memory.store(des, sym, inspect=False, endness=archinfo.Endness.LE)
+                    index += sym_size
+                else:
+                    val = self.state.memory.load(src+index, alignment_size, endness=archinfo.Endness.LE)
+                    if self.mem.is_symbolic(val):
+                        print("Something wrong")
+                    self.state.memory.store(des, val, endness=archinfo.Endness.LE)
+                    index += alignment_size
 
 class KasanAccess(HookInst):
     READ = 0
@@ -427,7 +468,7 @@ class KasanAccess(HookInst):
     def kasan_access(self, addr):
         #self.mem.add_constraints = True
         if self.is_write and self.mem.symbolic_tracing:
-            if not self.mem._is_symbolic(addr) and not self.is_on_stack(self.state.solver.eval(addr)):
+            if not self.mem.is_symbolic(addr) and not self.is_on_stack(self.state.solver.eval(addr)):
                 if type(addr) != int:
                     addr = self.state.solver.eval(addr)
                 self.mem.ppg_handler.log_kasan_write(addr)

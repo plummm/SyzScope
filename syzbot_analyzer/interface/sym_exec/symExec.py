@@ -172,15 +172,15 @@ class SymExec(MemInstrument):
         n_AAW, n_AVW, n_FAW, n_FVW, n_CFH= 0, 0, 0, 0, 0
         for addr in self.impacts_collector:
             each_primitive = self.impacts_collector[addr]
-            if each_primitive == StateManager.ARBITRARY_ADDR_WRITE:
+            if each_primitive & StateManager.ARBITRARY_ADDR_WRITE:
                 n_AAW += 1
-            if each_primitive == StateManager.ARBITRARY_VALUE_WRITE:
+            if each_primitive & StateManager.ARBITRARY_VALUE_WRITE:
                 n_AVW += 1
-            if each_primitive == StateManager.FINITE_ADDR_WRITE:
+            if each_primitive & StateManager.FINITE_ADDR_WRITE:
                 n_FAW += 1
-            if each_primitive == StateManager.FINITE_VALUE_WRITE:
+            if each_primitive & StateManager.FINITE_VALUE_WRITE:
                 n_FVW += 1
-            if each_primitive == StateManager.CONTROL_FLOW_HIJACK:
+            if each_primitive & StateManager.CONTROL_FLOW_HIJACK:
                 n_CFH += 1
         self.logger.info("The number of arbitrary address write is {}\n".format(n_AAW))
         self.logger.info("The number of finite address write is {}\n".format(n_FAW))
@@ -473,13 +473,13 @@ class SymExec(MemInstrument):
     def _my_successor_func(self, state):
         self.setup_current_state(state)
         self.skip_unexpected_opcode(state.addr)
-        try:
-            succ = state.step()
-        except Exception as e:
-            self.logger.error("Execution error at {}".format(hex(state.scratch.ins_addr)))
-            self.logger.error(e)
-            self.kill_current_state = False
-            raise ExecutionError
+        #try:
+        succ = state.step()
+        #except Exception as e:
+        #    self.logger.error("Execution error at {}".format(hex(state.scratch.ins_addr)))
+        #    self.logger.error(e)
+        #    self.kill_current_state = False
+        #    raise ExecutionError
         if self.dfs and self.is_fallen_state():
             self.logger.warning("kill a fallen state")
             succ.flat_successors = []

@@ -95,10 +95,12 @@ class StateManager:
             #self.dump_stack(state)
             #self.dump_trace(state)
             self.purge_current_state()
-            return
+            return None
         file, line = self.vm.get_dbg_info(state.scratch.ins_addr)
         key = "{}:{}".format(file, line)
         self.target_site[key] = impact_type
+        if (state.scratch.ins_addr in self.exploitable_state) and (self.exploitable_state[state.scratch.ins_addr] & impact_type):
+            return None
         self.exploitable_state[state.scratch.ins_addr] = impact_type
         if impact_type == StateManager.FINITE_ADDR_WRITE:
             self.state_privilege |= impact_type
@@ -135,6 +137,7 @@ class StateManager:
         self.dump_state(state, prim_logger)
         self.dump_stack(state, prim_logger)
         self.dump_trace(state, prim_logger)
+        return prim_logger
     
     def update_states(self, state, index):
         if index == None:
