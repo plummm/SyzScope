@@ -41,7 +41,7 @@ class StateManager:
         self.state_counter = 0
     
     def init_primitive_logger(self, name):
-        primitive_path = os.path.join(self.workdir, "/primitives")
+        primitive_path = os.path.join(self.workdir, "primitives")
         if not os.path.exists(primitive_path):
             os.mkdir(primitive_path)
         if self.proj_path != None:

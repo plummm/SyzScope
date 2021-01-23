@@ -383,6 +383,7 @@ class SymExec(MemInstrument):
         if len(insns) == 0:
             code = self.vm.inspect_code(addr, 1)
             if 'ud' in code or 'int3' in code:
+                self.logger.info("Unexpected opcode")
                 self.purge_current_state()
             if not self.proj.is_hooked(addr):
                 self.skip_insn(addr, 1)
@@ -391,6 +392,7 @@ class SymExec(MemInstrument):
         for inst in insns:
             opcode = inst.mnemonic
             if opcode in error_opcode:
+                self.logger.info("Unexpected opcode")
                 self.purge_current_state()
             if opcode in skip_opcode or opcode in error_opcode:
                 if not self.proj.is_hooked(addr+offset):
@@ -479,13 +481,16 @@ class SymExec(MemInstrument):
     def _my_successor_func(self, state):
         self.setup_current_state(state)
         self.skip_unexpected_opcode(state.addr)
-        try:
-            succ = state.step()
-        except Exception as e:
-            self.logger.error("Execution error at {}".format(hex(state.scratch.ins_addr)))
-            self.logger.error(e)
-            self.kill_current_state = False
-            raise ExecutionError
+        #try:
+        succ = state.step()
+        #except Exception as e:
+        #    self.logger.error("Execution error at {}".format(hex(state.scratch.ins_addr)))
+        #     code = self.vm.inspect_code(state.scratch.ins_addr, 1)
+        #     if code != None:
+        #         self.logger.info(code)
+        #    self.logger.error(e)
+        #    self.kill_current_state = False
+        #    raise ExecutionError
         if self.dfs and self.is_fallen_state():
             self.logger.warning("kill a fallen state")
             succ.flat_successors = []

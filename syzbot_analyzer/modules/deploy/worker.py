@@ -43,6 +43,7 @@ class Workers(Case):
 
     def do_symbolic_execution(self, case, i386, max_round=3, raw_tracing=False, timeout=None):
         ever_execution = False
+        ret = 1
         if self.store_read:
             output = os.path.join(self.current_case_path, "output")
             if os.path.exists(output):
@@ -65,18 +66,19 @@ class Workers(Case):
                         if offset != None or size != None:
                             ever_execution = True
                             hash_val = each_case[:7]
-                            self._do_symbolic_execution(case, i386, "sym-{}".format(hash_val), max_round, raw_tracing, timeout)
+                            if not self._do_symbolic_execution(case, offset, size, i386, "sym-{}".format(hash_val), max_round, raw_tracing, timeout):
+                                ret = 0
         else:
             offset = case["vul_offset"]
             size = case["obj_size"]
             if offset != None and size != None:
                 ever_execution = True
-                self._do_symbolic_execution(case, i386, "sym-ori", max_round, raw_tracing, timeout)
+                ret = self._do_symbolic_execution(case, offset, size, i386, "sym-ori", max_round, raw_tracing, timeout)
         if not ever_execution:
             self.logger.info("No valid offset or size")
-        return
+        return ret
 
-    def _do_symbolic_execution(self, case, i386, workdir, max_round=3, raw_tracing=False, timeout=None):
+    def _do_symbolic_execution(self, case, offset, size, i386, workdir, max_round=3, raw_tracing=False, timeout=None):
         self.logger.info("initial environ of symbolic execution")
         if timeout != None:
             self.timeout_symbolic_execution = timeout
@@ -124,11 +126,13 @@ class Workers(Case):
                 self.logger.error("Error occur when executing symbolic tracing: QemuIsDead")
             except AngrRefuseToLoadKernel:
                 self.logger.error("Error occur when loading kernel into angr: AngrRefuseToLoadKernel")
-                self.cleanup(sym)
+                sym.cleanup()
+                del sym
                 continue
             if p == None:
                 self.logger.error("Fail to lauch qemu")
-                self.cleanup(sym)
+                sym.cleanup()
+                del sym
                 continue
             exitcode = p.poll()
             if exitcode != None:
@@ -136,13 +140,15 @@ class Workers(Case):
                 if exitcode == -9:
                     err = 'SIGKILL'
                 self.logger.error('QEMU exit due to: {}'.format(err))
-                self.cleanup(sym)
+                sym.cleanup()
+                del sym
                 continue
             sym_logger.info("Uploading poc and triggering the crash")
             ok = self.crash_checker.upload_exp(case["syz_repro"], self.ssh_port, case["syzkaller"], utilities.URL, case["c_repro"], i386, 0, sym_logger)
             if ok == 0:
                 self.logger.error("Error occur at upload exp")
-                self.cleanup(sym)
+                sym.cleanup()
+                del sym
                 continue
 
             self.crash_checker.run_exp(case["syz_repro"], self.ssh_port, utilities.URL, ok, i386, 0, sym_logger)
@@ -177,12 +183,14 @@ class Workers(Case):
                 ret = sym.run_sym(path=paths, raw_tracing=raw_tracing, timeout=self.timeout_symbolic_execution)
                 if ret == None:
                     self.logger.warning("Can not locate the vulnerable memory")
-                    self.cleanup(sym)
+                    sym.cleanup()
+                    del sym
                     continue
                 result |= ret
                 if ret == 0:
                     self.logger.warning("No additional use")
-                self.cleanup(sym)
+                sym.cleanup()
+                del sym
                 break
                 #if ret != None and len(ret) > 0:
                 #    is_propagating_global = True
@@ -196,7 +204,8 @@ class Workers(Case):
                 self.logger.error("Error occur when executing symbolic tracing: QemuIsDead")
             #except Exception as e:
             #    sym_logger.error("Unknown exception occur during symboulic execution: {}".format(e))
-            self.cleanup(sym)
+            sym.cleanup()
+            del sym
             time.sleep(1)
         if max_round == exception_count:
             self.logger.warning("Can not trigger vulnerability. Abaondoned")
@@ -223,7 +232,7 @@ class Workers(Case):
             self.logger.warning("Can not trigger vulnerability. Abaondoned")"""
         
         self.create_finished_symbolic_execution_stamp()
-        return 0
+        return result == StateManager.NO_ADDITIONAL_USE
     
     def retrieve_guided_paths(self, guided_path):
         paths = []
@@ -343,10 +352,6 @@ class Workers(Case):
             self.max_qemu_for_one_case,
             store_read=self.store_read,
             compiler=self.compiler)
-    
-    def cleanup(self, obj):
-        obj.cleanup()
-        del obj
     
     def write_to_confirm(self, hash_val, new_impact_type):
         if new_impact_type == utilities.AbMemRead:

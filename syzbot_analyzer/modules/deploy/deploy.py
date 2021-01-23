@@ -91,6 +91,7 @@ class Deployer(Workers):
         ### DEBUG SYMEXEC ###
         if not self.valid_offset_and_size(case):
             self.logger.info("No valid offset or size")
+            self.__move_to_completed()
             return
         ### DEBUG SYMEXEC ###
 
@@ -105,6 +106,7 @@ class Deployer(Workers):
             if not self.finished_symbolic_execution(hash_val, 'incomplete'):
                 r = self.do_symbolic_execution(case, i386)
                 if r == 1:
+                    self.__move_to_completed()
                     return
             self.__move_to_succeed(0)
             return

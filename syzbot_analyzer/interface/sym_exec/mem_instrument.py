@@ -419,6 +419,10 @@ class MemCopy(HookInst):
             return
         src = self.state.solver.eval(bv_src)
         if type(src) == int and src in self.state.globals['sym']:
+            if self.mem.is_symbolic(bv_size):
+                prim_logger = self.mem.wrap_high_risk_state(self.state, StateManager.ARBITRARY_VALUE_WRITE)
+                if prim_logger != None:
+                    prim_logger.warning("Size of memcpy is controllable")
             # Is is possible that src is in the middle of a sym address?
             # globals['sym'] has unit as field, not byte
             index = 0
@@ -427,9 +431,9 @@ class MemCopy(HookInst):
                 if src+index in self.state.globals['sym']:
                     sym_size = self.state.globals['sym'][src+index]
                     sym = self.state.memory.load(src+index, sym_size, inspect=False, endness=archinfo.Endness.LE)
-                    for i in sym_size:
-                        self.update_states_globals(des+index+i, 0, StateManager.G_MEM)
-                    self.update_states_globals(des+index, sym_size, StateManager.G_SYM)
+                    for i in range(0, sym_size):
+                        self.mem.update_states_globals(des+index+i, 0, StateManager.G_MEM)
+                    self.mem.update_states_globals(des+index, sym_size, StateManager.G_SYM)
                     self.state.memory.store(des, sym, inspect=False, endness=archinfo.Endness.LE)
                     index += sym_size
                 else:
