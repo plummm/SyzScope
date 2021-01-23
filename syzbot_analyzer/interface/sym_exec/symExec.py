@@ -7,6 +7,7 @@ import threading
 import archinfo
 import syzbot_analyzer.interface.utilities as utilities
 import datetime
+import sys
 
 from syzbot_analyzer.interface.vm import VM
 from math import e
@@ -205,7 +206,7 @@ class SymExec(MemInstrument):
         if not ok:
             self.logger.error(err)
             return
-
+        meta_time = 0
         last_state = 0
         self.reset_state_bb()
 
@@ -213,6 +214,11 @@ class SymExec(MemInstrument):
         while True:
             if self._timeout != None:
                 current_time = time.time()
+                if meta_time == 0:
+                    meta_time = current_time - 60*60
+                if current_time <= meta_time:
+                    self.logger.info("{} seconds left".format(meta_time))
+                    meta_time = current_time - 60*60
                 #self.logger.info("time left: {}".format(current_time - start_time))
                 if current_time - start_time > self._timeout:
                     self.logger.info("Timeout, stop symbolic execution")

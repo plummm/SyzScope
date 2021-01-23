@@ -1,7 +1,8 @@
 import argparse, os, stat, sys
 from queue import Empty
 import json
-import multiprocessing, re
+import multiprocessing, threading
+import gc
 
 sys.path.append(os.getcwd())
 from syzbot_analyzer.modules import Crawler, Deployer
@@ -146,7 +147,18 @@ def read_cases_from_cache():
             f.close()
     return cases
 
-def deploy_one_case(index):
+def deploy_one_case(index, args, hash_val):
+    case = crawler.cases[hash_val]
+    dp = Deployer(index=index, debug=args.debug, force=args.force, port=int(args.ssh), replay=args.replay, \
+                linux_index=int(args.linux), time=int(args.time), force_fuzz=args.force_fuzz, alert=args.alert, \
+                static_analysis=args.static_analysis, symbolic_execution=args.symbolic_execution, gdb_port=int(args.gdb), \
+                qemu_monitor_port=int(args.qemu_monitor), max_compiling_kernel=int(args.max_compiling_kernel_concurrently), \
+                timeout_dynamic_validation=args.timeout_dynamic_validation, timeout_static_analysis=args.timeout_static_analysis, \
+                timeout_symbolic_execution=args.timeout_symbolic_execution)
+    dp.deploy(hash_val, case)
+    del dp
+
+def prepare_cases(index, args):
     while(1):
         #lock.acquire(block=True)
         try:
@@ -155,8 +167,10 @@ def deploy_one_case(index):
                 continue
             print("Thread {}: run case {} [{}/{}] left".format(index, hash_val, rest.value-1, total))
             rest.value -= 1
-            case = crawler.cases[hash_val]
-            deployer[index].deploy(hash_val, case)
+            x = multiprocessing.Process(target=deploy_one_case, args=(index, args, hash_val,), name="lord-{}".format(i))
+            x.start()
+            x.join()
+            gc.collect()
             remove_using_flag(index)
         except Empty:
             break
@@ -191,7 +205,6 @@ if __name__ == '__main__':
 
     ignore = []
     manager = multiprocessing.Manager()
-    deployer = []
     if args.ignore != None:
         with open(args.ignore, "r") as f:
             text = f.readlines()
@@ -234,16 +247,6 @@ if __name__ == '__main__':
     l = list(crawler.cases.keys())
     total = len(l)
     rest = manager.Value('i', total)
-    proc = []
     for i in range(0,min(parallel_max,total)):
-        deployer.append(Deployer(index=i, debug=args.debug, force=args.force, port=int(args.ssh), replay=args.replay, \
-            linux_index=int(args.linux), time=int(args.time), force_fuzz=args.force_fuzz, alert=args.alert, \
-            static_analysis=args.static_analysis, symbolic_execution=args.symbolic_execution, gdb_port=int(args.gdb), \
-            qemu_monitor_port=int(args.qemu_monitor), max_compiling_kernel=int(args.max_compiling_kernel_concurrently), \
-            timeout_dynamic_validation=args.timeout_dynamic_validation, timeout_static_analysis=args.timeout_static_analysis, \
-            timeout_symbolic_execution=args.timeout_symbolic_execution))
-        x = multiprocessing.Process(target=deploy_one_case, args=(i,), name="lord-{}".format(i))
-        proc.append(x)
+        x = threading.Thread(target=prepare_cases, args=(i, args,), name="lord-{}".format(i))
         x.start()
-    for x in proc:
-        x.join()

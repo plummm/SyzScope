@@ -14,3 +14,5 @@ class VM(VMInstance, VMState):
             self.gdb.close()
         if self.mon != None:
             self.mon.close()
+        if self.kernel != None and self.kernel.proj != None:
+            del self.kernel.proj

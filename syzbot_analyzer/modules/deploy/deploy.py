@@ -75,6 +75,7 @@ class Deployer(Workers):
         self.case_info_logger = self.__init_case_logger("{}-info".format(hash_val))
         url = syzbot_host_url + syzbot_bug_base_url + hash_val
         self.case_info_logger.info(url)
+        self.case_info_logger.info("pid: {}".format(os.getpid()))
 
         i386 = None
         if utilities.regx_match(r'386', case["manager"]):

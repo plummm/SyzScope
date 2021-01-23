@@ -142,6 +142,9 @@ if [ ! -f "$CASE_PATH/compiler/compiler" ]; then
   ln -s $COMPILER ./compiler
 fi
 
+###DEBUG####
+touch $CASE_PATH/.stamp/BUILD_SYZKALLER
+###DEBUG####
 #Building for syzkaller
 echo "[+] Building syzkaller"
 if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then
@@ -167,9 +170,10 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then
   if [ ! -d "workdir" ]; then
     mkdir workdir
   fi
+  curl $TESTCASE > $GOPATH/src/github.com/google/syzkaller/workdir/testcase-$HASH
   touch $CASE_PATH/.stamp/BUILD_SYZKALLER
 fi
-curl $TESTCASE > $GOPATH/src/github.com/google/syzkaller/workdir/testcase-$HASH
+#curl $TESTCASE > $GOPATH/src/github.com/google/syzkaller/workdir/testcase-$HASH
 
 cd $CASE_PATH || exit 1
 echo "[+] Copy image"
@@ -203,7 +207,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
     echo "This kernel is using by other thread"
     exit 1
   fi
-  git stash
+  git stash || echo "it's ok"
   git clean -fdx -e THIS_KERNEL_IS_BEING_USED > /dev/null || echo "it's ok"
   #make clean CC=$COMPILER
   #git stash --all || set_git_config
