@@ -56,13 +56,13 @@ class Workers(Case):
                     f = open(description, 'r')
                     title = f.readline()
                     f.close()
-                    if utilities.regx_match(utilities.kasan_read_regx, title):
-                        report = os.path.join(case_base, "repro.report")
-                        if not os.path.exists(report):
+                    if utilities.regx_match(utilities.kasan_oob_regx, title) or utilities.regx_match(utilities.kasan_uaf_regx, title):
+                        log = os.path.join(case_base, "repro.log")
+                        if not os.path.exists(log):
                             continue
-                        f = open(report, 'r')
+                        f = open(log, 'r')
                         texts = f.readlines()
-                        offset, size = utilities.extract_vul_obj_offset_and_size("".join(texts))
+                        offset, size = utilities.extract_vul_obj_offset_and_size(texts)
                         if offset != None or size != None:
                             ever_execution = True
                             hash_val = each_case[:7]

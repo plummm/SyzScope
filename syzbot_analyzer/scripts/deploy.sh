@@ -193,9 +193,7 @@ cd ..
 echo "[+] Building kernel"
 OLD_INDEX=`ls -l linux | cut -d'-' -f 3`
 if [ "$OLD_INDEX" != "$INDEX" ]; then
-  if [ -d "./linux" ]; then
-      rm -rf "./linux"
-  fi
+  rm -rf "./linux" || echo "No linux repo"
   ln -s $PROJECT_PATH/tools/$1-$INDEX ./linux
   if [ -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
       rm $CASE_PATH/.stamp/BUILD_KERNEL
