@@ -215,10 +215,10 @@ class SymExec(MemInstrument):
             if self._timeout != None:
                 current_time = time.time()
                 if meta_time == 0:
-                    meta_time = current_time - 60*60
-                if current_time <= meta_time:
-                    self.logger.info("{} seconds left".format(meta_time))
-                    meta_time = current_time - 60*60
+                    meta_time = current_time + 60*60
+                if current_time >= meta_time:
+                    self.logger.info("{} seconds left".format(self._timeout - meta_time))
+                    meta_time = current_time + 60*60
                 #self.logger.info("time left: {}".format(current_time - start_time))
                 if current_time - start_time > self._timeout:
                     self.logger.info("Timeout, stop symbolic execution")
