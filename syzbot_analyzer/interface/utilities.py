@@ -27,6 +27,8 @@ InvFree = 4
 
 syzbot_bug_base_url = "bug?id="
 syzbot_host_url = "https://syzkaller.appspot.com/"
+kasan_uaf_regx = r'KASAN: use-after-free in ([a-zA-Z0-9_]+).*'
+kasan_oob_regx = r'KASAN: \w+-out-of-bounds in ([a-zA-Z0-9_]+).*'
 kasan_write_regx = r'KASAN: ([a-z\\-]+) Write in ([a-zA-Z0-9_]+).*'
 kasan_read_regx = r'KASAN: ([a-z\\-]+) Read in ([a-zA-Z0-9_]+).*'
 kasan_write_addr_regx = r'Write of size (\d+) at addr (\w+)'
@@ -464,21 +466,17 @@ def update_img_for_case(hash, folder, time):
     os.symlink(os.path.join(src,image+".img"), os.path.join(des, "stretch.img"))
     os.symlink(os.path.join(src,image+".img.key"), os.path.join(des, "stretch.img.key"))
 
-def get_case_from_file(path, workdir):
+def get_case_from_file(path, workdir, folder=[]):
     res = []
     with open(path, 'r') as f:
         text = f.readlines()
         for line in text:
             line = line.strip('\n')
             case_path = None
-            if os.path.isdir('{}/incomplete/{}'.format(workdir, line)):
-                case_path = '{}/incomplete/{}'.format(workdir, line)
-            if os.path.isdir('{}/completed/{}'.format(workdir, line)):
-                case_path = '{}/completed/{}'.format(workdir, line)
-            if os.path.isdir('{}/succeed/{}'.format(workdir, line)):
-                case_path = '{}/succeed/{}'.format(workdir, line)
-            if os.path.isdir('{}/error/{}'.format(workdir, line)):
-                case_path = '{}/error/{}'.format(workdir, line)
+            for each_folder in folder:
+                if os.path.isdir('{}/{}/{}'.format(workdir, each_folder, line)):
+                    case_path = '{}/{}/{}'.format(workdir, each_folder, line)
+                    break
             with open(case_path+'/log', 'r') as f_log:
                 line = f_log.readline()
                 case_hash = regx_get(case_hash_syzbot_regx, line, 0)
@@ -780,6 +778,7 @@ def duplicated_warning():
 
 if __name__ == '__main__':
     #cases = save_cases_as_json([''], 999999)
+    """
     cases = load_cases_from_json(os.getcwd()+'/cases_.json')
     meta = [30, 60, 90, 182, 365, 730, 1000,9999]
     index = 0
@@ -794,7 +793,12 @@ if __name__ == '__main__':
     reported_days = cases[len(cases)-1]['Reported']
     day = int(regx_get('(\d+)d', reported_days, 0))
     print("{} days with {} bugs: {} bugs/day".format(day, len(cases), round(len(cases)/day, 2)))
-
+    """
+    base = '/home/xzou017/projects/crashReproduce/work/succeed'
+    files = os.listdir(base)
+    for each in files:
+        r = get_hash_from_log(os.path.join(base, '{}/log'.format(each)))
+        print(r)
     
 
     

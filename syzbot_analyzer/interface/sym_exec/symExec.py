@@ -215,10 +215,10 @@ class SymExec(MemInstrument):
             if self._timeout != None:
                 current_time = time.time()
                 if meta_time == 0:
-                    meta_time = current_time + 60*60
+                    meta_time = current_time + 10*60
                 if current_time >= meta_time:
-                    self.logger.info("{} seconds left".format(self._timeout - meta_time))
-                    meta_time = current_time + 60*60
+                    self.logger.info("{} seconds left".format(meta_time - self._timeout))
+                    meta_time = current_time + 10*60
                 #self.logger.info("time left: {}".format(current_time - start_time))
                 if current_time - start_time > self._timeout:
                     self.logger.info("Timeout, stop symbolic execution")
@@ -487,16 +487,16 @@ class SymExec(MemInstrument):
     def _my_successor_func(self, state):
         self.setup_current_state(state)
         self.skip_unexpected_opcode(state.addr)
-        #try:
-        succ = state.step()
-        #except Exception as e:
-        #    self.logger.error("Execution error at {}".format(hex(state.scratch.ins_addr)))
-        #     code = self.vm.inspect_code(state.scratch.ins_addr, 1)
-        #     if code != None:
-        #         self.logger.info(code)
-        #    self.logger.error(e)
-        #    self.kill_current_state = False
-        #    raise ExecutionError
+        try:
+            succ = state.step()
+        except Exception as e:
+            self.logger.error("Execution error at {}".format(hex(state.scratch.ins_addr)))
+            code = self.vm.inspect_code(state.scratch.ins_addr, 1)
+            if code != None:
+                self.logger.info(code)
+            self.logger.error(e)
+            self.kill_current_state = False
+            raise ExecutionError
         if self.dfs and self.is_fallen_state():
             self.logger.warning("kill a fallen state")
             succ.flat_successors = []

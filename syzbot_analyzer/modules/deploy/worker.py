@@ -195,20 +195,23 @@ class Workers(Case):
                 #if ret != None and len(ret) > 0:
                 #    is_propagating_global = True
             except VulnerabilityNotTrigger:
+                self.logger.warning("Can not trigger vulnerability. Abaondoned")
                 exception_count += 1
             except ExecutionError:
                 sym_logger.warning("Execution Error")
+                exception_count += 1
             except AbnormalGDBBehavior:
                 sym_logger.warning("Abnormal GDB behavior occured")
+                exception_count += 1
             except QemuIsDead:
                 self.logger.error("Error occur when executing symbolic tracing: QemuIsDead")
+                exception_count += 1
             #except Exception as e:
             #    sym_logger.error("Unknown exception occur during symboulic execution: {}".format(e))
             sym.cleanup()
             del sym
             time.sleep(1)
         if max_round == exception_count:
-            self.logger.warning("Can not trigger vulnerability. Abaondoned")
             return 1
         if result & StateManager.CONTROL_FLOW_HIJACK:
             self.logger.warning("Control flow hijack found")
