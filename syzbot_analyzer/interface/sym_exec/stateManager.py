@@ -244,17 +244,9 @@ class StateManager:
     
     def reset_state_bb(self):
         self._current_state.globals['bb'] = 0
-    
-    def purge_state(self, state):
-        if state in self.simgr.active:
-            self.simgr.active.remove(state)
-            self.simgr.deadended.append(state)
 
     def purge_current_state(self):
-        if self._current_state in self.simgr.active:
-            self.simgr.active.remove(self._current_state)
-            self.simgr.deadended.append(self._current_state)
-            self.kill_current_state = True
+        self.kill_current_state = True
     
     def cur_state_dead(self):
         return not self._current_state in self.simgr.active

@@ -160,13 +160,14 @@ def deploy_one_case(index, args, hash_val):
 
 def prepare_cases(index, args):
     while(1):
-        #lock.acquire(block=True)
+        lock.acquire(blocking=True)
         try:
             hash_val = g_cases.get(block=True, timeout=3)
             if hash_val in ignore:
                 continue
             print("Thread {}: run case {} [{}/{}] left".format(index, hash_val, rest.value-1, total))
             rest.value -= 1
+            lock.release()
             x = multiprocessing.Process(target=deploy_one_case, args=(index, args, hash_val,), name="lord-{}".format(i))
             x.start()
             x.join()
@@ -240,6 +241,7 @@ if __name__ == '__main__':
         args.static_analysis = True
     parallel_max = int(args.parallel_max)
     parallel_count = 0
+    lock = threading.Lock()
     g_cases = manager.Queue()
     for key in crawler.cases:
         g_cases.put(key)

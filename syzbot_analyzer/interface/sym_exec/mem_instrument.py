@@ -56,8 +56,7 @@ class MemInstrument(StateManager):
         return False
     
     def exit_point(self, state):
-        if state in self.simgr.active:
-            self.simgr.active.remove(state)
+        self.kill_current_state = True
 
     def track_mem_read(self, state):
         size = state.inspect.mem_read_length

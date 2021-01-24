@@ -173,7 +173,7 @@ class SymExec(MemInstrument):
         self.logger.info("Running for {}".format(str(datetime.timedelta(seconds=running_time))))
         if len(self.impacts_collector) == 0:
             self.logger.info("There is no primitive found")
-            return
+            return self.state_privilege
         self.logger.info("Total {} primitives found during symbolic execution\n".format(len(self.impacts_collector)))
         n_AAW, n_AVW, n_FAW, n_FVW, n_CFH= 0, 0, 0, 0, 0
         for addr in self.impacts_collector:
