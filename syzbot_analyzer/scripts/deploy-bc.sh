@@ -65,7 +65,7 @@ if [ "$COMPILE" != "1" ]; then
       exit 1
     fi
     COMPILER=$CASE_PATH/compiler/compiler
-    make -j16 CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
+    make -j8 CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
     exit 0
   fi
 
@@ -94,7 +94,7 @@ export LLVM_COMPILER_PATH=$PROJECT_PATH/tools/llvm/build/bin/
 pip list | grep wllvm || pip install wllvm
 make olddefconfig CC=wllvm
 ERROR=0
-make -j16 CC=wllvm > make.log 2>&1 || ERROR=1 && copy_log_then_exit make.log
+make -j8 CC=wllvm > make.log 2>&1 || ERROR=1 && copy_log_then_exit make.log
 if [ $ERROR == "0" ]; then
   extract-bc vmlinux
   mv vmlinux.bc $CASE_PATH/one.bc

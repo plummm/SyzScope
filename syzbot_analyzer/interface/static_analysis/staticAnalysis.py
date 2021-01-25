@@ -54,14 +54,14 @@ class StaticAnalysis:
                 stdout=PIPE,
                 stderr=STDOUT
                 )
-        x = threading.Thread(target=self.monitor_execution, args=(p, 30*60))
-        x.start()
         with p.stdout:
             self.__log_subprocess_output(p.stdout, logging.INFO)
         exitcode = p.wait()
         self.case_logger.info("script/deploy-bc.sh is done with exitcode {}".format(exitcode))
 
         if exitcode == 1:
+            x = threading.Thread(target=self.monitor_execution, args=(p, 60*60))
+            x.start()
             if self.compile_bc_extra() != 0:
                 self.case_logger.error("Error occur when compiling bc or linking them")
                 return exitcode

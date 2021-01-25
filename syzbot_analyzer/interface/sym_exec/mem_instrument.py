@@ -10,8 +10,8 @@ from capstone.x86_const import X86_REG_GS, X86_REG_CS, X86_REG_SS, X86_REG_DS, X
 
 class MemInstrument(StateManager):
     USER_PAGE_START = 0x40000000
-    USER_PAGE_END = 0x50000000
-    PAGE_SIZE = 0x1000
+    USER_PAGE_END = 0x80000000
+    MAX_OBJ_SIZE = 0x2000
     CTR_ADDR = 0x40000000
 
     def __init__(self, index, workdir, logger=None):
@@ -115,7 +115,7 @@ class MemInstrument(StateManager):
         self.purge_current_state()
     
     def track_contraint(self, state):
-        self.logger.warning("A new constraint {} add to {}".format(state.inspect.added_constraints, hex(state.scratch.ins_addr)))
+        self.logger.warning("A new constraint {} added at {}".format(state.inspect.added_constraints, hex(state.addr)))
 
     def track_irsb(self, state):
         n = 0
@@ -141,7 +141,8 @@ class MemInstrument(StateManager):
             "record_times", "kfree", "update_rq_clock", "sched_clock_idle_sleep_event", "print_tainted", "might_sleep", "__might_sleep", "debug_lockdep_rcu_enabled",\
             "__warn_printk", "srm_printk", "snd_printk", "dbgp_printk", "ql4_printk", "printk", "vprintk", "__dump_page", "irq_stack_union", \
             "queued_spin_lock_slowpath", "__pv_queued_spin_lock_slowpath", "queued_read_lock_slowpath", "queued_write_lock_slowpath", \
-            "lock_acquire", "lock_release", "dump_stack", "__pv_queued_spin_unlock_slowpath", "schedule", "save_stack", "check_memory_region"]
+            "lock_acquire", "lock_release", "dump_stack", "__pv_queued_spin_unlock_slowpath", "schedule", "save_stack", "check_memory_region",\
+            "set_next_entity", "__schedule"]
         noisy_func.extend(kcov_funcs)
         
         if type(extra) == list:
@@ -285,7 +286,7 @@ class MemInstrument(StateManager):
                         #self.dump_state(state)
                     elif not self._is_ctr_addr(addr):
                         self.logger.warning("page fault occur when access {}".format(hex(addr)))
-                        self.logger.warning("Dump last site")
+                        self.logger.warning("Dump last site: {}".format(state.addr))
                         if self.is_symbolic(bv_addr):
                             self.logger.info("read from a symbolic address")
                             #self.dump_state(state)
@@ -363,7 +364,7 @@ class MemInstrument(StateManager):
         return addr >= MemInstrument.USER_PAGE_START and addr <= MemInstrument.USER_PAGE_END
 
     def _updateCtrAddr(self):
-        MemInstrument.CTR_ADDR += MemInstrument.PAGE_SIZE
+        MemInstrument.CTR_ADDR += MemInstrument.MAX_OBJ_SIZE
     
     def _get_sections(self):
         if self.vm == None:

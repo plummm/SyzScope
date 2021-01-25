@@ -56,7 +56,7 @@ class Workers(Case):
                     f = open(description, 'r')
                     title = f.readline()
                     f.close()
-                    if utilities.regx_match(utilities.kasan_oob_regx, title) or utilities.regx_match(utilities.kasan_uaf_regx, title):
+                    if utilities.regx_match('KASAN', title):
                         log = os.path.join(case_base, "repro.log")
                         if not os.path.exists(log):
                             continue

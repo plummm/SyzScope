@@ -108,7 +108,7 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_CMAKE" ]; then
   cd cmake
   ./bootstrap
   make -j16
-  sudo make install
+  make install
   CMAKE=`pwd`/bin/cmake
 
   touch $TOOLS_PATH/.stamp/BUILD_CMAKE

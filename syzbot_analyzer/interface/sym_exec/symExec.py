@@ -36,6 +36,7 @@ class SymExec(MemInstrument):
         self.impacts_collector = {}
         self._branches = None
         self.target_site = None
+        self.state_tracking = []
         if logger == None:
             self.logger = logging
         else:
@@ -104,7 +105,7 @@ class SymExec(MemInstrument):
             self.logger.warning("Timeout of symbolic execution is longer than timeout of qemu")
         dfs = True
         if path == []:
-            dfs = False
+            dfs = True
         self._timeout = timeout
         if not self._context_ready:
             if self.vm == None:
@@ -239,7 +240,7 @@ class SymExec(MemInstrument):
             #except ExecutionError:
             #    self.logger.error("Let's continue")
             
-            if self.debug and len(self.simgr.active) > 0:
+            if self.debug and len(self.simgr.active) == 1:
                 #self.logger.info("=======dump========")
                 insns = self.proj.factory.block(self.simgr.active[0].addr).capstone.insns
                 n = len(insns)
@@ -445,6 +446,27 @@ class SymExec(MemInstrument):
             if len(each_path) > 0:
                 key = "{}:{}".format(each_path[len(each_path)-1]['file'], each_path[len(each_path)-1]['line'])
                 self.target_site[key] = StateManager.NO_ADDITIONAL_USE
+    
+    def add_to_debug_trace(self, state):
+        file, line = self.vm.get_dbg_info(state.addr)
+        for each in self.state_tracking:
+            if file == each['file'] and line == each['line']:
+                return
+        self.state_tracking.append({'file': file, 'line': line})
+    
+    def maintain_debug_trace(self, state):
+        for addr in state.history.bbl_addrs: 
+            func_name = self.vm.get_func_name(addr)
+            file, line = self.vm.get_dbg_info(addr)
+            if func_name == None or file == None or line == None:
+                continue
+            if 'kasan' in file or 'kcov' in file:
+                continue
+            for each_state in self.state_tracking:
+                if file == each_state['file'] and line == each_state['line']:
+                    self.dump_stack(state)
+                    self.dump_trace(state)
+                
 
     def _match_fense(self, next_state):
         addr = next_state.addr

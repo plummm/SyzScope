@@ -134,5 +134,5 @@ do
 done
 
 make olddefconfig CC=$COMPILER
-make -j16 CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
+make -j8 CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
 exit 0
