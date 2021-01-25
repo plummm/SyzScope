@@ -138,7 +138,7 @@ class MemInstrument(StateManager):
             "write_comp_data", ] 
         noisy_func = ["__kasan_check_read", "__kasan_check_write","kasan_report_double_free", "kasan_check_read", "kasan_check_write", \
             "kasan_unpoison_shadow", "queue_delayed_work_on", "pvclock_read_wallclock","mutex_lock", "__mutex_lock", "mutex_unlock", "__mutex_unlock", \
-            "record_times", "kfree", "update_rq_clock", "sched_clock_idle_sleep_event", "print_tainted", "might_sleep", "__might_sleep", "debug_lockdep_rcu_enabled",\
+            "record_times", "update_rq_clock", "sched_clock_idle_sleep_event", "print_tainted", "might_sleep", "__might_sleep", "debug_lockdep_rcu_enabled",\
             "__warn_printk", "srm_printk", "snd_printk", "dbgp_printk", "ql4_printk", "printk", "vprintk", "__dump_page", "irq_stack_union", \
             "queued_spin_lock_slowpath", "__pv_queued_spin_lock_slowpath", "queued_read_lock_slowpath", "queued_write_lock_slowpath", \
             "lock_acquire", "lock_release", "dump_stack", "__pv_queued_spin_unlock_slowpath", "schedule", "save_stack", "check_memory_region",\

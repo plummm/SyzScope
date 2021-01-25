@@ -249,7 +249,10 @@ class CrashChecker:
             self.case_logger.error(res[0])
             self.logger.error(res[0])
             return [], trigger
-        self.save_crash_log(res)
+        if utilities.regx_match(r'https:\/\/syzkaller\.appspot\.com\/', syz_repro):
+            self.save_crash_log(res, "ori")
+        else:
+            self.save_crash_log(res, hex(syz_commit[:7]))
         return res, trigger
     
     def read_existed_crash(self, crash_path):
@@ -302,8 +305,8 @@ class CrashChecker:
                 crash.append(line)
         return res
         
-    def save_crash_log(self, log):
-        with open("{}/poc/crash_log".format(self.case_path), "w+") as f:
+    def save_crash_log(self, log, name):
+        with open("{}/poc/crash_log-{}".format(self.case_path, name), "w+") as f:
             for each in log:
                 for line in each:
                     f.write(line+"\n")

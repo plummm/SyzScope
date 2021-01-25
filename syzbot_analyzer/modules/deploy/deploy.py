@@ -40,8 +40,8 @@ syz_config_template="""
 }}"""
 
 class Deployer(Workers):
-    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None):
-        Workers.__init__(self, index, debug, force, port, replay, linux_index, time, force_fuzz, alert, static_analysis, symbolic_execution, gdb_port, qemu_monitor_port, max_compiling_kernel, timeout_dynamic_validation, timeout_static_analysis, timeout_symbolic_execution)
+    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=True, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None):
+        Workers.__init__(self, index, debug, force, port, replay, linux_index, time, kernel_fuzzing, alert, static_analysis, symbolic_execution, gdb_port, qemu_monitor_port, max_compiling_kernel, timeout_dynamic_validation, timeout_static_analysis, timeout_symbolic_execution)
         self.clone_linux()
     
     def init_replay_crash(self, hash_val):
@@ -71,6 +71,8 @@ class Deployer(Workers):
             self.cleanup_finished_fuzzing(hash_val)
             self.cleanup_built_kernel(hash_val)
             self.cleanup_built_syzkaller(hash_val)
+            self.cleanup_finished_symbolic_execution(hash_val)
+            self.cleanup_finished_static_analysis(hash_val)
         self.case_logger = self.__init_case_logger("{}-log".format(hash_val))
         self.case_info_logger = self.__init_case_logger("{}-info".format(hash_val))
         url = syzbot_host_url + syzbot_bug_base_url + hash_val
@@ -88,32 +90,29 @@ class Deployer(Workers):
         need_patch = 0
         #if self.__need_kasan_patch(case['title']):
         #    need_patch = 1
-
-        ### DEBUG SYMEXEC ###
-        if not self.valid_offset_and_size(case):
+        if not self.kernel_fuzzing and self.valid_offset_and_size(case) == []:
             self.logger.info("No valid offset or size")
             self.__move_to_completed()
             return
-        ### DEBUG SYMEXEC ###
 
         r = self.__run_delopy_script(hash_val[:7], case, need_patch)
         if r != 0:
             self.logger.error("Error occur in deploy.sh")
             self.__save_error(hash_val)
             return
-        
-        ### DEBUG SYMEXEC ###
-        if self.symbolic_execution:
-            if not self.finished_symbolic_execution(hash_val, 'incomplete'):
-                r = self.do_symbolic_execution(case, i386)
-                if r == 1:
-                    self.__move_to_completed()
-                    return
-            self.__move_to_succeed(0)
-            return
-            if os.path.exists("{}/sym".format(self.current_case_path)) and not os.path.exists("{}/sym_only".format(self.current_case_path)):
-                shutil.move("{}/sym".format(self.current_case_path), "{}/sym_only".format(self.current_case_path))
-        ### DEBUG SYMEXEC ###
+
+        if self.kernel_fuzzing:
+            if not self.finished_fuzzing(hash_val, 'succeed') and not self.finished_fuzzing(hash_val, 'completed'):
+                title = None
+                if not self.reproduced_ori_poc(hash_val, 'incomplete'):
+                    impact_without_mutating, title = self.do_reproducing_ori_poc(case, hash_val, i386)
+
+                req = requests.request(method='GET', url=case["syz_repro"])
+                self.__write_config(req.content.decode("utf-8"), hash_val[:7])
+                exitcode = self.run_syzkaller(hash_val)
+                self.save_case(hash_val, exitcode, case, impact_without_mutating, title=title)
+            else:
+                self.logger.info("{} has finished".format(hash_val[:7]))
 
         if self.static_analysis:
             if not self.finished_static_analysis(hash_val, 'incomplete'):
@@ -121,56 +120,17 @@ class Deployer(Workers):
                     self.do_static_analysis(case)
                 except CompilingError:
                     self.logger.error("Encounter an error when doing static analysis")
-                    return
 
         ### DEBUG SYMEXEC ###
         if self.symbolic_execution:
-            self.do_symbolic_execution(case, i386)
-            return
+            if not self.finished_symbolic_execution(hash_val, 'incomplete'):
+                r = self.do_symbolic_execution(case, i386)
+                if r == 1:
+                    self.__move_to_completed()
+                    return
+                self.__move_to_succeed(0)
         ### DEBUG SYMEXEC ###
-        
-        if not self.finished_fuzzing(hash_val, 'succeed') and not self.finished_fuzzing(hash_val, 'completed'):
-            title = None
-            if not self.reproduced_ori_poc(hash_val, 'incomplete'):
-                impact_without_mutating, title = self.do_reproducing_ori_poc(case, hash_val, i386)
-
-            req = requests.request(method='GET', url=case["syz_repro"])
-            self.__write_config(req.content.decode("utf-8"), hash_val[:7])
-            exitcode = self.run_syzkaller(hash_val)
-            self.save_case(hash_val, exitcode, case, impact_without_mutating, title=title)
-        else:
-            self.logger.info("{} has finished".format(hash_val[:7]))
         return self.index
-        
-    def valid_offset_and_size(self, case):
-        valid = False
-        if self.store_read:
-            output = os.path.join(self.current_case_path, "output")
-            if os.path.exists(output):
-                all_cases = os.listdir(output)
-                for each_case in all_cases:
-                    case_base = os.path.join(output, each_case)
-                    description = os.path.join(case_base, "description")
-                    if not os.path.exists(description):
-                        continue
-                    f = open(description, 'r')
-                    title = f.readline()
-                    f.close()
-                    if utilities.regx_match('KASAN', title):
-                        log = os.path.join(case_base, "repro.log")
-                        if not os.path.exists(log):
-                            continue
-                        f = open(log, 'r')
-                        texts = f.readlines()
-                        offset, size = utilities.extract_vul_obj_offset_and_size(texts)
-                        if offset != None or size != None:
-                            valid = True
-        else:
-            offset = case["vul_offset"]
-            size = case["obj_size"]
-            if offset != None and size != None:
-                valid = True
-        return valid
 
     def clone_linux(self):
         self.__run_linux_clone_script()
@@ -686,7 +646,7 @@ class Deployer(Workers):
                 r = utilities.request_get(case['c_repro'])
                 with open(os.path.join(output, "repro.cprog"), "w") as f:
                     f.write(r.text)
-            crash_log = "{}/{}".format(self.current_case_path, "poc/crash_log")
+            crash_log = "{}/{}".format(self.current_case_path, "poc/crash_log-ori")
             if os.path.isfile(crash_log):
                 shutil.copy(crash_log, os.path.join(output, "repro.log"))
             with open(os.path.join(output, "description"), "w") as f:

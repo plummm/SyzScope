@@ -5,6 +5,7 @@ import requests
 import threading
 import logging
 import time
+import shutil
 import syzbot_analyzer.interface.utilities as utilities
 
 from syzbot_analyzer.modules.syzbotCrawler import syzbot_host_url, syzbot_bug_base_url
@@ -22,8 +23,8 @@ TIMEOUT_DYNAMIC_VALIDATION=60*60
 TIMEOUT_STATIC_ANALYSIS=60*30
 
 class Workers(Case):
-    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, force_fuzz=False, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None):
-        Case.__init__(self, index, debug, force, port, replay, linux_index, time, force_fuzz, alert, static_analysis, symbolic_execution, gdb_port, qemu_monitor_port, max_compiling_kernel)
+    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=True, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None):
+        Case.__init__(self, index, debug, force, port, replay, linux_index, time, kernel_fuzzing, alert, static_analysis, symbolic_execution, gdb_port, qemu_monitor_port, max_compiling_kernel)
         if timeout_dynamic_validation == None:
             self.timeout_dynamic_validation=TIMEOUT_DYNAMIC_VALIDATION
         else:
@@ -42,48 +43,22 @@ class Workers(Case):
                 self.timeout_symbolic_execution = 365*24*60*60
 
     def do_symbolic_execution(self, case, i386, max_round=3, raw_tracing=False, timeout=None):
-        ever_execution = False
         ret = 1
-        if self.store_read:
-            output = os.path.join(self.current_case_path, "output")
-            if os.path.exists(output):
-                all_cases = os.listdir(output)
-                for each_case in all_cases:
-                    case_base = os.path.join(output, each_case)
-                    description = os.path.join(case_base, "description")
-                    if not os.path.exists(description):
-                        continue
-                    f = open(description, 'r')
-                    title = f.readline()
-                    f.close()
-                    if utilities.regx_match('KASAN', title):
-                        log = os.path.join(case_base, "repro.log")
-                        if not os.path.exists(log):
-                            continue
-                        f = open(log, 'r')
-                        texts = f.readlines()
-                        offset, size = utilities.extract_vul_obj_offset_and_size(texts)
-                        if offset != None or size != None:
-                            ever_execution = True
-                            hash_val = each_case[:7]
-                            if not self._do_symbolic_execution(case, offset, size, i386, "sym-{}".format(hash_val), max_round, raw_tracing, timeout):
-                                ret = 0
-        else:
-            offset = case["vul_offset"]
-            size = case["obj_size"]
-            if offset != None and size != None:
-                ever_execution = True
-                ret = self._do_symbolic_execution(case, offset, size, i386, "sym-ori", max_round, raw_tracing, timeout)
-        if not ever_execution:
-            self.logger.info("No valid offset or size")
+        valid_contexts = self.valid_offset_and_size(case)
+        for context in valid_contexts:
+            if not self._do_symbolic_execution(case, context, i386, max_round, raw_tracing, timeout):
+                ret = 0
         return ret
 
-    def _do_symbolic_execution(self, case, offset, size, i386, workdir, max_round=3, raw_tracing=False, timeout=None):
+    def _do_symbolic_execution(self, case, context, i386, max_round=3, raw_tracing=False, timeout=None):
         self.logger.info("initial environ of symbolic execution")
         if timeout != None:
             self.timeout_symbolic_execution = timeout
         else:
             self.timeout_symbolic_execution = self.timeout_dynamic_validation - self.timeout_static_analysis
+        offset = context['offset']
+        size = context['size']
+        workdir = context['workdir']
         self.sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.index, self.current_case_path, self.linux_folder)
         #self.init_crash_checker(self.ssh_port, False)
         r = utilities.request_get(case['report'])
@@ -106,19 +81,29 @@ class Workers(Case):
         if i386:
             arch = 'i386'
 
+        sym_folder = os.path.join(self.current_case_path, workdir)
+        if os.path.isdir(sym_folder):
+            n=1
+            dest_path = "{}-{}".format(sym_folder, n)
+            while(1):
+                if not os.path.isdir(dest_path):
+                    shutil.move(sym_folder, dest_path)
+                    self.logger.info("Found {}, copy them to {}".format(sym_folder, dest_path))
+                    break
+                else:
+                    n += 1
+                    dest_path = "{}-{}".format(sym_folder, n)
+        os.mkdir(sym_folder)
         is_propagating_global = False
         result = StateManager.NO_ADDITIONAL_USE
         exception_count = 0
         flag_stop_execution = False
         for i in range(0, max_round):
-            sym_folder = os.path.join(self.current_case_path, workdir)
-            if not os.path.isdir(sym_folder):
-                os.mkdir(sym_folder)
             cur_sym_log = sym_folder + "/symbolic_execution.log" + "-" + str(i)
             sym_logger = self.__init_logger(cur_sym_log)
             sym_logger.info("round {}: symbolic tracing".format(i))
             sym = sym_exec.SymExec(logger=sym_logger, workdir=sym_folder, index=self.index, debug=self.debug)
-            sym.setup_vm(linux_path, arch, self.ssh_port, self.image_path, self.gdb_port, self.qemu_monitor_port, proj_path=sym_folder, cpu="2", mem="1G", logger=self.case_logger, hash_tag=self.hash_val[:7], log_name="vm.log", log_suffix="-{}".format(i),  timeout=self.timeout_symbolic_execution+5*60)
+            sym.setup_vm(linux_path, arch, self.ssh_port, self.image_path, self.gdb_port, self.qemu_monitor_port, proj_path=sym_folder, cpu="2", mem="2G", logger=self.case_logger, hash_tag=self.hash_val[:7], log_name="vm.log", log_suffix="-{}".format(i),  timeout=self.timeout_symbolic_execution+5*60)
             p = None
             try:
                 p = sym.run_vm()
@@ -344,6 +329,36 @@ class Workers(Case):
                             break
         return ret, title
     
+    def valid_offset_and_size(self, case):
+        ret = []
+        offset = case["vul_offset"]
+        size = case["obj_size"]
+        if offset != None and size != None:
+            ret.append({'workdir': 'sym-ori', 'offset': offset, 'size': size, 'repro': case["syz_repro"], 'type': utilities.URL, 'c_repro': case["syz_repro"]})
+        if self.store_read:
+            output = os.path.join(self.current_case_path, "output")
+            if os.path.exists(output):
+                all_cases = os.listdir(output)
+                for each_case in all_cases:
+                    case_base = os.path.join(output, each_case)
+                    description = os.path.join(case_base, "description")
+                    if not os.path.exists(description):
+                        continue
+                    f = open(description, 'r')
+                    title = f.readline()
+                    f.close()
+                    if utilities.regx_match('KASAN', title):
+                        log = os.path.join(case_base, "repro.log")
+                        if not os.path.exists(log):
+                            continue
+                        f = open(log, 'r')
+                        texts = f.readlines()
+                        offset, size = utilities.extract_vul_obj_offset_and_size(texts)
+                        prog = os.path.join(case_base, "repro.prog")
+                        if offset != None and size != None and os.path.exists(prog):
+                            ret.append({'workdir': 'sym-{}'.format(each_case[:7]), 'offset': offset, 'size': size, 'repro': prog, 'type': utilities.CASE, 'c_repro': None})
+        return ret
+    
     def init_crash_checker(self, port):
         self.crash_checker = CrashChecker(
             self.project_path,
@@ -399,6 +414,12 @@ class Workers(Case):
     
     def cleanup_reproduced_ori_poc(self, hash_val):
         self.__clean_stamp(stamp_reproduce_ori_poc, hash_val[:7])
+    
+    def cleanup_finished_symbolic_execution(self, hash_val):
+        self.__clean_stamp(stamp_symbolic_execution, hash_val[:7])
+
+    def cleanup_finished_static_analysis(self, hash_val):
+        self.__clean_stamp(stamp_static_analysis, hash_val[:7])
     
     def __create_stamp(self, name):
         self.logger.info("Create stamp {}".format(name))
