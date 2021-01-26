@@ -152,7 +152,7 @@ class VMInstance:
                     continue
                 if utilities.regx_match(reboot_regx, line) or utilities.regx_match(port_error_regx, line):
                     self.case_logger.error("Booting qemu-{} failed".format(self.log_name))
-                if utilities.regx_match(r'Debian GNU\/Linux \d+', line):
+                if utilities.regx_match(r'Debian GNU\/Linux \d+ syzkaller ttyS\d+', line):
                     self.qemu_ready = True
                 self.qemu_logger.info(line)
                 if self.debug:

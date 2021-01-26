@@ -252,7 +252,7 @@ class CrashChecker:
         if utilities.regx_match(r'https:\/\/syzkaller\.appspot\.com\/', syz_repro):
             self.save_crash_log(res, "ori")
         else:
-            self.save_crash_log(res, hex(syz_commit[:7]))
+            self.save_crash_log(res, syz_commit[:7])
         return res, trigger
     
     def read_existed_crash(self, crash_path):

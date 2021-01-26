@@ -79,13 +79,17 @@ class SymExec(MemInstrument):
             return None
         self.proj = self.vm.kernel.proj
         self.logger.info("Waiting for qemu launching")
+        n = 0
         while True:
             if self.vm.qemu_ready:
                 break
+            if n > 5*60:
+                p.kill()
             poll = p.poll()
             if poll != None:
                 raise QemuIsDead
             time.sleep(1)
+            n += 1
         self.vm.mon_connect(self.mon_port)
         """
         with p.stdout:

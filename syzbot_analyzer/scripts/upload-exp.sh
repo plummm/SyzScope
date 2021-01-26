@@ -24,6 +24,8 @@ FIXED=$9
 GCCVERSION=${10}
 EXITCODE=3
 GCC=`pwd`/tools/$GCCVERSION/bin/gcc
+export GOROOT=`pwd`/tools/goroot
+export PATH=$GOROOT/bin:$PATH
 
 M32=""
 ARCH="amd64"
