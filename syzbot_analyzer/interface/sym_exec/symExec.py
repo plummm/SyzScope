@@ -126,10 +126,9 @@ class SymExec(MemInstrument):
             self.vul_mem_start = vul_mem - self.vul_mem_offset
             self.vul_mem_end = self.vul_mem_start + self.vul_mem_size
             self.logger.info("Vuln mem: {} to {}".format(hex(self.vul_mem_start), hex(self.vul_mem_end)))
-            # set a breakpoint at vulnerable site, resume the qemu
-            # self.vm.reach_vul_site(self.vuln_site)
             self.vm.back_to_kasan_ret()
             self._after_gdb_resume(300)
+            self.vm.read_backtrace(7)
             self._context_ready = True
         return self.symbolic_execute(path, dfs=dfs, raw_tracing=raw_tracing)
     

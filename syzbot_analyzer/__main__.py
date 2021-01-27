@@ -53,7 +53,7 @@ def args_parse():
                         default='8',
                         help='Time for each running(in hour)\n'
                         '(default value is 8 hour)')
-    parser.add_argument('-kf', '--kernel-fuzzing',
+    parser.add_argument('-KF', '--kernel-fuzzing',
                         action='store_true')
     parser.add_argument('-SA', '--static-analysis',
                         action='store_true',

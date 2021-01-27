@@ -38,6 +38,7 @@ CONFIG=$5
 BC_PATH=$6
 COMPILE=$7
 PROJECT_PATH="$(pwd)"
+export PATH=$PATH:/home/xzou017/.local/bin
 
 cd $CASE_PATH
 

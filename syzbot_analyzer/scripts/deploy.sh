@@ -99,7 +99,7 @@ CATALOG=$8
 IMAGE=$9
 ARCH=${10}
 COMPILER_VERSION=${11}
-KASAN_PATCH=${12}
+COMPILE_SYZKALLER=${12}
 MAX_COMPILING_KERNEL=${13}
 PROJECT_PATH="$(pwd)"
 PKG_NAME="syzbot_analyzer"
@@ -142,38 +142,36 @@ if [ ! -f "$CASE_PATH/compiler/compiler" ]; then
   ln -s $COMPILER ./compiler
 fi
 
-###DEBUG####
-touch $CASE_PATH/.stamp/BUILD_SYZKALLER
-###DEBUG####
-#Building for syzkaller
-echo "[+] Building syzkaller"
-if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then
-  if [ -d "$GOPATH/src/github.com/google/syzkaller" ]; then
-    rm -rf $GOPATH/src/github.com/google/syzkaller
-  fi
-  mkdir -p $GOPATH/src/github.com/google/ || echo "Dir exists"
-  cd $GOPATH/src/github.com/google/
-  git clone https://github.com/google/syzkaller.git
-  #go get -u -d github.com/google/syzkaller/prog
-  #fi
-  cd $GOPATH/src/github.com/google/syzkaller || exit 1
-  make clean
-  git stash --all || set_git_config
-  git checkout -f 9b1f3e665308ee2ddd5b3f35a078219b5c509cdb
-  #git checkout -
-  #retrieve_proper_patch
-  cp $PATCHES_PATH/syzkaller-9b1f3e6.patch ./syzkaller.patch
-  patch -p1 -i syzkaller.patch
-  #rm -r executor
-  #cp -r $PROJECT_PATH/tools/syzkaller/executor ./executor
-  make TARGETARCH=$ARCH TARGETVMARCH=amd64
-  if [ ! -d "workdir" ]; then
-    mkdir workdir
+if [ "$COMPILE_SYZKALLER" == "1" ]; then
+  #Building for syzkaller
+  echo "[+] Building syzkaller"
+  if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then
+    if [ -d "$GOPATH/src/github.com/google/syzkaller" ]; then
+      rm -rf $GOPATH/src/github.com/google/syzkaller
+    fi
+    mkdir -p $GOPATH/src/github.com/google/ || echo "Dir exists"
+    cd $GOPATH/src/github.com/google/
+    git clone https://github.com/google/syzkaller.git
+    #go get -u -d github.com/google/syzkaller/prog
+    #fi
+    cd $GOPATH/src/github.com/google/syzkaller || exit 1
+    make clean
+    git stash --all || set_git_config
+    git checkout -f 9b1f3e665308ee2ddd5b3f35a078219b5c509cdb
+    #git checkout -
+    #retrieve_proper_patch
+    cp $PATCHES_PATH/syzkaller-9b1f3e6.patch ./syzkaller.patch
+    patch -p1 -i syzkaller.patch
+    #rm -r executor
+    #cp -r $PROJECT_PATH/tools/syzkaller/executor ./executor
+    make TARGETARCH=$ARCH TARGETVMARCH=amd64
+    if [ ! -d "workdir" ]; then
+      mkdir workdir
+    fi
+    touch $CASE_PATH/.stamp/BUILD_SYZKALLER
   fi
   curl $TESTCASE > $GOPATH/src/github.com/google/syzkaller/workdir/testcase-$HASH
-  touch $CASE_PATH/.stamp/BUILD_SYZKALLER
 fi
-#curl $TESTCASE > $GOPATH/src/github.com/google/syzkaller/workdir/testcase-$HASH
 
 cd $CASE_PATH || exit 1
 echo "[+] Copy image"
@@ -210,10 +208,10 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
   #make clean CC=$COMPILER
   #git stash --all || set_git_config
   git checkout -f $COMMIT || (git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1 && git checkout -f $COMMIT)
-  if [ "$KASAN_PATCH" == "1" ]; then
-    cp $PATCHES_PATH/kasan.patch ./
-    patch -p1 -i kasan.patch
-  fi
+  #if [ "$KASAN_PATCH" == "1" ]; then
+  #  cp $PATCHES_PATH/kasan.patch ./
+  #  patch -p1 -i kasan.patch
+  #fi
   #Add a rejection detector in future
   curl $CONFIG > .config
 
