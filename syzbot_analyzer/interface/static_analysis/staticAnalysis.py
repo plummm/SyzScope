@@ -173,13 +173,15 @@ class StaticAnalysis:
         while not self.bc_ready or not self.cmd_queue.empty():
             try:
                 cmd = self.cmd_queue.get(block=True, timeout=5)
-                p = Popen(cmd, cwd=base, stdout=PIPE, stderr=PIPE)
+                obj = cmd[len(cmd)-2]
+                self.case_logger.info("CC {}".format(obj))
+                p = Popen(" ".join(cmd), shell=True, cwd=base, stdout=PIPE, stderr=PIPE)
+                #call(" ".join(cmd), shell=True, cwd=base)
                 try:
                     p.wait(timeout=5)
                 except TimeoutExpired:
                     if p.poll() == None:
                         p.kill()
-                obj = cmd[len(cmd)-2]
                 #print("CC {}".format(obj))
                 if p.poll() == None:
                     p.kill()

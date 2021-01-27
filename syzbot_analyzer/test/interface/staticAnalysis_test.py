@@ -8,7 +8,7 @@ from subprocess import PIPE, STDOUT, Popen
 from syzbot_analyzer.test.deploy_test import getMinimalDeployer, getCrawler
 
 def compile_bc_extra_test():
-    d = getMinimalDeployer("work/incomplete/b5d60ae")
+    d = getMinimalDeployer("work/incomplete/01e2ff6")
     sa = static_analysis.StaticAnalysis(logging, d.project_path, 1, d.current_case_path, "linux", d.max_compiling_kernel)
     sa.compile_bc_extra()
     """

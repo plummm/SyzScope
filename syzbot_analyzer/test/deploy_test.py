@@ -1,7 +1,7 @@
 from syzbot_analyzer.modules import deploy, syzbotCrawler, crash
 import os
 
-project_path = "/home/xzou017/projects/SyzbotAnalyzer"
+project_path = os.getcwd()
 
 def getMinimalDeployer(case_path):
     force = True
