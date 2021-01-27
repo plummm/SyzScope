@@ -651,7 +651,7 @@ class SymExec(MemInstrument):
         n = len(insns)
         if n == 0:
             return False
-        func_name = self.vm.get_func_name(state.addr)
+        func_name = self.vm.get_func_name(state.scratch.ins_addr)
         if callstack.next == None and insns[n-1].mnemonic == 'ret' and func_name == self.terminating_func:
             return True
         return False

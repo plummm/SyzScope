@@ -84,7 +84,8 @@ class Kernel:
         try:
             self.proj = angr.Project(vmlinux,
                                     load_options={"auto_load_libs": False})
-        except:
+        except Exception as e:
+            print(e)
             raise AngrRefuseToLoadKernel
         self.gdbhelper = GDBHelper(vmlinux, addr_bytes, proj_path, debug, log_suffix)
         # private

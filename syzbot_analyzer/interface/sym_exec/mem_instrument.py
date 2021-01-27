@@ -136,7 +136,7 @@ class MemInstrument(StateManager):
             "__sanitizer_cov_trace_const_cmp1", "__sanitizer_cov_trace_const_cmp2", "__sanitizer_cov_trace_const_cmp4", "__sanitizer_cov_trace_const_cmp8", 
             "__sanitizer_cov_trace_cmp1", "__sanitizer_cov_trace_cmp2", "__sanitizer_cov_trace_cmp4", "__sanitizer_cov_trace_cmp8",\
             "write_comp_data", ] 
-        noisy_func = ["__kasan_check_read", "__kasan_check_write","kasan_report_double_free", "kasan_check_read", "kasan_check_write", \
+        noisy_func = ["__kasan_check_read", "__kasan_check_write", "kasan_report_double_free", "kasan_report_invalid_free", "kasan_report_error", "kasan_check_read", "kasan_check_write", \
             "kasan_unpoison_shadow", "queue_delayed_work_on", "pvclock_read_wallclock","mutex_lock", "__mutex_lock", "mutex_unlock", "__mutex_unlock", \
             "record_times", "update_rq_clock", "sched_clock_idle_sleep_event", "print_tainted", "might_sleep", "__might_sleep", "debug_lockdep_rcu_enabled",\
             "__warn_printk", "srm_printk", "snd_printk", "dbgp_printk", "ql4_printk", "printk", "vprintk", "__dump_page", "irq_stack_union", \
@@ -293,7 +293,8 @@ class MemInstrument(StateManager):
                             #self.dump_stack(state)
                             #self.dump_trace(state)
                         self.purge_current_state()
-
+                        self.dump_state(state)
+                        self.dump_stack(state)
                         # In case that unconstrained symbolic variable pop up
                         self.make_symbolic(state, addr, size)
         return

@@ -94,6 +94,33 @@ class Workers(Case):
                 else:
                     n += 1
                     dest_path = "{}-{}".format(sym_folder, n)
+
+        static_analysis_result_paths = os.path.join(self.current_case_path, "paths")
+        if not os.path.isdir(static_analysis_result_paths):
+            path_files = [None]
+        else:
+            path_files = os.listdir(static_analysis_result_paths)
+            if path_files == []:
+                path_files = [None]
+
+        paths = []
+        terminating_func = ''
+        for each_file in path_files:
+            if each_file != None:
+                n_basic_block = utilities.regx_get(path_regx, each_file, 1)
+                if n_basic_block == None and each_file == 'TerminatingFunc':
+                    terminating_func_path = os.path.join(static_analysis_result_paths, each_file)
+                    with open(terminating_func_path, 'r') as f:
+                        func = f.readline()
+                        terminating_func = func.strip('\n')
+                        continue
+                if int(n_basic_block) < 40:
+                    continue
+                guided_path = os.path.join(static_analysis_result_paths, each_file)
+                p = self.retrieve_guided_paths(guided_path)
+                if p != []:
+                    paths.append(p)
+
         os.mkdir(sym_folder)
         is_propagating_global = False
         result = StateManager.NO_ADDITIONAL_USE
@@ -140,34 +167,10 @@ class Workers(Case):
             self.crash_checker.run_exp(case["syz_repro"], self.ssh_port, utilities.URL, ok, i386, 0, sym_logger)
             sym.setup_bug_capture(offset, size)
             try:
-                static_analysis_result_paths = os.path.join(self.current_case_path, "paths")
-                if not os.path.isdir(static_analysis_result_paths):
-                    path_files = [None]
-                else:
-                    path_files = os.listdir(static_analysis_result_paths)
-                    if path_files == []:
-                        path_files = [None]
-                if path_files != [None]:
+                if paths != [None]:
                     self.logger.info("Running under-constrained symbolic execution with guided paths")
                 else:
                     self.logger.info("Running under-constrained symbolic execution")
-
-                paths = []
-                terminating_func = ''
-                for each_file in path_files:
-                    if each_file != None:
-                        n_basic_block = utilities.regx_get(path_regx, each_file, 0)
-                        if n_basic_block == None and each_file == 'TerminatingFunc':
-                            terminating_func_path = os.path.join(static_analysis_result_paths, each_file)
-                            with open(terminating_func_path, 'r') as f:
-                                func = f.readline()
-                                terminating_func = func.strip('\n')
-                        if n_basic_block < 40:
-                            continue
-                        guided_path = os.path.join(static_analysis_result_paths, each_file)
-                        p = self.retrieve_guided_paths(guided_path)
-                        if p != []:
-                            paths.append(p)
                 """p = []
                 p.append({'cond': 0xffffffff83234a29, 'correct': 0xffffffff83234a2b, 'wrong': 0xffffffff832349a9})
                 p.append({'cond': 0xffffffff83234a2b, 'correct': 0xffffffff83234a5a, 'wrong': 0xffffffff832349a9})
