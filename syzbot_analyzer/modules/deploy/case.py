@@ -12,7 +12,7 @@ stamp_static_analysis = "FINISH_STATIC_ANALYSIS"
 max_qemu_for_one_case = 4
 
 class Case:
-    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=False, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1):
+    def __init__(self, index, parallel_max, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=False, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1):
         self.linux_folder = "linux"
         self.project_path = ""
         self.package_path = None
@@ -35,7 +35,10 @@ class Case:
         self.alert = alert
         self.static_analysis = static_analysis
         self.symbolic_execution = symbolic_execution
+        self.parallel_max = parallel_max
         self.max_compiling_kernel = max_compiling_kernel
+        if max_compiling_kernel == -1:
+            self.max_compiling_kernel = parallel_max
         self.max_qemu_for_one_case = max_qemu_for_one_case
         self.sa = None
         if replay == None:

@@ -153,7 +153,7 @@ def deploy_one_case(index, args, hash_val):
                 static_analysis=args.static_analysis, symbolic_execution=args.symbolic_execution, gdb_port=int(args.gdb), \
                 qemu_monitor_port=int(args.qemu_monitor), max_compiling_kernel=int(args.max_compiling_kernel_concurrently), \
                 timeout_dynamic_validation=args.timeout_dynamic_validation, timeout_static_analysis=args.timeout_static_analysis, \
-                timeout_symbolic_execution=args.timeout_symbolic_execution)
+                timeout_symbolic_execution=args.timeout_symbolic_execution, parallel_max=int(args.parallel_max))
     dp.deploy(hash_val, case)
     del dp
 

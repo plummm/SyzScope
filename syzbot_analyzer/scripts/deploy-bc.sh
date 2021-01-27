@@ -7,6 +7,19 @@ set -ex
 
 echo "running deploy-bc.sh"
 
+function wait_for_other_compiling() {
+  # sometime a process may strave to a long time, seems ok if every case has the same weight
+  n=`ps aux | grep "make -j" | wc -l`
+  echo "Wait for other compiling"
+  set +x
+  while [ $n -ge $(($MAX_COMPILING_KERNEL+1)) ]
+  do
+    sleep 10
+    n=`ps aux | grep "make -j" | wc -l`
+  done
+  set -x
+}
+
 function copy_log_then_exit() {
   LOG=$1
   cp $LOG $CASE_PATH/clang-$LOG
@@ -27,7 +40,7 @@ function config_enable() {
 }
 
 if [ $# -ne 7 ]; then
-  echo "Usage ./deploy-bc.sh linux_clone_path index case_path commit config bc_path compile"
+  echo "Usage ./deploy-bc.sh linux_clone_path index case_path commit config bc_path compile max_compiling_kernel"
   exit 1
 fi
 
@@ -37,6 +50,8 @@ COMMIT=$4
 CONFIG=$5
 BC_PATH=$6
 COMPILE=$7
+MAX_COMPILING_KERNEL=$8
+N_CORES=$((`nproc` / $MAX_COMPILING_KERNEL))
 PROJECT_PATH="$(pwd)"
 export PATH=$PATH:/home/xzou017/.local/bin
 
@@ -66,7 +81,8 @@ if [ "$COMPILE" != "1" ]; then
       exit 1
     fi
     COMPILER=$CASE_PATH/compiler/compiler
-    make -j8 CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
+    wait_for_other_compiling
+    make -j$N_CORES CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
     exit 0
   fi
 
@@ -95,7 +111,8 @@ export LLVM_COMPILER_PATH=$PROJECT_PATH/tools/llvm/build/bin/
 pip list | grep wllvm || pip install wllvm
 make olddefconfig CC=wllvm
 ERROR=0
-make -j8 CC=wllvm > make.log 2>&1 || ERROR=1 && copy_log_then_exit make.log
+wait_for_other_compiling
+make -j$N_CORES CC=wllvm > make.log 2>&1 || ERROR=1 && copy_log_then_exit make.log
 if [ $ERROR == "0" ]; then
   extract-bc vmlinux
   mv vmlinux.bc $CASE_PATH/one.bc

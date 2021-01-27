@@ -11,13 +11,13 @@ LATEST="9b1f3e6"
 
 function wait_for_other_compiling() {
   # sometime a process may strave to a long time, seems ok if every case has the same weight
-  n=`ps aux | grep "make -j16" | wc -l`
+  n=`ps aux | grep "make -j" | wc -l`
   echo "Wait for other compiling"
   set +x
   while [ $n -ge $(($MAX_COMPILING_KERNEL+1)) ]
   do
     sleep 10
-    n=`ps aux | grep "make -j16" | wc -l`
+    n=`ps aux | grep "make -j" | wc -l`
   done
   set -x
 }
@@ -107,6 +107,7 @@ CASE_PATH=$PROJECT_PATH/work/$CATALOG/$HASH
 PATCHES_PATH=$PROJECT_PATH/$PKG_NAME/patches
 echo "Compiler: "$COMPILER_VERSION | grep gcc && \
 COMPILER=$PROJECT_PATH/tools/$COMPILER_VERSION/bin/gcc || COMPILER=$PROJECT_PATH/tools/$COMPILER_VERSION/bin/clang
+N_CORES=$((`nproc` / $MAX_COMPILING_KERNEL))
 
 if [ ! -d "tools/$1-$INDEX" ]; then
   echo "No linux repositories detected"
@@ -168,9 +169,9 @@ if [ "$COMPILE_SYZKALLER" == "1" ]; then
     if [ ! -d "workdir" ]; then
       mkdir workdir
     fi
+    curl $TESTCASE > $GOPATH/src/github.com/google/syzkaller/workdir/testcase-$HASH
     touch $CASE_PATH/.stamp/BUILD_SYZKALLER
   fi
-  curl $TESTCASE > $GOPATH/src/github.com/google/syzkaller/workdir/testcase-$HASH
 fi
 
 cd $CASE_PATH || exit 1
@@ -268,10 +269,8 @@ CONFIG_X86_SMAP
   done
 
   make olddefconfig CC=$COMPILER
-  if [ $MAX_COMPILING_KERNEL != "-1" ]; then
-    wait_for_other_compiling
-  fi 
-  make -j8 CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
+  wait_for_other_compiling
+  make -j$N_CORES CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
   cp .config $CASE_PATH/config
   touch THIS_KERNEL_IS_BEING_USED
   touch $CASE_PATH/.stamp/BUILD_KERNEL

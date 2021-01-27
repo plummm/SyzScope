@@ -11,7 +11,7 @@ from subprocess import Popen, PIPE, STDOUT, TimeoutExpired, call
 from .error import CompilingError
 
 class StaticAnalysis:
-    def __init__(self, logger, proj_path, index, case_path, linux_folder, timeout=30*60):
+    def __init__(self, logger, proj_path, index, case_path, linux_folder, max_compiling_kernel, timeout=30*60):
         self.case_logger = logger
         self.proj_path = proj_path
         self.package_path = os.path.join(proj_path, "syzbot_analyzer")
@@ -21,6 +21,7 @@ class StaticAnalysis:
         self.cmd_queue = queue.Queue()
         self.bc_ready = False
         self.timeout = timeout
+        self.max_compiling_kernel = max_compiling_kernel
 
     def prepare_static_analysis(self, case, vul_site, func_site):
         exitcode = 0
@@ -50,7 +51,7 @@ class StaticAnalysis:
         self.case_logger.info("run: scripts/deploy-bc.sh")
         self.adjust_kernel_for_clang()
 
-        p = Popen([script_path, self.linux_folder, index, self.case_path, commit, config, bc_path, "1"],
+        p = Popen([script_path, self.linux_folder, index, self.case_path, commit, config, bc_path, "1", self.max_compiling_kernel],
                 stdout=PIPE,
                 stderr=STDOUT
                 )
@@ -71,7 +72,7 @@ class StaticAnalysis:
         
         # Restore CONFIG_KCOV CONFIG_KASAN CONFIG_BUG_ON_DATA_CORRUPTION
         # Kernel fuzzing and symbolic execution depends on some of them
-        p = Popen([script_path, self.linux_folder, index, self.case_path, commit, config, bc_path, "0"],
+        p = Popen([script_path, self.linux_folder, index, self.case_path, commit, config, bc_path, "0", self.max_compiling_kernel],
                 stdout=PIPE,
                 stderr=STDOUT
                 )

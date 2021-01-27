@@ -128,7 +128,6 @@ class SymExec(MemInstrument):
             self.logger.info("Vuln mem: {} to {}".format(hex(self.vul_mem_start), hex(self.vul_mem_end)))
             self.vm.back_to_kasan_ret()
             self._after_gdb_resume(300)
-            self.vm.read_backtrace(7)
             self._context_ready = True
         return self.symbolic_execute(path, dfs=dfs, raw_tracing=raw_tracing)
     

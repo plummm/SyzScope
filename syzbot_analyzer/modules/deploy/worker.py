@@ -23,8 +23,8 @@ TIMEOUT_DYNAMIC_VALIDATION=60*60
 TIMEOUT_STATIC_ANALYSIS=60*30
 
 class Workers(Case):
-    def __init__(self, index, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=True, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None):
-        Case.__init__(self, index, debug, force, port, replay, linux_index, time, kernel_fuzzing, alert, static_analysis, symbolic_execution, gdb_port, qemu_monitor_port, max_compiling_kernel)
+    def __init__(self, index, parallel_max, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=True, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None):
+        Case.__init__(self, index, parallel_max, debug, force, port, replay, linux_index, time, kernel_fuzzing, alert, static_analysis, symbolic_execution, gdb_port, qemu_monitor_port, max_compiling_kernel)
         if timeout_dynamic_validation == None:
             self.timeout_dynamic_validation=TIMEOUT_DYNAMIC_VALIDATION
         else:
@@ -59,7 +59,7 @@ class Workers(Case):
         offset = context['offset']
         size = context['size']
         workdir = context['workdir']
-        self.sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.index, self.current_case_path, self.linux_folder)
+        self.sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.index, self.current_case_path, self.linux_folder, self.max_compiling_kernel)
         #self.init_crash_checker(self.ssh_port, False)
         r = utilities.request_get(case['report'])
         #_, _, _, offset, size = self.sa.KasanVulnChecker(r.text)
@@ -253,7 +253,7 @@ class Workers(Case):
 
 
     def do_static_analysis(self, case):
-        self.sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.index, self.current_case_path, self.linux_folder, self.timeout_static_analysis)
+        self.sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.index, self.current_case_path, self.linux_folder, self.timeout_static_analysis, self.max_compiling_kernel)
         res = utilities.request_get(case['report'])
         offset = case['vul_offset']
         size = case['obj_size']
