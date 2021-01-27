@@ -36,6 +36,7 @@ class SymExec(MemInstrument):
         self.impacts_collector = {}
         self._branches = None
         self.target_site = None
+        self.terminating_func = None
         self.state_tracking = []
         if logger == None:
             self.logger = logging
@@ -104,7 +105,7 @@ class SymExec(MemInstrument):
         """
         return p
 
-    def run_sym(self, path=[], raw_tracing=False, timeout=60*10):
+    def run_sym(self, path=[], terminating_func='', raw_tracing=False, timeout=60*10):
         if timeout > self._timeout:
             self.logger.warning("Timeout of symbolic execution is longer than timeout of qemu")
         dfs = True
@@ -129,9 +130,9 @@ class SymExec(MemInstrument):
             self.vm.back_to_kasan_ret()
             self._after_gdb_resume(300)
             self._context_ready = True
-        return self.symbolic_execute(path, dfs=dfs, raw_tracing=raw_tracing)
+        return self.symbolic_execute(path, terminating_func, dfs=dfs, raw_tracing=raw_tracing)
     
-    def symbolic_execute(self, path, dfs=True, raw_tracing=False):
+    def symbolic_execute(self, path, terminating_func, dfs=True, raw_tracing=False):
         extras = {#angr.options.CONSERVATIVE_READ_STRATEGY,
                   #angr.options.CONSERVATIVE_WRITE_STRATEGY,
                   #angr.options.SYMBOL_FILL_UNCONSTRAINED_MEMORY,
@@ -147,10 +148,10 @@ class SymExec(MemInstrument):
         self._symbolize_vuln_mem(raw_tracing)
         if 'sym' not in self._init_state.globals or len(self._init_state.globals['sym']) == 0:
             return None
-        ret = self.explore(path, raw_tracing, dfs)
+        ret = self.explore(terminating_func, path, raw_tracing, dfs)
         return ret
 
-    def explore(self, path, raw_tracing, dfs):
+    def explore(self, terminating_func, path, raw_tracing, dfs):
         self.logger.info("Initial state explore at {}".format(hex(self._init_state.addr)))
         self.hook_noisy_func(self.extra_noisy_func)
 
@@ -162,6 +163,7 @@ class SymExec(MemInstrument):
         #self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff826c98fd)
         #self._init_state.inspect.b('constraints', when=angr.BP_BEFORE, action=self.track_contraint)
 
+        self.terminating_func = terminating_func
         start_time = time.time()
         if path != []:
             # DFS
@@ -524,7 +526,7 @@ class SymExec(MemInstrument):
             self.logger.error(e)
             self.kill_current_state = False
             raise ExecutionError"""
-        if self.dfs and self.is_fallen_state():
+        if self._is_fallen_state(state):
             self.logger.warning("kill a fallen state")
             succ.flat_successors = []
             succ.all_successors = []
@@ -637,6 +639,22 @@ class SymExec(MemInstrument):
             return False
         last_inst = insns[length - 1]
         return last_inst.mnemonic[0] == 'j' and last_inst.mnemonic != 'jmp'
+    
+    def _is_fallen_state(self, state):
+        #self.update_states_globals(0, 0, StateManager.G_BB)
+        #n = self.get_states_globals(0, StateManager.G_BB)
+        callstack = state.callstack
+        try:
+            insns = self.proj.factory.block(state.scratch.ins_addr).capstone.insns
+        except:
+            return False
+        n = len(insns)
+        if n == 0:
+            return False
+        func_name = self.vm.get_func_name(state.addr)
+        if callstack.next == None and insns[n-1].mnemonic == 'ret' and func_name == self.terminating_func:
+            return True
+        return False
     
     def _after_gdb_resume(self, timeout):
         self.vm.gdb.waitfor("Continuing")

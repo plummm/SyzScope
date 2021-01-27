@@ -51,6 +51,7 @@ class Workers(Case):
         return ret
 
     def _do_symbolic_execution(self, case, context, i386, max_round=3, raw_tracing=False, timeout=None):
+        path_regx = r'path2(MemWrite|FuncPtrDef)-(\d+)-\d+'
         self.logger.info("initial environ of symbolic execution")
         if timeout != None:
             self.timeout_symbolic_execution = timeout
@@ -59,7 +60,7 @@ class Workers(Case):
         offset = context['offset']
         size = context['size']
         workdir = context['workdir']
-        self.sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.index, self.current_case_path, self.linux_folder, self.max_compiling_kernel)
+        self.sa = static_analysis.StaticAnalysis(logger=self.case_logger, proj_path=self.project_path, index=self.index, case_path=self.current_case_path, linux_folder=self.linux_folder, max_compiling_kernel=self.max_compiling_kernel)
         #self.init_crash_checker(self.ssh_port, False)
         r = utilities.request_get(case['report'])
         #_, _, _, offset, size = self.sa.KasanVulnChecker(r.text)
@@ -152,8 +153,17 @@ class Workers(Case):
                     self.logger.info("Running under-constrained symbolic execution")
 
                 paths = []
+                terminating_func = ''
                 for each_file in path_files:
                     if each_file != None:
+                        n_basic_block = utilities.regx_get(path_regx, each_file, 0)
+                        if n_basic_block == None and each_file == 'TerminatingFunc':
+                            terminating_func_path = os.path.join(static_analysis_result_paths, each_file)
+                            with open(terminating_func_path, 'r') as f:
+                                func = f.readline()
+                                terminating_func = func.strip('\n')
+                        if n_basic_block < 40:
+                            continue
                         guided_path = os.path.join(static_analysis_result_paths, each_file)
                         p = self.retrieve_guided_paths(guided_path)
                         if p != []:
@@ -165,7 +175,7 @@ class Workers(Case):
                 p.append({'cond': 0xffffffff83e5fe76, 'correct': 0xffffffff83e5fe8b, 'wrong': 0xffffffff83e7ba0e})
                 p.append({'cond': 0xffffffff83e5fea3, 'correct': 0xffffffff83e5feb5, 'wrong': 0xffffffff83e5fec0})
                 paths = [p]"""
-                ret = sym.run_sym(path=paths, raw_tracing=raw_tracing, timeout=self.timeout_symbolic_execution)
+                ret = sym.run_sym(path=paths, terminating_func=terminating_func, raw_tracing=raw_tracing, timeout=self.timeout_symbolic_execution)
                 if ret == None:
                     self.logger.warning("Can not locate the vulnerable memory")
                     sym.cleanup()
@@ -253,7 +263,7 @@ class Workers(Case):
 
 
     def do_static_analysis(self, case):
-        self.sa = static_analysis.StaticAnalysis(self.case_logger, self.project_path, self.index, self.current_case_path, self.linux_folder, self.timeout_static_analysis, self.max_compiling_kernel)
+        self.sa = static_analysis.StaticAnalysis(logger=self.case_logger, proj_path=self.project_path, index=self.index, case_path=self.current_case_path, linux_folder=self.linux_folder, max_compiling_kernel=self.max_compiling_kernel, timeout=self.timeout_static_analysis)
         res = utilities.request_get(case['report'])
         offset = case['vul_offset']
         size = case['obj_size']

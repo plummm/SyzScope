@@ -237,21 +237,6 @@ class StateManager:
             ret.extend(self.iterate_constraints(each_arg))
         return ret
     
-    def is_fallen_state(self, state):
-        #self.update_states_globals(0, 0, StateManager.G_BB)
-        #n = self.get_states_globals(0, StateManager.G_BB)
-        callstack = state.callstack
-        try:
-            insns = self.proj.factory.block(state.scratch.ins_addr).capstone.insns
-        except:
-            return False
-        n = len(insns)
-        if n == 0:
-            return False
-        if callstack.next == None and insns[n-1].mnemonic == 'ret':
-            return True
-        return n > StateManager.MAX_BB_WITHOUT_SYM
-    
     def reset_state_bb(self):
         self._current_state.globals['bb'] = 0
 

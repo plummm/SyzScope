@@ -136,9 +136,9 @@ if [ ! -f "$TOOLS_PATH/.stamp/SETUP_GOLANG" ]; then
   wget https://dl.google.com/go/go1.14.2.linux-amd64.tar.gz
   tar -xf go1.14.2.linux-amd64.tar.gz
   mv go goroot
+  GOPATH=`pwd`/gopath
   if [ ! -d "gopath" ]; then
     mkdir gopath
-    GOPATH=`pwd`/gopath
   fi
   rm go1.14.2.linux-amd64.tar.gz
 

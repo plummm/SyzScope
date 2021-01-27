@@ -39,7 +39,7 @@ function config_enable() {
   sed -i "s/# $key is not set/$key=y/g" .config
 }
 
-if [ $# -ne 7 ]; then
+if [ $# -ne 8 ]; then
   echo "Usage ./deploy-bc.sh linux_clone_path index case_path commit config bc_path compile max_compiling_kernel"
   exit 1
 fi

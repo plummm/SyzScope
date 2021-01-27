@@ -51,7 +51,7 @@ class StaticAnalysis:
         self.case_logger.info("run: scripts/deploy-bc.sh")
         self.adjust_kernel_for_clang()
 
-        p = Popen([script_path, self.linux_folder, index, self.case_path, commit, config, bc_path, "1", self.max_compiling_kernel],
+        p = Popen([script_path, self.linux_folder, index, self.case_path, commit, config, bc_path, "1", str(self.max_compiling_kernel)],
                 stdout=PIPE,
                 stderr=STDOUT
                 )
@@ -72,7 +72,7 @@ class StaticAnalysis:
         
         # Restore CONFIG_KCOV CONFIG_KASAN CONFIG_BUG_ON_DATA_CORRUPTION
         # Kernel fuzzing and symbolic execution depends on some of them
-        p = Popen([script_path, self.linux_folder, index, self.case_path, commit, config, bc_path, "0", self.max_compiling_kernel],
+        p = Popen([script_path, self.linux_folder, index, self.case_path, commit, config, bc_path, "0", str(self.max_compiling_kernel)],
                 stdout=PIPE,
                 stderr=STDOUT
                 )
