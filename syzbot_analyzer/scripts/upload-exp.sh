@@ -68,7 +68,7 @@ if [ "$FIXED" == "0" ]; then
     if [ ! -d "$GOPATH/src/github.com/google/syzkaller" ]; then
         mkdir -p $GOPATH/src/github.com/google/ || echo "Dir exists"
         cd $GOPATH/src/github.com/google/
-        cp -r `$PROJECT_PATH`/tools/gopath/src/github.com/google/syzkaller ./
+        cp -r $PROJECT_PATH/tools/gopath/src/github.com/google/syzkaller ./
         #go get -u -d github.com/google/syzkaller/prog
         cd $GOPATH/src/github.com/google/syzkaller || exit 1
 

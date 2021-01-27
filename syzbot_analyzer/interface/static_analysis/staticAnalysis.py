@@ -1,3 +1,4 @@
+from multiprocessing import managers
 import os, stat
 from socket import timeout
 import logging
@@ -6,6 +7,7 @@ import syzbot_analyzer.interface.utilities as utilities
 import threading
 import time
 import queue
+import multiprocessing
 
 from subprocess import Popen, PIPE, STDOUT, TimeoutExpired, call
 from .error import CompilingError
@@ -18,7 +20,8 @@ class StaticAnalysis:
         self.case_path = case_path
         self.index = index
         self.linux_folder = linux_folder
-        self.cmd_queue = queue.Queue()
+        manager = multiprocessing.Manager()
+        self.cmd_queue = manager.Queue()
         self.bc_ready = False
         self.timeout = timeout
         self.max_compiling_kernel = max_compiling_kernel
@@ -103,10 +106,10 @@ class StaticAnalysis:
         path = os.path.join(base, 'clang_log')
 
         procs = []
-        #for _ in range(0, 16):
-        #    x = threading.Thread(target=self.executor, args={base,})
-        #    x.start()
-        #    procs.append(x)
+        for _ in range(0, 16):
+            x = multiprocessing.Process(target=self.executor, args={base,})
+            x.start()
+            procs.append(x)
         with open(path, 'r') as f:
             lines = f.readlines()
             for line in lines:
@@ -117,7 +120,7 @@ class StaticAnalysis:
                     for e in cmds:
                         call(e, cwd=base)"""
                     continue
-                if 'arch/x86/' in p2obj:
+                if 'arch/x86/' in p2obj and 'cpu' in p2obj:
                     continue
                 #print("CC {}".format(p2obj))
                 new_cmd = []
@@ -140,20 +143,21 @@ class StaticAnalysis:
                 st = new_cmd[idx_obj]
                 if st[len(st)-1] == 'o':
                     new_cmd[idx_obj] = st[:len(st)-1] + 'bc'
-                    if os.path.exists(os.path.join(base, p2obj)):
-                        continue
                 else:
                     self.case_logger.error("{} is not end with .o".format(new_cmd[idx_obj]))
                     continue
-                #self.cmd_queue.put(new_cmd)
-                p = Popen(new_cmd, cwd=base, stdout=PIPE, stderr=PIPE)
-                p.wait(timeout=5)
-                if p.poll() == None:
-                    p.kill()
-            
-            #self.bc_ready=True
-            #for p in procs:
-            #    p.join()
+                self.cmd_queue.put(new_cmd)
+                """p = Popen(new_cmd, cwd=base, stdout=PIPE, stderr=PIPE)
+                try:
+                    p.wait(timeout=5)
+                except TimeoutExpired:
+                    if p.poll() == None:
+                        p.kill()
+                """
+
+            self.bc_ready=True
+            for p in procs:
+                p.join()
             if os.path.exists(os.path.join(self.case_path,'one.bc')):
                 os.remove(os.path.join(self.case_path,'one.bc'))
             link_cmd = '{}/tools/llvm/build/bin/llvm-link --only-needed -o one.bc `find ./ -name "*.bc" ! -name "timeconst.bc"` && mv one.bc {}'.format(self.proj_path, self.case_path)
@@ -170,8 +174,13 @@ class StaticAnalysis:
             try:
                 cmd = self.cmd_queue.get(block=True, timeout=5)
                 p = Popen(cmd, cwd=base, stdout=PIPE, stderr=PIPE)
-                p.wait(timeout=5)
-                print("CC {}".format(cmd))
+                try:
+                    p.wait(timeout=5)
+                except TimeoutExpired:
+                    if p.poll() == None:
+                        p.kill()
+                obj = cmd[len(cmd)-2]
+                print("CC {}".format(obj))
                 if p.poll() == None:
                     p.kill()
             except queue.Empty:

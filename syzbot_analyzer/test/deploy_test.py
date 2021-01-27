@@ -5,7 +5,7 @@ project_path = "/home/xzou017/projects/SyzbotAnalyzer"
 
 def getMinimalDeployer(case_path):
     force = True
-    d = deploy.Deployer(0, debug=True)
+    d = deploy.Deployer(0, 1, debug=True)
     d.project_path = project_path
     d.current_case_path = os.path.join(project_path, case_path)
     d.image_path = os.path.join(d.current_case_path, "img")

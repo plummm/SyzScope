@@ -393,7 +393,7 @@ class CrashChecker:
                                     break
                             record_flag = 1
                             continue
-                        if utilities.regx_match(kasan_mem_regx, line) or \
+                        if (utilities.regx_match(kasan_mem_regx, line) and 'null-ptr-deref' not in line) or \
                         utilities.regx_match(kasan_double_free_regx, line):
                             kasan_flag = 1
                         if utilities.regx_match(write_regx, line):
