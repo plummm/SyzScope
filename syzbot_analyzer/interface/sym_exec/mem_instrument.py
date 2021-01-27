@@ -141,8 +141,9 @@ class MemInstrument(StateManager):
             "record_times", "update_rq_clock", "sched_clock_idle_sleep_event", "print_tainted", "might_sleep", "__might_sleep", "debug_lockdep_rcu_enabled",\
             "__warn_printk", "srm_printk", "snd_printk", "dbgp_printk", "ql4_printk", "printk", "vprintk", "__dump_page", "irq_stack_union", \
             "queued_spin_lock_slowpath", "__pv_queued_spin_lock_slowpath", "queued_read_lock_slowpath", "queued_write_lock_slowpath", \
-            "lock_acquire", "lock_release", "dump_stack", "__pv_queued_spin_unlock_slowpath", "schedule", "save_stack", "check_memory_region",\
-            "set_next_entity", "__schedule"]
+            "preempt_schedule_common", "schedule_idle", "schedule", "preempt_schedule_irq", "preempt_schedule_notrace", \
+            "lock_acquire", "lock_release", "dump_stack", "__pv_queued_spin_unlock_slowpath", "save_stack", "check_memory_region",\
+            "set_next_entity", "__schedule", "native_write_msr"]
         noisy_func.extend(kcov_funcs)
         
         if type(extra) == list:

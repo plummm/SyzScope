@@ -271,6 +271,7 @@ CONFIG_X86_SMAP
   make olddefconfig CC=$COMPILER
   wait_for_other_compiling
   make -j$N_CORES CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
+  rm $CASE_PATH/config || echo "It's ok"
   cp .config $CASE_PATH/config
   touch THIS_KERNEL_IS_BEING_USED
   touch $CASE_PATH/.stamp/BUILD_KERNEL

@@ -116,10 +116,11 @@ class Workers(Case):
                         continue
                 if int(n_basic_block) < 40:
                     continue
+                self.logger.info(" has long paths")
                 guided_path = os.path.join(static_analysis_result_paths, each_file)
                 p = self.retrieve_guided_paths(guided_path)
-                if p != []:
-                    paths.append(p)
+                #if p != []:
+                    #paths.append(p)
 
         os.mkdir(sym_folder)
         is_propagating_global = False
@@ -143,7 +144,7 @@ class Workers(Case):
                 del sym
                 continue
             if p == None:
-                self.logger.error("Fail to lauch qemu")
+                self.logger.error("Fail to launch qemu")
                 sym.cleanup()
                 del sym
                 continue
@@ -388,11 +389,11 @@ class Workers(Case):
             compiler=self.compiler)
     
     def write_to_confirm(self, hash_val, new_impact_type):
-        if new_impact_type == utilities.AbMemRead:
+        if new_impact_type & utilities.AbMemRead:
             self.__write_to_ConfirmedAbnormallyMemRead(hash_val)
-        if new_impact_type == utilities.AbMemWrite:
+        if new_impact_type & utilities.AbMemWrite:
             self.__write_to_ConfirmedAbnormallyMemWrite(hash_val)
-        if new_impact_type == utilities.InvFree:
+        if new_impact_type & utilities.InvFree:
             self.__write_to_ConfirmedDoubleFree(hash_val)
 
     def reproduced_ori_poc(self, hash_val, folder):

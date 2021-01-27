@@ -120,7 +120,7 @@ class StaticAnalysis:
                     for e in cmds:
                         call(e, cwd=base)"""
                     continue
-                if 'arch/x86/' in p2obj and 'cpu' in p2obj:
+                if 'arch/x86/' in p2obj or 'cpu' in p2obj:
                     continue
                 #print("CC {}".format(p2obj))
                 new_cmd = []
@@ -180,7 +180,7 @@ class StaticAnalysis:
                     if p.poll() == None:
                         p.kill()
                 obj = cmd[len(cmd)-2]
-                print("CC {}".format(obj))
+                #print("CC {}".format(obj))
                 if p.poll() == None:
                     p.kill()
             except queue.Empty:

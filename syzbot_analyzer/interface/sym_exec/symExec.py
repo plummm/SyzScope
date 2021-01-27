@@ -516,16 +516,16 @@ class SymExec(MemInstrument):
     def _my_successor_func(self, state):
         self.setup_current_state(state)
         self.skip_unexpected_opcode(state.addr)
-        #try:
-        succ = state.step()
-        """except Exception as e:
+        try:
+            succ = state.step()
+        except Exception as e:
             self.logger.error("Execution error at {}".format(hex(state.scratch.ins_addr)))
             code = self.vm.inspect_code(state.scratch.ins_addr, 1)
             if code != None:
                 self.logger.info(code)
             self.logger.error(e)
             self.kill_current_state = False
-            raise ExecutionError"""
+            raise ExecutionError
         if self._is_fallen_state(state):
             self.logger.warning("kill a fallen state")
             succ.flat_successors = []

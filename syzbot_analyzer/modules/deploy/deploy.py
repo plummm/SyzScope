@@ -120,6 +120,8 @@ class Deployer(Workers):
                     self.do_static_analysis(case)
                 except CompilingError:
                     self.logger.error("Encounter an error when doing static analysis")
+                    self.__move_to_error()
+                    return
 
         ### DEBUG SYMEXEC ###
         if self.symbolic_execution:

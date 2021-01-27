@@ -108,8 +108,7 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_CMAKE" ]; then
   cd cmake
   ./bootstrap
   make -j16
-  make install
-  CMAKE=`pwd`/bin/cmake
+  sudo make install
 
   touch $TOOLS_PATH/.stamp/BUILD_CMAKE
   cd ..
@@ -121,10 +120,11 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_LLVM" ]; then
   tar xf llvm-project-10.0.1.tar.xz
   mv llvm-project-10.0.1 llvm
   rm llvm-project-10.0.1.tar.xz
+  CMAKE=`pwd`/cmake/bin/cmake
   cd llvm
   mkdir build
   cd build
-  cmake -G "Unix Makefiles" -DLLVM_ENABLE_PROJECTS="clang;lld" -DCMAKE_BUILD_TYPE=Release -LLVM_ENABLE_DUMP ../llvm
+  $CMAKE -G "Unix Makefiles" -DLLVM_ENABLE_PROJECTS="clang;lld" -DCMAKE_BUILD_TYPE=Release -LLVM_ENABLE_DUMP ../llvm
   make -j16
 
   touch $TOOLS_PATH/.stamp/BUILD_LLVM

@@ -75,7 +75,7 @@ if [ "$COMPILE" != "1" ]; then
   if [ -f "$CASE_PATH/config" ]; then
     git stash
     rm .config
-    mv $CASE_PATH/config .config
+    cp $CASE_PATH/config .config
     if [ ! -f "$CASE_PATH/compiler/compiler" ]; then
       echo "No compiler found in $CASE_PATH"
       exit 1
