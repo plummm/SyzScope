@@ -131,6 +131,23 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_LLVM" ]; then
   cd ..
 fi
 
+echo "[+] Setup golang environment"
+if [ ! -f "$TOOLS_PATH/.stamp/SETUP_GOLANG" ]; then
+  wget https://dl.google.com/go/go1.14.2.linux-amd64.tar.gz
+  tar -xf go1.14.2.linux-amd64.tar.gz
+  mv go goroot
+  if [ ! -d "gopath" ]; then
+    mkdir gopath
+    GOPATH=`pwd`/gopath
+  fi
+  rm go1.14.2.linux-amd64.tar.gz
+
+  mkdir -p $GOPATH/src/github.com/google/ || echo "Dir exists"
+  cd $GOPATH/src/github.com/google/
+  git clone https://github.com/google/syzkaller.git
+  touch $TOOLS_PATH/.stamp/SETUP_GOLANG
+fi
+
 touch $TOOLS_PATH/.stamp/ENV_SETUP
 
 #BUG: If multiple instances are running, may clean up others' flag

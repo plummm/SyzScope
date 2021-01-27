@@ -125,7 +125,7 @@ cd ..
 
 # Check for golang environment
 export GOPATH=$CASE_PATH/gopath
-export GOROOT=`pwd`/goroot
+export GOROOT=$PROJECT_PATH/tools/goroot
 export PATH=$GOROOT/bin:$PATH
 echo "[+] Downloading golang"
 go version || build_golang
@@ -152,7 +152,7 @@ if [ "$COMPILE_SYZKALLER" == "1" ]; then
     fi
     mkdir -p $GOPATH/src/github.com/google/ || echo "Dir exists"
     cd $GOPATH/src/github.com/google/
-    git clone https://github.com/google/syzkaller.git
+    cp -r $PROJECT_PATH/tools/gopath/src/github.com/google/syzkaller ./
     #go get -u -d github.com/google/syzkaller/prog
     #fi
     cd $GOPATH/src/github.com/google/syzkaller || exit 1
