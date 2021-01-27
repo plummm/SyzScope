@@ -293,8 +293,11 @@ class Workers(Case):
     def do_reproducing_ori_poc(self, case, hash_val, i386):
         self.logger.info("Try to triger the OOB/UAF by running original poc")
         self.case_info_logger.info("compiler: "+self.compiler)
+        hunted_type_without_mutating = False
+        title = None
         report, trigger = self.crash_checker.read_crash(case["syz_repro"], case["syzkaller"], None, 0, case["c_repro"], i386)
-        hunted_type_without_mutating, title = self.KasanChecker(report, hash_val)
+        if trigger:
+            hunted_type_without_mutating, title = self.KasanChecker(report, hash_val)
         self.create_reproduced_ori_poc_stamp()
         return hunted_type_without_mutating, title
     

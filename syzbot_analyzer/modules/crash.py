@@ -243,16 +243,16 @@ class CrashChecker:
                     trigger = high_risk
                     res = crashes
                     self.kill_qemu = True
+                    if utilities.regx_match(r'https:\/\/syzkaller\.appspot\.com\/', syz_repro):
+                        self.save_crash_log(res, "ori")
+                    else:
+                        self.save_crash_log(res, syz_commit[:7])
                 if res == []:
                     res = crashes
         if len(res) == 1 and isinstance(res[0], str):
             self.case_logger.error(res[0])
             self.logger.error(res[0])
             return [], trigger
-        if utilities.regx_match(r'https:\/\/syzkaller\.appspot\.com\/', syz_repro):
-            self.save_crash_log(res, "ori")
-        else:
-            self.save_crash_log(res, syz_commit[:7])
         return res, trigger
     
     def read_existed_crash(self, crash_path):
