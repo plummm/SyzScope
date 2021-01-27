@@ -173,6 +173,7 @@ def prepare_cases(index, args):
             gc.collect()
             remove_using_flag(index)
         except Empty:
+            lock.release()
             break
     print("Thread {} exit->".format(index))
 

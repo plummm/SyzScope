@@ -160,7 +160,7 @@ class StaticAnalysis:
                 p.join()
             if os.path.exists(os.path.join(self.case_path,'one.bc')):
                 os.remove(os.path.join(self.case_path,'one.bc'))
-            link_cmd = '{}/tools/llvm/build/bin/llvm-link --only-needed -o one.bc `find ./ -name "*.bc" ! -name "timeconst.bc"` && mv one.bc {}'.format(self.proj_path, self.case_path)
+            link_cmd = '{}/tools/llvm/build/bin/llvm-link -o one.bc `find ./ -name "*.bc" ! -name "timeconst.bc"` && mv one.bc {}'.format(self.proj_path, self.case_path)
             p = Popen(['/bin/bash','-c', link_cmd], stdout=PIPE, stderr=PIPE, cwd=base)
             with p.stdout:
                 self.__log_subprocess_output(p.stdout, logging.INFO)
@@ -174,7 +174,7 @@ class StaticAnalysis:
             try:
                 cmd = self.cmd_queue.get(block=True, timeout=5)
                 obj = cmd[len(cmd)-2]
-                self.case_logger.info("CC {}".format(obj))
+                #self.case_logger.info("CC {}".format(obj))
                 p = Popen(" ".join(cmd), shell=True, cwd=base, stdout=PIPE, stderr=PIPE)
                 #call(" ".join(cmd), shell=True, cwd=base)
                 try:
