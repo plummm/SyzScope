@@ -114,23 +114,27 @@ class Deployer(Workers):
             else:
                 self.logger.info("{} has finished".format(hash_val[:7]))
 
-        if self.static_analysis:
-            if not self.finished_static_analysis(hash_val, 'incomplete'):
-                try:
-                    self.do_static_analysis(case)
-                except CompilingError:
-                    self.logger.error("Encounter an error when doing static analysis")
-                    self.__move_to_error()
-                    return
+        valid_contexts = self.valid_offset_and_size(case)
+        for context in valid_contexts:
+            if self.static_analysis:
+                if not self.finished_static_analysis(hash_val, 'incomplete'):
+                    try:
+                        self.do_static_analysis(case, context)
+                    except CompilingError:
+                        self.logger.error("Encounter an error when doing static analysis")
+                        self.__move_to_error()
+                        return
 
-        ### DEBUG SYMEXEC ###
-        if self.symbolic_execution:
-            if not self.finished_symbolic_execution(hash_val, 'incomplete'):
-                r = self.do_symbolic_execution(case, i386)
-                if r == 1:
-                    self.__move_to_completed()
-                    return
-                self.__move_to_succeed(0)
+            ### DEBUG SYMEXEC ###
+            if self.symbolic_execution:
+                if not self.finished_symbolic_execution(hash_val, 'incomplete'):
+                    r = self.do_symbolic_execution(case, context, i386)
+                    if r == 1:
+                        self.__move_to_completed()
+                        return
+                    self.__move_to_succeed(0)
+        self.create_finished_static_analysis_stamp()
+        self.create_finished_symbolic_execution_stamp()
         ### DEBUG SYMEXEC ###
         return self.index
 

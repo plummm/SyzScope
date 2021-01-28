@@ -42,15 +42,7 @@ class Workers(Case):
             else:
                 self.timeout_symbolic_execution = 365*24*60*60
 
-    def do_symbolic_execution(self, case, i386, max_round=3, raw_tracing=False, timeout=None):
-        ret = 1
-        valid_contexts = self.valid_offset_and_size(case)
-        for context in valid_contexts:
-            if not self._do_symbolic_execution(case, context, i386, max_round, raw_tracing, timeout):
-                ret = 0
-        return ret
-
-    def _do_symbolic_execution(self, case, context, i386, max_round=3, raw_tracing=False, timeout=None):
+    def do_symbolic_execution(self, case, context, i386, max_round=3, raw_tracing=False, timeout=None):
         path_regx = r'path2(MemWrite|FuncPtrDef)-(\d+)-\d+'
         self.logger.info("initial environ of symbolic execution")
         if timeout != None:
@@ -59,11 +51,9 @@ class Workers(Case):
             self.timeout_symbolic_execution = self.timeout_dynamic_validation - self.timeout_static_analysis
         offset = context['offset']
         size = context['size']
-        workdir = context['workdir']
+        workdir = 'sym-' + context['workdir']
+        static_workdir = 'static-' + context['workdir']
         self.sa = static_analysis.StaticAnalysis(logger=self.case_logger, proj_path=self.project_path, index=self.index, case_path=self.current_case_path, linux_folder=self.linux_folder, max_compiling_kernel=self.max_compiling_kernel)
-        #self.init_crash_checker(self.ssh_port, False)
-        r = utilities.request_get(case['report'])
-        #_, _, _, offset, size = self.sa.KasanVulnChecker(r.text)
 
         linux_path = os.path.join(self.current_case_path, self.linux_folder)
         """target = os.path.join(self.package_path, "scripts/deploy_linux.sh")
@@ -95,7 +85,7 @@ class Workers(Case):
                     n += 1
                     dest_path = "{}-{}".format(sym_folder, n)
 
-        static_analysis_result_paths = os.path.join(self.current_case_path, "paths")
+        static_analysis_result_paths = self.current_case_path + "/static_workdir/paths"
         if not os.path.isdir(static_analysis_result_paths):
             path_files = [None]
         else:
@@ -236,7 +226,6 @@ class Workers(Case):
         else:
             self.logger.warning("Can not trigger vulnerability. Abaondoned")"""
         
-        self.create_finished_symbolic_execution_stamp()
         return result == StateManager.NO_ADDITIONAL_USE
     
     def retrieve_guided_paths(self, guided_path):
@@ -269,25 +258,46 @@ class Workers(Case):
         return paths
 
 
-    def do_static_analysis(self, case):
-        self.sa = static_analysis.StaticAnalysis(logger=self.case_logger, proj_path=self.project_path, index=self.index, case_path=self.current_case_path, linux_folder=self.linux_folder, max_compiling_kernel=self.max_compiling_kernel, timeout=self.timeout_static_analysis)
-        res = utilities.request_get(case['report'])
-        offset = case['vul_offset']
-        size = case['obj_size']
+    def do_static_analysis(self, case, context):
+        if context['type'] == utilities.URL:
+            raw = utilities.request_get(context['report'])
+            report = raw.text
+        else:
+            f = open(context['report'], 'r')
+            raw = f.readlines()
+            report = "".join(raw)
+        offset = context['offset']
+        size = context['size']
+        workdir = 'static-' + context['workdir']
         if offset == None:
             self.logger.info("No valid offset of vulnerable object for static analysis")
             return
-        vul_site, func_site, func = self.sa.KasanVulnChecker(res.text)
+        self.sa = static_analysis.StaticAnalysis(logger=self.case_logger, proj_path=self.project_path, index=self.index, workdir=workdir, case_path=self.current_case_path, linux_folder=self.linux_folder, max_compiling_kernel=self.max_compiling_kernel, timeout=self.timeout_static_analysis)
+        vul_site, func_site, func = self.sa.KasanVulnChecker(report)
         if vul_site == None or func_site == None or func == None:
             self.logger.error("No valid Calltrace for static analysis")
             return
+        
+        static_folder = os.path.join(self.current_case_path, workdir)
+        if os.path.isdir(static_folder):
+            n=1
+            dest_path = "{}-{}".format(static_folder, n)
+            while(1):
+                if not os.path.isdir(dest_path):
+                    shutil.move(static_folder, dest_path)
+                    self.logger.info("Found {}, copy them to {}".format(static_folder, dest_path))
+                    break
+                else:
+                    n += 1
+                    dest_path = "{}-{}".format(static_folder, n)
+        os.mkdir(static_folder)
         
         self.logger.info("prepare for static analysis")
         r = self.sa.prepare_static_analysis(case, vul_site, func_site)
         if r != 0:
             raise CompilingError
         # Before save the Calltrace, we need to checkout to a right commit
-        report_list = res.text.split('\n')
+        report_list = report.split('\n')
         trace = utilities.extrace_call_trace(report_list)
         self.sa.saveCallTrace2File(trace, vul_site)
         r, time_on_static_analysis = self.sa.run_static_analysis(vul_site, func_site, func, offset, size)
@@ -295,7 +305,6 @@ class Workers(Case):
             self.logger.error("Error occur when getting pointer in IR")
         if self.timeout_symbolic_execution == None:
             self.timeout_symbolic_execution = self.timeout_dynamic_validation - time_on_static_analysis
-        self.create_finished_static_analysis_stamp()
     
     def do_reproducing_ori_poc(self, case, hash_val, i386):
         self.logger.info("Try to triger the OOB/UAF by running original poc")
@@ -354,7 +363,7 @@ class Workers(Case):
         offset = case["vul_offset"]
         size = case["obj_size"]
         if offset != None and size != None:
-            ret.append({'workdir': 'sym-ori', 'offset': offset, 'size': size, 'repro': case["syz_repro"], 'type': utilities.URL, 'c_repro': case["syz_repro"]})
+            ret.append({'workdir': 'ori', 'offset': offset, 'size': size, 'repro': case["syz_repro"], 'log': case['report'], 'type': utilities.URL, 'c_repro': case["syz_repro"]})
         if self.store_read:
             output = os.path.join(self.current_case_path, "output")
             if os.path.exists(output):
@@ -376,7 +385,7 @@ class Workers(Case):
                         offset, size = utilities.extract_vul_obj_offset_and_size(texts)
                         prog = os.path.join(case_base, "repro.prog")
                         if offset != None and size != None and os.path.exists(prog):
-                            ret.append({'workdir': 'sym-{}'.format(each_case[:7]), 'offset': offset, 'size': size, 'repro': prog, 'type': utilities.CASE, 'c_repro': None})
+                            ret.append({'workdir': each_case[:7], 'offset': offset, 'size': size, 'repro': prog,  'log': log, 'type': utilities.CASE, 'c_repro': None})
         return ret
     
     def init_crash_checker(self, port):

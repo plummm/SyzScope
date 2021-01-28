@@ -13,12 +13,13 @@ from subprocess import Popen, PIPE, STDOUT, TimeoutExpired, call
 from .error import CompilingError
 
 class StaticAnalysis:
-    def __init__(self, logger, proj_path, index, case_path, linux_folder, max_compiling_kernel, timeout=30*60):
+    def __init__(self, logger, proj_path, index, workdir, case_path, linux_folder, max_compiling_kernel, timeout=30*60):
         self.case_logger = logger
         self.proj_path = proj_path
         self.package_path = os.path.join(proj_path, "syzbot_analyzer")
         self.case_path = case_path
         self.index = index
+        self.work_path = os.path.join(case_path, workdir)
         self.linux_folder = linux_folder
         manager = multiprocessing.Manager()
         self.cmd_queue = manager.Queue()
@@ -34,9 +35,8 @@ class StaticAnalysis:
         vul_file, tmp = vul_site.split(':')
         func_file, tmp = func_site.split(':')
 
-        if not os.path.exists("{}/paths".format(self.case_path)):
-            os.mkdir("{}/paths".format(self.case_path))
-        if os.path.exists("{}/one.bc".format(self.case_path)):
+        os.makedirs("{}/paths".format(self.work_path), exist_ok=True)
+        if os.path.exists("{}/one.bc".format(self.work_path)):
             return exitcode
 
         if os.path.splitext(vul_file)[1] == '.h':
@@ -158,9 +158,9 @@ class StaticAnalysis:
             self.bc_ready=True
             for p in procs:
                 p.join()
-            if os.path.exists(os.path.join(self.case_path,'one.bc')):
-                os.remove(os.path.join(self.case_path,'one.bc'))
-            link_cmd = '{}/tools/llvm/build/bin/llvm-link -o one.bc `find ./ -name "*.bc" ! -name "timeconst.bc" ! -name "*.mod.bc"` && mv one.bc {}'.format(self.proj_path, self.case_path)
+            if os.path.exists(os.path.join(self.work_path,'one.bc')):
+                os.remove(os.path.join(self.work_path,'one.bc'))
+            link_cmd = '{}/tools/llvm/build/bin/llvm-link -o one.bc `find ./ -name "*.bc" ! -name "timeconst.bc" ! -name "*.mod.bc"` && mv one.bc {}'.format(self.proj_path, self.work_path)
             p = Popen(['/bin/bash','-c', link_cmd], stdout=PIPE, stderr=PIPE, cwd=base)
             with p.stdout:
                 self.__log_subprocess_output(p.stdout, logging.INFO)
@@ -252,7 +252,7 @@ class StaticAnalysis:
                 # Sometimes an inline function will appear at the next line of calltrace as a non-inlined function
                 if not utilities.isInline(each) and last_inline == func:
                     text.pop()
-        path = os.path.join(self.case_path, "CallTrace")
+        path = os.path.join(self.work_path, "CallTrace")
         f = open(path, "w")
         f.writelines("\n".join(text))
         f.truncate()
@@ -286,14 +286,14 @@ class StaticAnalysis:
     def run_static_analysis(self, vul_site, func_site, func, offset, size):
         vul_file, vul_line = vul_site.split(':')
         func_file, func_line = func_site.split(':')
-        calltrace = os.path.join(self.case_path, 'CallTrace')
+        calltrace = os.path.join(self.work_path, 'CallTrace')
         cmd = ["{}/tools/llvm/build/bin/opt".format(self.proj_path), "-load", "{}/tools/dr_checker/build/SoundyAliasAnalysis/libSoundyAliasAnalysis.so".format(self.proj_path), 
-                "-dr_checker", "-disable-output", "{}/one.bc".format(self.case_path),
+                "-dr_checker", "-disable-output", "{}/one.bc".format(self.work_path),
                 "-CalltraceFile={}".format(calltrace),
                 "-VulFile={}".format(vul_file), "-VulLine={}".format(vul_line), 
                 "-FuncFile={}".format(func_file), "-FuncLine={}".format(func_line),
                 "-Func={}".format(func), "-Offset={}".format(offset),
-                "-PrintPathDir={}/paths".format(self.case_path)]
+                "-PrintPathDir={}/paths".format(self.work_path)]
         if size != None:
             cmd.append("-Size={}".format(size))
         self.case_logger.info("====================Here comes the taint analysis====================")
