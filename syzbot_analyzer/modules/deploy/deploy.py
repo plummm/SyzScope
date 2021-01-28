@@ -646,19 +646,21 @@ class Deployer(Workers):
         output = os.path.join(self.current_case_path, "output")
         os.makedirs(output, exist_ok=True)
         if impact_without_mutating:
+            ori = os.path.join(output, "ori")
+            os.makedirs(ori, exist_ok=True)
             case = path
             if case['syz_repro'] != None:
                 r = utilities.request_get(case['syz_repro'])
-                with open(os.path.join(output, "repro.prog"), "w") as f:
+                with open(os.path.join(ori, "repro.prog"), "w") as f:
                     f.write(r.text)
             if case['c_repro'] != None:
                 r = utilities.request_get(case['c_repro'])
-                with open(os.path.join(output, "repro.cprog"), "w") as f:
+                with open(os.path.join(ori, "repro.cprog"), "w") as f:
                     f.write(r.text)
             crash_log = "{}/{}".format(self.current_case_path, "poc/crash_log-ori")
             if os.path.isfile(crash_log):
-                shutil.copy(crash_log, os.path.join(output, "repro.log"))
-            with open(os.path.join(output, "description"), "w") as f:
+                shutil.copy(crash_log, os.path.join(ori, "repro.log"))
+            with open(os.path.join(ori, "description"), "w") as f:
                     f.write(title)
         else:
             if path == None:
