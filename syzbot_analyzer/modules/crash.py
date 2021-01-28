@@ -260,7 +260,7 @@ class CrashChecker:
         crash = []
         record_flag = 0
         kasan_flag = 0
-        report_path = os.path.join(crash_path, "repro.log")
+        report_path = os.path.join(crash_path, "repro.report")
         if os.path.isfile(report_path):
             with open(report_path, "r") as f:
                 lines = f.readlines()

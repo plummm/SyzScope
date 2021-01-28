@@ -37,7 +37,7 @@ class StaticAnalysis:
 
         os.makedirs("{}/paths".format(self.work_path), exist_ok=True)
         if os.path.exists("{}/one.bc".format(self.work_path)):
-            return exitcode
+            os.remove("{}/one.bc".format(self.case_path))
 
         if os.path.splitext(vul_file)[1] == '.h':
             bc_path = os.path.dirname(func_file)

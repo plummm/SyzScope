@@ -88,12 +88,19 @@ class Deployer(Workers):
         self.init_crash_checker(self.ssh_port)
 
         need_patch = 0
+        succeed = 0
         #if self.__need_kasan_patch(case['title']):
         #    need_patch = 1
-        if not self.kernel_fuzzing and self.valid_offset_and_size(case) == []:
-            self.logger.info("No valid offset or size")
-            self.__move_to_completed()
-            return
+        if not self.kernel_fuzzing:
+            contexts = self.get_buggy_contexts(case)
+            valid = 0
+            for context in contexts:
+                if context['offset'] != None and context['size'] != None and os.path.exists(context['prog']):
+                    valid = 1
+            if not valid:
+                self.logger.info("No valid offset or size")
+                self.__move_to_completed()
+                return
 
         r = self.__run_delopy_script(hash_val[:7], case, need_patch, kernel_fuzzing=self.kernel_fuzzing)
         if r != 0:
@@ -109,33 +116,41 @@ class Deployer(Workers):
 
                 req = requests.request(method='GET', url=case["syz_repro"])
                 self.__write_config(req.content.decode("utf-8"), hash_val[:7])
-                exitcode = self.run_syzkaller(hash_val)
-                self.save_case(hash_val, exitcode, case, impact_without_mutating, title=title)
+                #exitcode = self.run_syzkaller(hash_val)
+                #self.save_case(hash_val, exitcode, case, impact_without_mutating, title=title)
+                self.save_case(hash_val, 0, case, impact_without_mutating, title=title)
             else:
                 self.logger.info("{} has finished".format(hash_val[:7]))
 
-        valid_contexts = self.valid_offset_and_size(case)
+        valid_contexts = self.get_buggy_contexts(case)
         for context in valid_contexts:
+            if context['offset'] == None or context['size'] == None or not os.path.exists(context['prog']):
+                title = context['title']
+                if utilities.regx_match(utilities.kasan_uaf_regx, title) or utilities.regx_match(utilities.kasan_oob_regx, title):
+                    succeed = 1
+                continue
             if self.static_analysis:
                 if not self.finished_static_analysis(hash_val, 'incomplete'):
                     try:
                         self.do_static_analysis(case, context)
                     except CompilingError:
                         self.logger.error("Encounter an error when doing static analysis")
-                        self.__move_to_error()
-                        return
 
-            ### DEBUG SYMEXEC ###
             if self.symbolic_execution:
                 if not self.finished_symbolic_execution(hash_val, 'incomplete'):
                     r = self.do_symbolic_execution(case, context, i386)
-                    if r == 1:
-                        self.__move_to_completed()
-                        return
-                    self.__move_to_succeed(0)
-        self.create_finished_static_analysis_stamp()
-        self.create_finished_symbolic_execution_stamp()
-        ### DEBUG SYMEXEC ###
+                    if r == 0:
+                        succeed = 1
+
+        if self.static_analysis:
+            self.create_finished_static_analysis_stamp()
+        if self.symbolic_execution:
+            self.create_finished_symbolic_execution_stamp()
+
+        if succeed:
+            self.__move_to_succeed(0)
+        else:
+            self.__move_to_completed()
         return self.index
 
     def clone_linux(self):
@@ -412,7 +427,7 @@ class Deployer(Workers):
         return res
     
     def save_case(self, hash_val, exitcode, case, impact_without_mutating, title=None, secondary_fuzzing=False):
-        self.__save_case(hash_val=hash_val, exitcode=exitcode, case=case, impact_without_mutating=impact_without_mutating, title=title, secondary_fuzzing=secondary_fuzzing)
+        return self.__save_case(hash_val=hash_val, exitcode=exitcode, case=case, impact_without_mutating=impact_without_mutating, title=title, secondary_fuzzing=secondary_fuzzing)
 
     def __check_confirmed(self, hash_val):
         return False
@@ -601,10 +616,10 @@ class Deployer(Workers):
                         self.__copy_new_impact(case, impact_without_mutating, title)
                     for each in paths:
                         self.__copy_new_impact(each, False, title)
-                    self.__move_to_succeed(new_impact_type)
+                    #self.__move_to_succeed(new_impact_type)
                 elif impact_without_mutating:
                     self.__copy_new_impact(case, impact_without_mutating, title)
-                    self.__move_to_succeed(new_impact_type)
+                    #self.__move_to_succeed(new_impact_type)
                 else:
                     if exitcode !=0:
                         self.__save_error(hash_val)
@@ -614,34 +629,9 @@ class Deployer(Workers):
             self.__move_to_completed()
         else:
             self.__copy_new_impact(case, impact_without_mutating, title)
-            self.__move_to_succeed(new_impact_type)
-            #if found OOB/UAF read, do fuzzing again bases on it
-            """
-            crash_path = utilities.extract_existed_crash(self.current_case_path, [utilities.kasan_read_regx])
-            if len(crash_path) == 0 or secondary_fuzzing:
-                self.__move_to_completed()
-            else:
-                need_patch = 0
-                for each in crash_path:
-                    testcase_path = os.path.join(each, "repro.prog")
-                    if os.path.isfile(testcase_path):
-                        #Using patch to eliminate cases wuth different root cases
-                        if len(self.repro_on_fixed_kernel(hash_val, case, [each]))>0:
-                            dst = "{}/gopath/src/github.com/google/syzkaller/workdir/testcase-{}".format(self.current_case_path, hash_val[:7])
-                            shutil.copy(testcase_path, dst)
-                            with open(testcase_path, 'r') as f:
-                                self.logger.info("OOB/UAF Read detected, rerun syzkaller base on new testcase {}".format(testcase_path))
-                                raw_text = f.readlines()
-                                self.__write_config("".join(raw_text),hash_val)
-                                if need_patch == 0:
-                                    need_patch = 1
-                                    self.__run_delopy_script(hash_val[:7], case, need_patch)
-                                exitcode = self.run_syzkaller(hash_val)
-                                self.__save_case(hash_val, exitcode, case, need_fuzzing, secondary_fuzzing=True)
-                                return
-                self.__move_to_completed()
-            """
-    
+            #self.__move_to_succeed(new_impact_type)
+        return
+
     def __copy_new_impact(self, path, impact_without_mutating, title):
         output = os.path.join(self.current_case_path, "output")
         os.makedirs(output, exist_ok=True)
@@ -660,6 +650,7 @@ class Deployer(Workers):
             crash_log = "{}/{}".format(self.current_case_path, "poc/crash_log-ori")
             if os.path.isfile(crash_log):
                 shutil.copy(crash_log, os.path.join(ori, "repro.log"))
+                self.generate_decent_report(crash_log, os.path.join(ori, "repro.report"))
             with open(os.path.join(ori, "description"), "w") as f:
                     f.write(title)
         else:

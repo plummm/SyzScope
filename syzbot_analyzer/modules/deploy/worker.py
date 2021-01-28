@@ -53,7 +53,7 @@ class Workers(Case):
         size = context['size']
         workdir = 'sym-' + context['workdir']
         static_workdir = 'static-' + context['workdir']
-        self.sa = static_analysis.StaticAnalysis(logger=self.case_logger, proj_path=self.project_path, index=self.index, case_path=self.current_case_path, linux_folder=self.linux_folder, max_compiling_kernel=self.max_compiling_kernel)
+        self.sa = static_analysis.StaticAnalysis(logger=self.case_logger, proj_path=self.project_path, workdir=static_workdir, index=self.index, case_path=self.current_case_path, linux_folder=self.linux_folder, max_compiling_kernel=self.max_compiling_kernel)
 
         linux_path = os.path.join(self.current_case_path, self.linux_folder)
         """target = os.path.join(self.package_path, "scripts/deploy_linux.sh")
@@ -79,7 +79,6 @@ class Workers(Case):
             while(1):
                 if not os.path.isdir(dest_path):
                     shutil.move(sym_folder, dest_path)
-                    self.logger.info("Found {}, copy them to {}".format(sym_folder, dest_path))
                     break
                 else:
                     n += 1
@@ -161,7 +160,7 @@ class Workers(Case):
             self.crash_checker.run_exp(case["syz_repro"], self.ssh_port, utilities.URL, ok, i386, 0, sym_logger)
             sym.setup_bug_capture(offset, size)
             try:
-                if paths != [None]:
+                if paths != []:
                     self.logger.info("Running under-constrained symbolic execution with guided paths")
                 else:
                     self.logger.info("Running under-constrained symbolic execution")
@@ -358,35 +357,56 @@ class Workers(Case):
                             break
         return ret, title
     
-    def valid_offset_and_size(self, case):
+    def get_buggy_contexts(self, case):
         ret = []
-        offset = case["vul_offset"]
-        size = case["obj_size"]
-        if offset != None and size != None:
-            ret.append({'workdir': 'ori', 'offset': offset, 'size': size, 'repro': case["syz_repro"], 'log': case['report'], 'type': utilities.URL, 'c_repro': case["syz_repro"]})
-        if self.store_read:
-            output = os.path.join(self.current_case_path, "output")
-            if os.path.exists(output):
-                all_cases = os.listdir(output)
-                for each_case in all_cases:
-                    case_base = os.path.join(output, each_case)
-                    description = os.path.join(case_base, "description")
-                    if not os.path.exists(description):
+        if not self.store_read:
+            # OOB/UAF read
+            offset = case["vul_offset"]
+            size = case["obj_size"]
+            if offset != None and size != None:
+                ret.append({'title':case["title"], 'workdir': 'ori', 'offset': offset, 'size': size, 'repro': case["syz_repro"], 'report': case['report'], 'type': utilities.URL, 'c_repro': case["syz_repro"]})
+        output = os.path.join(self.current_case_path, "output")
+        if os.path.exists(output):
+            all_cases = os.listdir(output)
+            for each_case in all_cases:
+                case_base = os.path.join(output, each_case)
+                description = os.path.join(case_base, "description")
+                if not os.path.exists(description):
+                    continue
+                f = open(description, 'r')
+                title = f.readline()
+                f.close()
+                if utilities.regx_match('KASAN', title):
+                    report = os.path.join(case_base, "repro.report")
+                    if not os.path.exists(report):
                         continue
-                    f = open(description, 'r')
-                    title = f.readline()
-                    f.close()
-                    if utilities.regx_match('KASAN', title):
-                        log = os.path.join(case_base, "repro.log")
-                        if not os.path.exists(log):
-                            continue
-                        f = open(log, 'r')
-                        texts = f.readlines()
-                        offset, size = utilities.extract_vul_obj_offset_and_size(texts)
-                        prog = os.path.join(case_base, "repro.prog")
-                        if offset != None and size != None and os.path.exists(prog):
-                            ret.append({'workdir': each_case[:7], 'offset': offset, 'size': size, 'repro': prog,  'log': log, 'type': utilities.CASE, 'c_repro': None})
+                    f = open(report, 'r')
+                    texts = f.readlines()
+                    offset, size = utilities.extract_vul_obj_offset_and_size(texts)
+                    prog = os.path.join(case_base, "repro.prog")
+                    ret.append({'title':title, 'workdir': each_case[:7], 'offset': offset, 'size': size, 'repro': prog,  'report': report, 'type': utilities.CASE, 'c_repro': None})
         return ret
+    
+    def generate_decent_report(self, input_log, output_log):
+        syzkaller_workdir = os.path.join(self.current_case_path, "gopath/src/github.com/google/syzkaller/workdir")
+        files = os.listdir(syzkaller_workdir)
+        cfg_path = ""
+        for each_file in files:
+            if each_file.endswith('.cfg'):
+                cfg_path = os.path.join(syzkaller_workdir, each_file)
+                break
+        syz_logparser = os.path.join(self.current_case_path, "gopath/src/github.com/google/syzkaller/bin/syz-logparser")
+        if not os.path.isfile(syz_logparser):
+            self.case_logger.info("Cannot find syz-logparser on current case")
+            return
+        cmd = [syz_logparser, "-i", input_log, "-o", output_log, "-cfg", cfg_path]
+        p = Popen(cmd, stdin=PIPE, stdout=PIPE)
+        with p.stdout:
+            self.__log_subprocess_output(p.stdout, logging.INFO)
+        exitcode = p.wait()
+        if exitcode != 0:
+            self.case_logger.info("Fail to generate a decent report from bug log")
+        return
     
     def init_crash_checker(self, port):
         self.crash_checker = CrashChecker(
