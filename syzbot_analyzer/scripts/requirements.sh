@@ -118,6 +118,8 @@ fi
 echo "[+] Build static analysis tool"
 if [ ! -f "$TOOLS_PATH/.stamp/BUILD_STATIC_ANALYSIS" ]; then
   git clone https://github.com/plummm/dr_checker_x.git dr_checker
+  touch $TOOLS_PATH/.stamp/BUILD_STATIC_ANALYSIS
+  cd ..
 fi
 
 echo "[+] Setup golang environment"

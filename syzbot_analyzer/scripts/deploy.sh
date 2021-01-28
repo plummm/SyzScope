@@ -205,6 +205,7 @@ if [ ! -f "$CASE_PATH/.stamp/BUILD_KERNEL" ]; then
     exit 1
   fi
   git stash || echo "it's ok"
+  make clean > /dev/null || echo "it's ok"
   git clean -fdx -e THIS_KERNEL_IS_BEING_USED > /dev/null || echo "it's ok"
   #make clean CC=$COMPILER
   #git stash --all || set_git_config
