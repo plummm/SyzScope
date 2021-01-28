@@ -5,7 +5,7 @@
 
 if [ ! -f "$(pwd)/tools/.stamp/ENV_SETUP" ]; then
   sudo apt-get update
-  sudo apt-get -y install git qemu-system-x86 debootstrap flex bison libssl-dev libelf-dev
+  sudo apt-get -y install git qemu-system-x86 debootstrap flex bison libssl-dev libelf-dev cmake libxml2-dev
 fi
 
 if [ ! -d "work/completed" ]; then
@@ -99,36 +99,25 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_GCC_CLANG" ]; then
   touch $TOOLS_PATH/.stamp/BUILD_GCC_CLANG
 fi
 
-echo "[+] Building cmake"
-if [ ! -f "$TOOLS_PATH/.stamp/BUILD_CMAKE" ]; then
-  wget https://github.com/Kitware/CMake/releases/download/v3.18.3/cmake-3.18.3.tar.gz > /dev/null
-  tar xzf cmake-3.18.3.tar.gz
-  mv cmake-3.18.3 cmake
-  rm -rf cmake-3.18.3.tar.gz
-  cd cmake
-  ./bootstrap
-  make -j16
-  sudo make install
-
-  touch $TOOLS_PATH/.stamp/BUILD_CMAKE
-  cd ..
-fi
-
 echo "[+] Building llvm"
 if [ ! -f "$TOOLS_PATH/.stamp/BUILD_LLVM" ]; then
   wget https://github.com/llvm/llvm-project/releases/download/llvmorg-10.0.1/llvm-project-10.0.1.tar.xz > /dev/null
   tar xf llvm-project-10.0.1.tar.xz
   mv llvm-project-10.0.1 llvm
   rm llvm-project-10.0.1.tar.xz
-  CMAKE=`pwd`/cmake/bin/cmake
   cd llvm
   mkdir build
   cd build
-  $CMAKE -G "Unix Makefiles" -DLLVM_ENABLE_PROJECTS="clang;lld" -DCMAKE_BUILD_TYPE=Release -LLVM_ENABLE_DUMP ../llvm
+  cmake -G "Unix Makefiles" -DLLVM_ENABLE_PROJECTS="clang;lld" -DCMAKE_BUILD_TYPE=Release -LLVM_ENABLE_DUMP ../llvm
   make -j16
 
   touch $TOOLS_PATH/.stamp/BUILD_LLVM
   cd ..
+fi
+
+echo "[+] Build static analysis tool"
+if [ ! -f "$TOOLS_PATH/.stamp/BUILD_STATIC_ANALYSIS" ]; then
+  git clone https://github.com/plummm/dr_checker_x.git dr_checker
 fi
 
 echo "[+] Setup golang environment"

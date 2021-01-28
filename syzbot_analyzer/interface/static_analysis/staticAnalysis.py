@@ -287,7 +287,7 @@ class StaticAnalysis:
         vul_file, vul_line = vul_site.split(':')
         func_file, func_line = func_site.split(':')
         calltrace = os.path.join(self.case_path, 'CallTrace')
-        cmd = ["{}/tools/llvm/build/bin/opt", "-load", "{}/tools/dr_checker/build/SoundyAliasAnalysis/libSoundyAliasAnalysis.so".format(self.proj_path, self.proj_path), 
+        cmd = ["{}/tools/llvm/build/bin/opt".format(self.proj_path), "-load", "{}/tools/dr_checker/build/SoundyAliasAnalysis/libSoundyAliasAnalysis.so".format(self.proj_path), 
                 "-dr_checker", "-disable-output", "{}/one.bc".format(self.case_path),
                 "-CalltraceFile={}".format(calltrace),
                 "-VulFile={}".format(vul_file), "-VulLine={}".format(vul_line), 
