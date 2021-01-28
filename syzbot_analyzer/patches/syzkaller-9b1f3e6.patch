@@ -1,5 +1,5 @@
 diff --git a/Makefile b/Makefile
-index b2886786..4aa96370 100644
+index b2886786..ddc65fa9 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -107,7 +107,7 @@ all: host target
@@ -7,17 +7,19 @@ index b2886786..4aa96370 100644
  host:
  	GOOS=$(HOSTOS) GOARCH=$(HOSTARCH) $(HOSTGO) install ./syz-manager
 -	$(MAKE) manager runtest repro mutate prog2c db upgrade
-+	$(MAKE) manager runtest repro mutate prog2c db upgrade branch2addr
++	$(MAKE) manager runtest repro mutate prog2c db upgrade branch2addr logparser
  
  target:
  	GOOS=$(TARGETGOOS) GOARCH=$(TARGETGOARCH) $(GO) install ./syz-fuzzer
-@@ -177,6 +177,9 @@ usbgen:
+@@ -177,6 +177,11 @@ usbgen:
  expand:
  	GOOS=$(HOSTOS) GOARCH=$(HOSTARCH) $(HOSTGO) build $(GOHOSTFLAGS) -o ./bin/syz-expand github.com/google/syzkaller/tools/syz-expand
  
 +branch2addr:
 +	GOOS=$(HOSTOS) GOARCH=$(HOSTARCH) $(HOSTGO) build $(GOHOSTFLAGS) -o ./bin/syz-branch2addr github.com/google/syzkaller/tools/syz-branch2addr
 +
++logparser:
++	GOOS=$(HOSTOS) GOARCH=$(HOSTARCH) $(HOSTGO) build $(GOHOSTFLAGS) -o ./bin/syz-logparser github.com/google/syzkaller/tools/syz-logparser
  # `extract` extracts const files from various kernel sources, and may only
  # re-generate parts of files.
  extract: bin/syz-extract
@@ -1607,7 +1609,7 @@ index 62648336..e31b664a 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index 2a0b7dd4..3fa0ab98 100644
+index 2a0b7dd4..60be5c40 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
 @@ -6,6 +6,7 @@ package main
@@ -1723,7 +1725,7 @@ index 2a0b7dd4..3fa0ab98 100644
  				}
  			}
  		case res := <-reproDone:
-+			if (isCriticalCrash(res.res.Report.Title, storeRead) | abMemRead) == 1 {
++			if isCriticalCrash(res.res.Report.Title, storeRead) != nonCritical {
 +				prog := res.res.Prog.Serialize()
 +				courier.AppendCriticalPoCQueue(prog)
 +				flagExtraMutating = true
@@ -1909,10 +1911,10 @@ index 91e31dbd..19e92b93 100644
 +}
 diff --git a/syz-manager/utilities.go b/syz-manager/utilities.go
 new file mode 100644
-index 00000000..99e72a15
+index 00000000..097a4cde
 --- /dev/null
 +++ b/syz-manager/utilities.go
-@@ -0,0 +1,119 @@
+@@ -0,0 +1,120 @@
 +package main
 +
 +import (
@@ -2003,6 +2005,7 @@ index 00000000..99e72a15
 +}
 +
 +func (mgr *Manager) doExtraMutate(choiceTable *prog.ChoiceTable, corpus []*prog.Prog) {
++	log.Logf(0, "doExtraMutate")
 +	pq := courier.RetrieveFirstArg(courier.Critical)
 +	if pq != nil {
 +		testcase := pq.(rpctype.ProgQueue).Prog
@@ -2034,10 +2037,10 @@ index 00000000..99e72a15
 +}
 diff --git a/tools/syz-branch2addr/syz-branch2addr.go b/tools/syz-branch2addr/syz-branch2addr.go
 new file mode 100644
-index 00000000..df2eac0c
+index 00000000..c5dbe4c2
 --- /dev/null
 +++ b/tools/syz-branch2addr/syz-branch2addr.go
-@@ -0,0 +1,337 @@
+@@ -0,0 +1,338 @@
 +package main
 +
 +import (
@@ -2081,6 +2084,7 @@ index 00000000..df2eac0c
 +type Trace struct {
 +	condJump    TraceInfo
 +	correctPath TraceInfo
++	wrongPath   TraceInfo
 +}
 +
 +var branch map[uint64]map[string]uint64
@@ -2388,6 +2392,79 @@ index 33b9ccef..6796b061 100644
  	if rep == nil {
  		// This is the only "OK" outcome.
  		log.Logf(0, "vm-%v: running long enough, restarting", index)
+diff --git a/tools/syz-logparser/syz-logparser.go b/tools/syz-logparser/syz-logparser.go
+new file mode 100644
+index 00000000..bd50681a
+--- /dev/null
++++ b/tools/syz-logparser/syz-logparser.go
+@@ -0,0 +1,66 @@
++package main
++
++import (
++	"bufio"
++	"flag"
++	"fmt"
++	"os"
++
++	"github.com/google/syzkaller/pkg/report"
++	"github.com/google/syzkaller/pkg/mgrconfig"
++)
++
++func main() {
++	var (
++		flagInput    = flag.String("i", "", "input: path of a raw bug report")
++		flagUsage       = flag.Bool("u", false, "Get the usage")
++		flagConfig    = flag.String("cfg", "", "Path of syzkaller config")
++	)
++	flag.Parse()
++	if (*flagInput == "" || *flagConfig == "" || *flagUsage) {
++		fmt.Printf("Usage:  syz-logparser -cfg path2cfg -i path2log\n")
++		return
++	}
++
++	cfg, err := mgrconfig.LoadFile(*flagConfig)
++	if err != nil {
++		fmt.Println(err)
++		return
++	}
++	fmt.Println(cfg.Type)
++	output := loadLog(*flagInput)
++	if len(output) == 0 {
++		fmt.Printf("No bug report found in the given path\n")
++		return
++	}
++	rep, err := report.NewReporter(cfg)
++	if err != nil {
++		fmt.Println(err)
++		return
++	}
++	report := rep.Parse(output)
++	fmt.Println(string(report.Report))
++}
++
++func loadLog(path string) []byte {
++	var output []byte
++
++	logFile, err := os.Open(path)
++	if err != nil {
++		fmt.Println(err)
++		return output
++	}
++	r := bufio.NewReader(logFile)
++	for {
++		ln, _, err := r.ReadLine()
++		if ln == nil {
++			break
++		}
++		if err != nil {
++			fmt.Println(err)
++			return output
++		}
++		output = append(output, ln...)
++	}
++	return output
++}
+\ No newline at end of file
 diff --git a/tools/syz-runtest/runtest.go b/tools/syz-runtest/runtest.go
 index 76c120cd..d7d5f1fa 100644
 --- a/tools/syz-runtest/runtest.go
