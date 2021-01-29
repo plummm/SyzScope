@@ -301,7 +301,7 @@ class Workers(Case):
         self.sa.saveCallTrace2File(trace, vul_site)
         r, time_on_static_analysis = self.sa.run_static_analysis(vul_site, func_site, func, offset, size)
         if r != 0:
-            self.logger.error("Error occur when getting pointer in IR")
+            self.logger.error("Error occur during taint analysis")
         if self.timeout_symbolic_execution == None:
             self.timeout_symbolic_execution = self.timeout_dynamic_validation - time_on_static_analysis
     

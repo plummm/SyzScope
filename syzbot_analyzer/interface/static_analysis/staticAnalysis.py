@@ -121,8 +121,8 @@ class StaticAnalysis:
                     for e in cmds:
                         call(e, cwd=base)"""
                     continue
-                #if 'percpu.c' in p2obj:
-                #    continue
+                if 'arch/x86' in p2obj or 'percpu.c' in p2obj:
+                    continue
                 #print("CC {}".format(p2obj))
                 new_cmd = []
                 try:

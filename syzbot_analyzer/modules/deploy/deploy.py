@@ -1,5 +1,6 @@
 import re
 import os, stat, sys
+from syzbot_analyzer.modules.deploy.case import Case
 from syzbot_analyzer.interface.static_analysis.error import CompilingError
 import requests
 import shutil
@@ -9,7 +10,7 @@ import syzbot_analyzer.interface.utilities as utilities
 from syzbot_analyzer.modules.syzbotCrawler import syzbot_host_url, syzbot_bug_base_url
 from syzbot_analyzer.interface import s2e, static_analysis, sym_exec
 from subprocess import call, Popen, PIPE, STDOUT
-from syzbot_analyzer.interface.utilities import chmodX
+from syzbot_analyzer.interface.utilities import URL, chmodX
 from dateutil import parser as time_parser
 from .worker import Workers
 
@@ -95,7 +96,9 @@ class Deployer(Workers):
             contexts = self.get_buggy_contexts(case)
             valid = 0
             for context in contexts:
-                if context['offset'] != None and context['size'] != None and os.path.exists(context['repro']):
+                if context['offset'] != None and context['size'] != None and \
+                 ((context['type'] == utilities.CASE and os.path.exists(context['repro'])) or\
+                  (context['type'] == utilities.URL and context['repro'] != None)):
                     valid = 1
             if not valid:
                 self.logger.info("No valid offset or size")
@@ -126,13 +129,17 @@ class Deployer(Workers):
         for context in valid_contexts:
             if context['offset'] == None or context['size'] == None or not os.path.exists(context['repro']):
                 title = context['title']
-                if utilities.regx_match(utilities.kasan_uaf_regx, title) or utilities.regx_match(utilities.kasan_oob_regx, title):
+                if self.__success_check(hash_val, "ConfirmedDoubleFree") or \
+                   self.__success_check(hash_val, "ConfirmedAbnormallyMemWrite"):
                     succeed = 1
+                else:
+                    self.case_logger.info("skip an invalid context")
                 continue
             if self.static_analysis:
                 if not self.finished_static_analysis(hash_val, 'incomplete'):
                     try:
                         self.do_static_analysis(case, context)
+                        self.logger.info("static analysis finished")
                     except CompilingError:
                         self.logger.error("Encounter an error when doing static analysis")
 
@@ -616,9 +623,11 @@ class Deployer(Workers):
                         self.__copy_new_impact(case, impact_without_mutating, title)
                     for each in paths:
                         self.__copy_new_impact(each, False, title)
+                        self.write_to_confirm(hash_val, new_impact_type)
                     #self.__move_to_succeed(new_impact_type)
                 elif impact_without_mutating:
                     self.__copy_new_impact(case, impact_without_mutating, title)
+                    self.write_to_confirm(hash_val, new_impact_type)
                     #self.__move_to_succeed(new_impact_type)
                 else:
                     if exitcode !=0:
@@ -724,7 +733,6 @@ class Deployer(Workers):
                 self.logger.info("Fail to delete directory {}".format(des))
         shutil.move(src, des)
         self.current_case_path = des
-        self.write_to_confirm(base, new_impact_type)
     
     def __move_to_error(self):
         self.logger.info("Copy to error")
