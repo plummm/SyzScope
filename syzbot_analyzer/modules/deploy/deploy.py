@@ -95,7 +95,7 @@ class Deployer(Workers):
             contexts = self.get_buggy_contexts(case)
             valid = 0
             for context in contexts:
-                if context['offset'] != None and context['size'] != None and os.path.exists(context['prog']):
+                if context['offset'] != None and context['size'] != None and os.path.exists(context['repro']):
                     valid = 1
             if not valid:
                 self.logger.info("No valid offset or size")
