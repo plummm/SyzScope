@@ -127,7 +127,9 @@ class Deployer(Workers):
 
         valid_contexts = self.get_buggy_contexts(case)
         for context in valid_contexts:
-            if context['offset'] == None or context['size'] == None or not os.path.exists(context['repro']):
+            if context['offset'] == None or context['size'] == None or \
+                 ((context['type'] == utilities.CASE and not os.path.exists(context['repro'])) or\
+                  (context['type'] == utilities.URL and context['repro'] == None)):
                 title = context['title']
                 if self.__success_check(hash_val, "ConfirmedDoubleFree") or \
                    self.__success_check(hash_val, "ConfirmedAbnormallyMemWrite"):

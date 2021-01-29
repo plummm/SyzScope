@@ -36,8 +36,8 @@ class StaticAnalysis:
         func_file, tmp = func_site.split(':')
 
         os.makedirs("{}/paths".format(self.work_path), exist_ok=True)
-        if os.path.exists("{}/one.bc".format(self.work_path)):
-            os.remove("{}/one.bc".format(self.case_path))
+        if os.path.exists("{}/one.bc".format(self.case_path)):
+            return
 
         if os.path.splitext(vul_file)[1] == '.h':
             bc_path = os.path.dirname(func_file)
@@ -72,7 +72,7 @@ class StaticAnalysis:
         elif exitcode != 0:
             self.case_logger.error("Error occur in deploy-bc.sh")
             return exitcode
-        shutil.move(self.case_path+"/linux/one.bc", self.work_path+"/one.bc")
+        shutil.move(self.case_path+"/linux/one.bc", self.case_path+"/one.bc")
         
         # Restore CONFIG_KCOV CONFIG_KASAN CONFIG_BUG_ON_DATA_CORRUPTION
         # Kernel fuzzing and symbolic execution depends on some of them
@@ -159,8 +159,8 @@ class StaticAnalysis:
             self.bc_ready=True
             for p in procs:
                 p.join()
-            if os.path.exists(os.path.join(self.work_path,'one.bc')):
-                os.remove(os.path.join(self.work_path,'one.bc'))
+            if os.path.exists(os.path.join(self.case_path,'one.bc')):
+                os.remove(os.path.join(self.case_path,'one.bc'))
             link_cmd = '{}/tools/llvm/build/bin/llvm-link -o one.bc `find ./ -name "*.bc" ! -name "timeconst.bc" ! -name "*.mod.bc"`'.format(self.proj_path)
             p = Popen(['/bin/bash','-c', link_cmd], stdout=PIPE, stderr=PIPE, cwd=base)
             with p.stdout:
@@ -289,7 +289,7 @@ class StaticAnalysis:
         func_file, func_line = func_site.split(':')
         calltrace = os.path.join(self.work_path, 'CallTrace')
         cmd = ["{}/tools/llvm/build/bin/opt".format(self.proj_path), "-load", "{}/tools/dr_checker/build/SoundyAliasAnalysis/libSoundyAliasAnalysis.so".format(self.proj_path), 
-                "-dr_checker", "-disable-output", "{}/one.bc".format(self.work_path),
+                "-dr_checker", "-disable-output", "{}/one.bc".format(self.case_path),
                 "-CalltraceFile={}".format(calltrace),
                 "-VulFile={}".format(vul_file), "-VulLine={}".format(vul_line), 
                 "-FuncFile={}".format(func_file), "-FuncLine={}".format(func_line),

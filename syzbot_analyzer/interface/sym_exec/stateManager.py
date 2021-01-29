@@ -9,7 +9,7 @@ class StateManager:
     G_SYM = 1
     G_RET = 2
     G_BB = 3
-    MAX_BB_WITHOUT_SYM = 5000
+    MAX_BB_WITHOUT_SYM = 10000
     NO_ADDITIONAL_USE = 0
     ARBITRARY_VALUE_WRITE = 1 << 0
     FINITE_VALUE_WRITE = 1 << 1
@@ -100,6 +100,8 @@ class StateManager:
         file, line = self.vm.get_dbg_info(state.scratch.ins_addr)
         key = "{}:{}".format(file, line)
         self.target_site[key] = impact_type
+        if self.all_targets_covered():
+            self.stop_execution = True
         if (state.scratch.ins_addr in self.exploitable_state) and (self.exploitable_state[state.scratch.ins_addr] & impact_type):
             return None
         self.exploitable_state[state.scratch.ins_addr] = impact_type
@@ -245,6 +247,12 @@ class StateManager:
     
     def cur_state_dead(self):
         return not self._current_state in self.simgr.active
+    
+    def all_targets_covered(self):
+        for key in self.target_site:
+            if self.target_site[key] == StateManager.NO_ADDITIONAL_USE:
+                return False
+        return True
 
     def dump_state(self, state, logger=None):
         if logger == None:

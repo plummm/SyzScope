@@ -84,7 +84,7 @@ class Workers(Case):
                     n += 1
                     dest_path = "{}-{}".format(sym_folder, n)
 
-        static_analysis_result_paths = self.current_case_path + "/static_workdir/paths"
+        static_analysis_result_paths = self.current_case_path + "/{}/paths".format(static_workdir)
         if not os.path.isdir(static_analysis_result_paths):
             path_files = [None]
         else:
@@ -105,12 +105,15 @@ class Workers(Case):
                         continue
                 if int(n_basic_block) < 40:
                     continue
-                self.logger.info(" has long paths")
                 guided_path = os.path.join(static_analysis_result_paths, each_file)
                 p = self.retrieve_guided_paths(guided_path)
-                #if p != []:
-                    #paths.append(p)
+                if p != []:
+                    paths.append(p)
 
+        if paths != []:
+            self.logger.info("Find far away use")
+        else:
+            return
         os.mkdir(sym_folder)
         is_propagating_global = False
         result = StateManager.NO_ADDITIONAL_USE

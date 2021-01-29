@@ -165,13 +165,7 @@ class SymExec(MemInstrument):
 
         self.terminating_func = terminating_func
         start_time = time.time()
-        if path != []:
-            # DFS
-            for each_path in path:
-                self._run_simgr(dfs, [each_path], raw_tracing, start_time)
-        else:
-            #BFS
-            self._run_simgr(dfs, [], raw_tracing, start_time)
+        self._run_simgr(dfs, path, raw_tracing, start_time)
         
         self.logger.info("*******************primitives*******************\n")
         running_time = time.time() - start_time
@@ -269,9 +263,6 @@ class SymExec(MemInstrument):
             if len(self.simgr.active) == 0:
                 # No dfs no deferred
                 if dfs and len(self.simgr.deferred) == 0:
-                    self.logger.info("No active states")
-                    self.stop_execution = True
-                else:
                     self.logger.info("No active states")
                     self.stop_execution = True
             
@@ -641,20 +632,23 @@ class SymExec(MemInstrument):
         return last_inst.mnemonic[0] == 'j' and last_inst.mnemonic != 'jmp'
     
     def _is_fallen_state(self, state):
-        #self.update_states_globals(0, 0, StateManager.G_BB)
-        #n = self.get_states_globals(0, StateManager.G_BB)
-        callstack = state.callstack
-        try:
-            insns = self.proj.factory.block(state.scratch.ins_addr).capstone.insns
-        except:
+        if self._branches != {}:
+            self.update_states_globals(0, 0, StateManager.G_BB)
+            n = self.get_states_globals(0, StateManager.G_BB)
+            return n > StateManager.MAX_BB_WITHOUT_SYM
+        else:
+            callstack = state.callstack
+            try:
+                insns = self.proj.factory.block(state.scratch.ins_addr).capstone.insns
+            except:
+                return False
+            n = len(insns)
+            if n == 0:
+                return False
+            func_name = self.vm.get_func_name(state.scratch.ins_addr)
+            if callstack.next == None and insns[n-1].mnemonic == 'ret' and func_name == self.terminating_func:
+                return True
             return False
-        n = len(insns)
-        if n == 0:
-            return False
-        func_name = self.vm.get_func_name(state.scratch.ins_addr)
-        if callstack.next == None and insns[n-1].mnemonic == 'ret' and func_name == self.terminating_func:
-            return True
-        return False
     
     def _after_gdb_resume(self, timeout):
         self.vm.gdb.waitfor("Continuing")
