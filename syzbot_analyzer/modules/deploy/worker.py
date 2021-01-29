@@ -150,7 +150,7 @@ class Workers(Case):
                 del sym
                 continue
             sym_logger.info("Uploading poc and triggering the crash")
-            ok = self.crash_checker.upload_exp(case["syz_repro"], self.ssh_port, case["syzkaller"], utilities.URL, case["c_repro"], i386, 0, sym_logger)
+            ok = self.crash_checker.upload_exp(context['repro'], self.ssh_port, case["syzkaller"], context['type'], context["c_repro"], i386, 0, sym_logger)
             if ok == 0:
                 self.logger.error("Error occur at upload exp")
                 sym.cleanup()

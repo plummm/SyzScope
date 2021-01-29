@@ -72,6 +72,7 @@ class StaticAnalysis:
         elif exitcode != 0:
             self.case_logger.error("Error occur in deploy-bc.sh")
             return exitcode
+        shutil.move(self.case_path+"/linux/one.bc", self.work_path+"/one.bc")
         
         # Restore CONFIG_KCOV CONFIG_KASAN CONFIG_BUG_ON_DATA_CORRUPTION
         # Kernel fuzzing and symbolic execution depends on some of them
@@ -120,8 +121,8 @@ class StaticAnalysis:
                     for e in cmds:
                         call(e, cwd=base)"""
                     continue
-                if 'arch/x86/' in p2obj or 'cpu' in p2obj:
-                    continue
+                #if 'percpu.c' in p2obj:
+                #    continue
                 #print("CC {}".format(p2obj))
                 new_cmd = []
                 try:
@@ -160,7 +161,7 @@ class StaticAnalysis:
                 p.join()
             if os.path.exists(os.path.join(self.work_path,'one.bc')):
                 os.remove(os.path.join(self.work_path,'one.bc'))
-            link_cmd = '{}/tools/llvm/build/bin/llvm-link -o one.bc `find ./ -name "*.bc" ! -name "timeconst.bc" ! -name "*.mod.bc"` && mv one.bc {}'.format(self.proj_path, self.work_path)
+            link_cmd = '{}/tools/llvm/build/bin/llvm-link -o one.bc `find ./ -name "*.bc" ! -name "timeconst.bc" ! -name "*.mod.bc"`'.format(self.proj_path)
             p = Popen(['/bin/bash','-c', link_cmd], stdout=PIPE, stderr=PIPE, cwd=base)
             with p.stdout:
                 self.__log_subprocess_output(p.stdout, logging.INFO)
@@ -174,7 +175,7 @@ class StaticAnalysis:
             try:
                 cmd = self.cmd_queue.get(block=True, timeout=5)
                 obj = cmd[len(cmd)-2]
-                #self.case_logger.info("CC {}".format(obj))
+                self.case_logger.debug("CC {}".format(obj))
                 p = Popen(" ".join(cmd), shell=True, cwd=base, stdout=PIPE, stderr=PIPE)
                 #call(" ".join(cmd), shell=True, cwd=base)
                 try:

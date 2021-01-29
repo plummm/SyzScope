@@ -124,7 +124,7 @@ class Deployer(Workers):
 
         valid_contexts = self.get_buggy_contexts(case)
         for context in valid_contexts:
-            if context['offset'] == None or context['size'] == None or not os.path.exists(context['prog']):
+            if context['offset'] == None or context['size'] == None or not os.path.exists(context['repro']):
                 title = context['title']
                 if utilities.regx_match(utilities.kasan_uaf_regx, title) or utilities.regx_match(utilities.kasan_oob_regx, title):
                     succeed = 1

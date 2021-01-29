@@ -108,14 +108,14 @@ make -n CC=$CLANG > clang_log || echo "It's OK"
 # First try if wllvm can compile it
 export LLVM_COMPILER=clang
 export LLVM_COMPILER_PATH=$PROJECT_PATH/tools/llvm/build/bin/
-pip list | grep wllvm || pip install wllvm
+pip3 list | grep wllvm || pip3 install wllvm
 make olddefconfig CC=wllvm
 ERROR=0
 wait_for_other_compiling
 make -j$N_CORES CC=wllvm > make.log 2>&1 || ERROR=1 && copy_log_then_exit make.log
 if [ $ERROR == "0" ]; then
   extract-bc vmlinux
-  mv vmlinux.bc $CASE_PATH/one.bc
+  mv vmlinux.bc one.bc
   exit 0
 else
   # back to manual compile and link
