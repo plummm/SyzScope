@@ -114,6 +114,7 @@ def extract_allocated_section(report):
     
 def extrace_call_trace(report):
     regs_regx = r'[A-Z0-9]+:( )+[a-z0-9]+'
+    fs_regx = r'FS-Cache:'
     call_trace_end = [r"entry_SYSENTER", r"entry_SYSCALL", r"ret_from_fork", r"bpf_prog_[a-z0-9]{16}\+"]
     exceptions = [" <IRQ>", " </IRQ>"]
     res = []
@@ -124,7 +125,8 @@ def extrace_call_trace(report):
         if record_flag and \
                 not regx_match(implicit_call_regx, line) and \
                 not is_kasan_func(extract_debug_info(line)) and \
-                not regx_match(regs_regx, line):
+                not regx_match(regs_regx, line) and \
+                not regx_match(fs_regx, line):
             res.append(line)
         if regx_match(r'Call Trace', line):
             record_flag = 1
