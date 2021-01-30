@@ -444,6 +444,7 @@ class SymExec(MemInstrument):
             if len(each_path) > 0:
                 key = "{}:{}".format(each_path[len(each_path)-1]['file'], each_path[len(each_path)-1]['line'])
                 self.target_site[key] = StateManager.NO_ADDITIONAL_USE
+                self.guided = True
     
     def add_to_debug_trace(self, state):
         file, line = self.vm.get_dbg_info(state.addr)

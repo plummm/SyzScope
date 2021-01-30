@@ -107,13 +107,9 @@ class Workers(Case):
                     continue
                 guided_path = os.path.join(static_analysis_result_paths, each_file)
                 p = self.retrieve_guided_paths(guided_path)
-                if p != []:
-                    paths.append(p)
+                #if p != []:
+                #    paths.append(p)
 
-        if paths != []:
-            self.logger.info("Find far away use")
-        else:
-            return
         os.mkdir(sym_folder)
         is_propagating_global = False
         result = StateManager.NO_ADDITIONAL_USE
@@ -287,7 +283,6 @@ class Workers(Case):
             while(1):
                 if not os.path.isdir(dest_path):
                     shutil.move(static_folder, dest_path)
-                    self.logger.info("Found {}, copy them to {}".format(static_folder, dest_path))
                     break
                 else:
                     n += 1

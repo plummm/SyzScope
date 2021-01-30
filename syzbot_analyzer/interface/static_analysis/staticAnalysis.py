@@ -37,7 +37,7 @@ class StaticAnalysis:
 
         os.makedirs("{}/paths".format(self.work_path), exist_ok=True)
         if os.path.exists("{}/one.bc".format(self.case_path)):
-            return
+            return exitcode
 
         if os.path.splitext(vul_file)[1] == '.h':
             bc_path = os.path.dirname(func_file)
@@ -130,7 +130,7 @@ class StaticAnalysis:
                     for e in cmds:
                         call(e, cwd=base)"""
                     continue
-                if 'arch/x86' in p2obj or 'percpu.c' in p2obj:
+                if 'arch/x86' in p2obj:
                     continue
                 #print("CC {}".format(p2obj))
                 new_cmd = []
