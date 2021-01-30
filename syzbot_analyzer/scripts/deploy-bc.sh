@@ -70,7 +70,7 @@ fi
 
 cd linux
 
-if [ "$COMPILE" != "1" ]; then
+if [ "$COMPILE" == "0" ]; then
 
   if [ -f "$CASE_PATH/config" ]; then
     git stash
@@ -85,29 +85,38 @@ if [ "$COMPILE" != "1" ]; then
     make -j$N_CORES CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
     exit 0
   fi
+fi
+if [ "$COMPILE" == "2" ]; then
+git stash
 
-else
+find -type f -name '*.bc' ! -name "timeconst.bc" -delete
+make clean || echo "cleanning interrupt"
+git clean -fdx -e THIS_KERNEL_IS_BEING_USED > /dev/null || echo "cleanning interrupt"
+git checkout -f $COMMIT || (git pull https://github.com/torvalds/linux.git master > /dev/null 2>&1 && git checkout -f $COMMIT)
+
+#Add a rejection detector in future
+curl $CONFIG > .config
 
 CONFIGKEYSDISABLE="
 CONFIG_KASAN
 CONFIG_KCOV
 CONFIG_BUG_ON_DATA_CORRUPTION
-CONFIG_DRM_I915
 "
+
 for key in $CONFIGKEYSDISABLE;
 do
     config_disable $key
 done
+fi
 
-# save the dry run log
-CLANG=$PROJECT_PATH/tools/llvm/build/bin/clang
-make olddefconfig CC=$CLANG
-find -type f -name '*.bc' ! -name "timeconst.bc" -delete
-make -n CC=$CLANG > clang_log || echo "It's OK"
-
-# First try if wllvm can compile it
+if [ "$COMPILE" == "1" ]; then
 export LLVM_COMPILER=clang
 export LLVM_COMPILER_PATH=$PROJECT_PATH/tools/llvm/build/bin/
+# save the dry run log
+CLANG=$PROJECT_PATH/tools/llvm/build/bin/clang
+make olddefconfig CC=wllvm
+
+# First try if wllvm can compile it
 pip3 list | grep wllvm || pip3 install wllvm
 make olddefconfig CC=wllvm
 ERROR=0
@@ -119,8 +128,10 @@ if [ $ERROR == "0" ]; then
   exit 0
 else
   # back to manual compile and link
+  find -type f -name '*.o' -delete
   find -type f -name '*.bc' ! -name "timeconst.bc" -delete
+  make -n CC=wllvm > clang_log || find -type f -name '*.bc' ! -name "timeconst.bc" -delete
   exit 1
 fi
 fi
-exit 1
+exit 0

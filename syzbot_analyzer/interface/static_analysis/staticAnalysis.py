@@ -52,6 +52,15 @@ class StaticAnalysis:
         utilities.chmodX(script_path)
         index = str(self.index)
         self.case_logger.info("run: scripts/deploy-bc.sh")
+
+        p = Popen([script_path, self.linux_folder, index, self.case_path, commit, config, bc_path, "2", str(self.max_compiling_kernel)],
+                stdout=PIPE,
+                stderr=STDOUT
+                )
+        with p.stdout:
+            self.__log_subprocess_output(p.stdout, logging.INFO)
+        exitcode = p.wait()
+        self.case_logger.info("script/deploy-bc.sh is done with exitcode {}".format(exitcode))
         self.adjust_kernel_for_clang()
 
         p = Popen([script_path, self.linux_folder, index, self.case_path, commit, config, bc_path, "1", str(self.max_compiling_kernel)],
@@ -126,12 +135,13 @@ class StaticAnalysis:
                 #print("CC {}".format(p2obj))
                 new_cmd = []
                 try:
-                    clang_path = '{}/tools/llvm/build/bin/clang'.format(self.proj_path)
+                    #clang_path = '{}/tools/llvm/build/bin/clang'.format(self.proj_path)
+                    clang_path = 'wllvm'
                     idx1 = line.index(clang_path)
                     idx2 = line[idx1:].index(';')
                     cmd = line[idx1:idx1+idx2].split(' ')
                     if cmd[0] == clang_path:
-                        new_cmd.append(cmd[0])
+                        new_cmd.append('{}/tools/llvm/build/bin/clang'.format(self.proj_path))
                         new_cmd.append('-emit-llvm')
                     #if cmd[0] == 'wllvm':
                     #    new_cmd.append('{}/tools/llvm/build/bin/clang'.format(self.proj_path))
@@ -161,7 +171,7 @@ class StaticAnalysis:
                 p.join()
             if os.path.exists(os.path.join(self.case_path,'one.bc')):
                 os.remove(os.path.join(self.case_path,'one.bc'))
-            link_cmd = '{}/tools/llvm/build/bin/llvm-link -o one.bc `find ./ -name "*.bc" ! -name "timeconst.bc" ! -name "*.mod.bc"`'.format(self.proj_path)
+            link_cmd = '{}/tools/llvm/build/bin/llvm-link -o one.bc `find ./ -name "*.bc" ! -name "timeconst.bc"`'.format(self.proj_path)
             p = Popen(['/bin/bash','-c', link_cmd], stdout=PIPE, stderr=PIPE, cwd=base)
             with p.stdout:
                 self.__log_subprocess_output(p.stdout, logging.INFO)
