@@ -29,6 +29,7 @@ class StateManager:
         self.add_constraints = False
         self.symbolic_tracing = False
         self.dfs = True
+        self.guided= False
         self.proj_path = None
         self.stop_execution = False
         self.kill_current_state = False
@@ -249,6 +250,8 @@ class StateManager:
         return not self._current_state in self.simgr.active
     
     def all_targets_covered(self):
+        if not self.guided:
+            return False
         for key in self.target_site:
             if self.target_site[key] == StateManager.NO_ADDITIONAL_USE:
                 return False
