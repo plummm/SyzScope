@@ -81,7 +81,7 @@ if [ "$COMPILE" != "1" ]; then
       exit 1
     fi
     COMPILER=$CASE_PATH/compiler/compiler
-    wait_for_other_compiling
+    #wait_for_other_compiling
     make -j$N_CORES CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
     exit 0
   fi

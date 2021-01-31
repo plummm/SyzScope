@@ -1,3 +1,4 @@
+from math import trunc
 import re
 import os, stat, sys
 from syzbot_analyzer.modules.deploy.case import Case
@@ -119,9 +120,11 @@ class Deployer(Workers):
 
                 req = requests.request(method='GET', url=case["syz_repro"])
                 self.__write_config(req.content.decode("utf-8"), hash_val[:7])
-                #exitcode = self.run_syzkaller(hash_val)
-                #self.save_case(hash_val, exitcode, case, impact_without_mutating, title=title)
-                self.save_case(hash_val, 0, case, impact_without_mutating, title=title)
+                limitedMutation = True
+                if 'patch' in case:
+                    limitedMutation = False
+                exitcode = self.run_syzkaller(hash_val, limitedMutation)
+                self.save_case(hash_val, exitcode, case, limitedMutation, impact_without_mutating, title=title)
             else:
                 self.logger.info("{} has finished".format(hash_val[:7]))
 
@@ -165,7 +168,7 @@ class Deployer(Workers):
     def clone_linux(self):
         self.__run_linux_clone_script()
 
-    def run_syzkaller(self, hash_val):
+    def run_syzkaller(self, hash_val, limitedMutation):
         self.logger.info("run syzkaller".format(self.index))
         syzkaller = os.path.join(self.syzkaller_path, "bin/syz-manager")
         exitcode = 0
@@ -180,12 +183,13 @@ class Deployer(Workers):
                 self.__log_subprocess_output(p.stdout, logging.INFO)
             exitcode = p.wait()
 
-            p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash_val[:7]), "-debug"],
-                stdout=PIPE,
-                stderr=STDOUT
-                )
-            with p.stdout:
-                self.__log_subprocess_output(p.stdout, logging.INFO)
+            if not limitedMutation:
+                p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash_val[:7]), "-debug"],
+                    stdout=PIPE,
+                    stderr=STDOUT
+                    )
+                with p.stdout:
+                    self.__log_subprocess_output(p.stdout, logging.INFO)
             exitcode = p.wait()
         else:
             p = Popen([syzkaller, "--config={}/workdir/{}-poc.cfg".format(self.syzkaller_path, hash_val[:7]), "-poc"],
@@ -196,12 +200,13 @@ class Deployer(Workers):
                 self.__log_subprocess_output(p.stdout, logging.INFO)
             exitcode = p.wait()
 
-            p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash_val[:7])],
-                stdout = PIPE,
-                stderr = STDOUT
-                )
-            with p.stdout:
-                self.__log_subprocess_output(p.stdout, logging.INFO)
+            if not limitedMutation:
+                p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash_val[:7])],
+                    stdout = PIPE,
+                    stderr = STDOUT
+                    )
+                with p.stdout:
+                    self.__log_subprocess_output(p.stdout, logging.INFO)
             exitcode = p.wait()
         self.logger.info("syzkaller is done with exitcode {}".format(exitcode))
         if exitcode == 3:
@@ -384,7 +389,7 @@ class Deployer(Workers):
                         "inet", "pseudo", "csum", "vma", "vma64", "flags", "const", "array", "void"
                         "len", "bytesize", "bytesize2", "bytesize4", "bytesize8", "bitsize", "offsetof"]
     
-    def confirmSuccess(self, hash_val, case):
+    def confirmSuccess(self, hash_val, case, limitedMutation=False):
         syz_repro = case["syz_repro"]
         syz_commit = case["syzkaller"]
         commit = case["commit"]
@@ -411,7 +416,7 @@ class Deployer(Workers):
             else:
                 self.crash_checker.logger.info("Call trace match failed")
             """
-            res = self.repro_on_fixed_kernel(hash_val, case)
+            res = self.repro_on_fixed_kernel(hash_val, case, limitedMutation=limitedMutation)
             """
             if res != []:
                 self.logger.info("Write to confirmedSuccess")
@@ -420,7 +425,7 @@ class Deployer(Workers):
             return res
         return []
     
-    def repro_on_fixed_kernel(self, hash_val, case, crashes_path=None):
+    def repro_on_fixed_kernel(self, hash_val, case, crashes_path=None, limitedMutation=False):
         syz_repro = case["syz_repro"]
         syz_commit = case["syzkaller"]
         commit = case["commit"]
@@ -432,11 +437,11 @@ class Deployer(Workers):
             i386 = True
         commit = utilities.get_patch_commit(hash_val)
         if commit != None:
-            res = self.crash_checker.repro_on_fixed_kernel(syz_commit, case["commit"], config, c_repro, i386, commit, crashes_path=crashes_path)
+            res = self.crash_checker.repro_on_fixed_kernel(syz_commit, case["commit"], config, c_repro, i386, commit, crashes_path=crashes_path, limitedMutation=limitedMutation)
         return res
     
-    def save_case(self, hash_val, exitcode, case, impact_without_mutating, title=None, secondary_fuzzing=False):
-        return self.__save_case(hash_val=hash_val, exitcode=exitcode, case=case, impact_without_mutating=impact_without_mutating, title=title, secondary_fuzzing=secondary_fuzzing)
+    def save_case(self, hash_val, exitcode, case, limitedMutation, impact_without_mutating, title=None, secondary_fuzzing=False):
+        return self.__save_case(hash_val=hash_val, exitcode=exitcode, case=case, limitedMutation=limitedMutation, impact_without_mutating=impact_without_mutating, title=title, secondary_fuzzing=secondary_fuzzing)
 
     def __check_confirmed(self, hash_val):
         return False
@@ -614,12 +619,12 @@ class Deployer(Workers):
                 res.append(syscall)
         return res
 
-    def __save_case(self, hash_val, exitcode, case, impact_without_mutating, title=None, secondary_fuzzing=False):
+    def __save_case(self, hash_val, exitcode, case, limitedMutation, impact_without_mutating, title=None, secondary_fuzzing=False):
         self.__copy_crashes()
         self.create_finished_fuzzing_stamp()
         new_impact_type = self.__new_impact(hash_val[:7])
         if new_impact_type != utilities.NONCRITICAL:
-                paths = self.confirmSuccess(hash_val, case)
+                paths = self.confirmSuccess(hash_val, case, limitedMutation)
                 if len(paths) > 0:
                     if impact_without_mutating:
                         self.__copy_new_impact(case, impact_without_mutating, title)

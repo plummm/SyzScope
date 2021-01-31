@@ -121,8 +121,8 @@ class Crawler:
                             crash['Bisected'] = stats[1].text
                             crash['Count'] = stats[2].text
                             crash['Last'] = stats[3].text
-                            crash['Reported'] = stats[4].text
                             try:
+                                crash['Reported'] = stats[4].text
                                 patch_url = commit_list.contents[1].contents[1].attrs['href']
                                 crash['Patch'] = patch_url
                                 crash['Closed'] = stats[4].text
