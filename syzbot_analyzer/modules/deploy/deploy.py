@@ -113,7 +113,7 @@ class Deployer(Workers):
             return
 
         if self.kernel_fuzzing:
-            if not self.finished_fuzzing(hash_val, 'succeed') and not self.finished_fuzzing(hash_val, 'completed'):
+            if not self.finished_fuzzing(hash_val, 'incomplete'):
                 title = None
                 if not self.reproduced_ori_poc(hash_val, 'incomplete'):
                     impact_without_mutating, title = self.do_reproducing_ori_poc(case, hash_val, i386)
