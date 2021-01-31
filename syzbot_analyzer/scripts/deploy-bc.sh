@@ -115,7 +115,7 @@ wait_for_other_compiling
 make -j$N_CORES CC=wllvm > make.log 2>&1 || ERROR=1 && copy_log_then_exit make.log
 if [ $ERROR == "0" ]; then
   extract-bc vmlinux
-  mv vmlinux.bc one.bc
+  mv vmlinux.bc one.bc || (find -type f -name '*.bc' ! -name "timeconst.bc" -delete && exit 1)
   exit 0
 else
   # back to manual compile and link

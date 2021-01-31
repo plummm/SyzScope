@@ -126,7 +126,8 @@ def extrace_call_trace(report):
                 not regx_match(implicit_call_regx, line) and \
                 not is_kasan_func(extract_debug_info(line)) and \
                 not regx_match(regs_regx, line) and \
-                not regx_match(fs_regx, line):
+                not regx_match(fs_regx, line) and \
+                not line in exceptions:
             res.append(line)
         if regx_match(r'Call Trace', line):
             record_flag = 1

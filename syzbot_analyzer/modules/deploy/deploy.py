@@ -639,11 +639,7 @@ class Deployer(Workers):
                 else:
                     if exitcode !=0:
                         self.__save_error(hash_val)
-                    else:
-                        self.__move_to_completed()
-        elif not impact_without_mutating:
-            self.__move_to_completed()
-        else:
+        elif impact_without_mutating:
             self.__copy_new_impact(case, impact_without_mutating, title)
             #self.__move_to_succeed(new_impact_type)
         return
