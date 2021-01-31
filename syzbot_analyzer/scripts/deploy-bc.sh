@@ -112,6 +112,7 @@ pip3 list | grep wllvm || pip3 install wllvm
 make olddefconfig CC=wllvm
 ERROR=0
 wait_for_other_compiling
+make clean CC=wllvm
 make -j$N_CORES CC=wllvm > make.log 2>&1 || ERROR=1 && copy_log_then_exit make.log
 if [ $ERROR == "0" ]; then
   extract-bc vmlinux
