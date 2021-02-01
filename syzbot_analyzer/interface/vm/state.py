@@ -51,7 +51,7 @@ class VMState:
     
     def set_checkpoint(self):
         if self.__check_initialization():
-            return
+            return False
         kasan_report, kasan_ret = self.kernel.getKasanReport()
         if kasan_report == None:
             return False

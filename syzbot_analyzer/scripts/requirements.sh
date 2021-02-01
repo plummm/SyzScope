@@ -124,7 +124,7 @@ fi
 
 echo "[+] Download pwndbg"
 if [ ! -f "$TOOLS_PATH/.stamp/SETUP_PWNDBG" ]; then
-  git clone https://github.com/pwndbg/pwndbg
+  git clone https://github.com/plummm/pwndbg_linux_kernel.git pwndbg
   cd pwndbg
   ./setup.sh
   touch $TOOLS_PATH/.stamp/SETUP_PWNDBG

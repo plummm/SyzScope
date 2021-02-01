@@ -77,6 +77,7 @@ class SymExec(MemInstrument):
         self.vm.gdb_connect(self.gdb_port)
         if not self.vm.set_checkpoint():
             self.logger.error("No kasan_report() found")
+            p.kill()
             return None
         self.proj = self.vm.kernel.proj
         self.logger.info("Waiting for qemu launching")
