@@ -75,6 +75,7 @@ class Deployer(Workers):
             self.cleanup_built_syzkaller(hash_val)
             self.cleanup_finished_symbolic_execution(hash_val)
             self.cleanup_finished_static_analysis(hash_val)
+            self.cleanup_reproduced_ori_poc(hash_val)
         self.case_logger = self.__init_case_logger("{}-log".format(hash_val))
         self.case_info_logger = self.__init_case_logger("{}-info".format(hash_val))
         url = syzbot_host_url + syzbot_bug_base_url + hash_val
@@ -113,11 +114,10 @@ class Deployer(Workers):
             return
 
         if self.kernel_fuzzing:
+            title = None
+            if not self.reproduced_ori_poc(hash_val, 'incomplete'):
+                impact_without_mutating, title = self.do_reproducing_ori_poc(case, hash_val, i386)
             if not self.finished_fuzzing(hash_val, 'incomplete'):
-                title = None
-                if not self.reproduced_ori_poc(hash_val, 'incomplete'):
-                    impact_without_mutating, title = self.do_reproducing_ori_poc(case, hash_val, i386)
-
                 req = requests.request(method='GET', url=case["syz_repro"])
                 self.__write_config(req.content.decode("utf-8"), hash_val[:7])
                 limitedMutation = True
@@ -126,7 +126,7 @@ class Deployer(Workers):
                 exitcode = self.run_syzkaller(hash_val, limitedMutation)
                 self.save_case(hash_val, exitcode, case, limitedMutation, impact_without_mutating, title=title)
             else:
-                self.logger.info("{} has finished".format(hash_val[:7]))
+                self.logger.info("{} has finished fuzzing".format(hash_val[:7]))
 
         valid_contexts = self.get_buggy_contexts(case)
         for context in valid_contexts:
@@ -147,12 +147,16 @@ class Deployer(Workers):
                         self.logger.info("static analysis finished")
                     except CompilingError:
                         self.logger.error("Encounter an error when doing static analysis")
+                else:
+                    self.logger.info("{} has finished static analysis".format(hash_val[:7]))
 
             if self.symbolic_execution:
                 if not self.finished_symbolic_execution(hash_val, 'incomplete'):
                     r = self.do_symbolic_execution(case, context, i386)
                     if r == 0:
                         succeed = 1
+                else:
+                    self.logger.info("{} has finished symbolic execution".format(hash_val[:7]))
 
         if self.static_analysis:
             self.create_finished_static_analysis_stamp()
