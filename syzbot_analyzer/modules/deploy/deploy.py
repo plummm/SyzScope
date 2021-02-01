@@ -682,7 +682,10 @@ class Deployer(Workers):
                         for alert_key in self.alert:
                             if len(alert_key) > 0 and utilities.regx_match(alert_key, line):
                                 self.__trigger_alert(base, alert_key)
-            shutil.copytree(path, os.path.join(output, base))
+            dst = os.path.join(output, base)
+            if os.path.exists(dst):
+                os.remove(dst)
+            shutil.copytree(path, dst)
     
     def __trigger_alert(self, name, alert_key):
         self.logger.info("An alert for {} was trigger by crash {}".format(alert_key, name))
