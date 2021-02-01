@@ -240,8 +240,6 @@ def extract_vul_obj_offset_and_size(report):
                 offset = bug_mem_addr - addr_begin
         if size == None:
             size = offset
-        if rel_type == 1:
-            size = None
     return offset, size
 
 def strip_part_funcs(func):
