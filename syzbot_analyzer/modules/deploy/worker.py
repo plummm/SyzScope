@@ -295,7 +295,8 @@ class Workers(Case):
             raise CompilingError
         # Before save the Calltrace, we need to checkout to a right commit
         report_list = report.split('\n')
-        trace = utilities.extrace_call_trace(report_list)
+        kasan_report = utilities.only_kasan_calltrace(report_list)
+        trace = utilities.extrace_call_trace(kasan_report)
         self.sa.saveCallTrace2File(trace, vul_site)
         r, time_on_static_analysis = self.sa.run_static_analysis(vul_site, func_site, func, offset, size)
         if r != 0:

@@ -20,6 +20,25 @@ def compile_bc_extra_test():
             os.remove(os.path.join(d.current_case_path,'one.bc'))
     """
 
+def KasanVulnChecker_test(hash_val):
+    exitcode = 0
+    crawler = getCrawler()
+    crawler.run_one_case(hash_val)
+    case = crawler.cases.pop(hash_val)
+    d = getMinimalDeployer("work/completed/{}".format(hash_val[:7]))
+    valid_contexts = d.get_buggy_contexts(case)
+    report = ""
+    for context in valid_contexts:
+        if context['type'] == utilities.URL:
+            raw = utilities.request_get(context['report'])
+            report = raw.text
+        else:
+            f = open(context['report'], 'r')
+            raw = f.readlines()
+            report = "".join(raw)
+    sa = static_analysis.StaticAnalysis(logging, d.project_path, 1, d.current_case_path, "linux", d.max_compiling_kernel, max_compiling_kernel=1)
+    vul_site, func_site, func = sa.KasanVulnChecker(report)
+
 def saveCallTrace_test(case):
     d = getMinimalDeployer("work/incomplete/341e1a2")
     sa = static_analysis.StaticAnalysis(logging, d.project_path, 1, d.current_case_path, "linux", d.max_compiling_kernel)
@@ -30,4 +49,4 @@ def saveCallTrace_test(case):
     sa.saveCallTrace2File(trace, vul_site)
 
 if __name__ == '__main__':
-    compile_bc_extra_test()
+    KasanVulnChecker_test('2f6d30bad383f5711e5270b552f44fdcdd0deb33')

@@ -198,7 +198,8 @@ class StaticAnalysis:
         inline_func = ''
         offset = -1
         report_list = report.split('\n')
-        trace = utilities.extrace_call_trace(report_list)
+        kasan_report = utilities.only_kasan_calltrace(report_list)
+        trace = utilities.extrace_call_trace(kasan_report)
         for each in trace:
             """if vul_site == '':
                 vul_site = utilities.extract_debug_info(each)
@@ -209,11 +210,19 @@ class StaticAnalysis:
             if func == inline_func:
                 continue"""
             # See if it works after we disabled inline function
-            vul_site = utilities.extract_debug_info(each)
-            func = utilities.extract_func_name(each)
+            if vul_site == '':
+                vul_site = utilities.extract_debug_info(each)
+            if func == '':
+                func = utilities.extract_func_name(each)
+                func_site = utilities.extract_debug_info(each)
             if func == 'fail_dump':
                 func = None
-            func_site = vul_site
+                func_site = None
+            if utilities.regx_match(r'__read_once', func) or utilities.regx_match(r'__write_once', func):
+                vul_site = ''
+                func = ''
+                func_site = ''
+                continue
             break
         
         return vul_site, func_site, func
