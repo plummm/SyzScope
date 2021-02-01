@@ -26,6 +26,8 @@ def KasanVulnChecker_test(hash_val):
     crawler.run_one_case(hash_val)
     case = crawler.cases.pop(hash_val)
     d = getMinimalDeployer("work/completed/{}".format(hash_val[:7]))
+    if 'use-after-free' in case['title'] or 'out-of-bounds' in case['title']:
+        d.store_read = False
     valid_contexts = d.get_buggy_contexts(case)
     report = ""
     for context in valid_contexts:
@@ -49,4 +51,4 @@ def saveCallTrace_test(case):
     sa.saveCallTrace2File(trace, vul_site)
 
 if __name__ == '__main__':
-    KasanVulnChecker_test('2f6d30bad383f5711e5270b552f44fdcdd0deb33')
+    KasanVulnChecker_test('247a5fa16b0c71424d2447c4190e2d60062cbaaf')

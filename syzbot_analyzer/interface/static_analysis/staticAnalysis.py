@@ -233,8 +233,9 @@ class StaticAnalysis:
         flag_record = 0
         last_inline = ''
         flag_stop = False
+        err = False
         for each in trace:
-            if utilities.extract_debug_info(each) == vul_site:
+            if utilities.extract_debug_info(each) == vul_site and not flag_record:
                 flag_record ^= 1
             if flag_record:
                 func = utilities.extract_func_name(each)
@@ -252,7 +253,8 @@ class StaticAnalysis:
                 file, line = site.split(':')
                 s, e = self.getFuncBounds(func, file, int(line))
                 if s == 0 and e == 0:
-                    break
+                    err = True
+                    self.case_logger.error("Can not find the boundaries of calltrace function {}".format(func))
                 t += " {} {}".format(s, e)
                 # We disabled inline function
                 if utilities.isInline(each):
@@ -267,6 +269,7 @@ class StaticAnalysis:
         f.writelines("\n".join(text))
         f.truncate()
         f.close()
+        return err
     
     def getFuncBounds(self, func, file, lo_line):
         s = 0

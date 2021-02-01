@@ -1609,7 +1609,7 @@ index 62648336..e31b664a 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index 2a0b7dd4..60be5c40 100644
+index 2a0b7dd4..77789322 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
 @@ -6,6 +6,7 @@ package main
@@ -1725,7 +1725,7 @@ index 2a0b7dd4..60be5c40 100644
  				}
  			}
  		case res := <-reproDone:
-+			if isCriticalCrash(res.res.Report.Title, storeRead) != nonCritical {
++			if res.res != nil && isCriticalCrash(res.res.Report.Title, storeRead) != nonCritical {
 +				prog := res.res.Prog.Serialize()
 +				courier.AppendCriticalPoCQueue(prog)
 +				flagExtraMutating = true

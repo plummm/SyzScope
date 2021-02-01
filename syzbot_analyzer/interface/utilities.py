@@ -40,6 +40,7 @@ offset_desc_regx = r'The buggy address is located (\d+) bytes ((inside)|(to the 
 size_desc_regx = r'which belongs to the cache [a-z0-9\-_]+ of size (\d+)'
 kernel_func_def_regx= r'(^(static )?(__always_inline |const |inline )?(struct )?\w+( )?(\*)?( |\n)(([a-zA-Z0-9:_]*( |\n))?(\*)*)?([a-zA-Z0-9:_]+)\([a-zA-Z0-9*_,\(\)\[\]<>&\-\n\t ]*\))'
 case_hash_syzbot_regx = r'https:\/\/syzkaller\.appspot\.com\/bug\?id=([a-z0-9]+)'
+trace_regx = r'([A-Za-z0-9_.]+)(\+0x[0-9a-f]+\/0x[0-9a-f]+)? (([A-Za-z0-9_\-.]+\/)+[A-Za-z0-9_.\-]+:\d+)( \[inline\])?'
 
 def get_hash_from_log(path):
     with open(path, "r") as f:
@@ -65,8 +66,11 @@ def regx_getall(regx, line):
     m = re.findall(regx, line, re.MULTILINE)
     return m
 
+def is_trace(line):
+    return regx_match(trace_regx, line)
+
 def regx_kasan_line(line):
-    m = re.search(r'([A-Za-z0-9_.]+)(\+0x[0-9a-f]+\/0x[0-9a-f]+)?( (([A-Za-z0-9_\-.]+\/)+[A-Za-z0-9_.\-]+:\d+))?( \[inline\])?', line)
+    m = re.search(trace_regx, line)
     if m != None:
         return m.groups()
     return None
@@ -75,13 +79,13 @@ def extract_debug_info(line):
     res = regx_kasan_line(line)
     if res == None:
         return res
-    return res[3]
+    return res[2]
 
 def isInline(line):
     res = regx_kasan_line(line)
     if res == None:
         return False
-    if res[5] != None:
+    if res[4] != None:
         return True
     return False
 
@@ -135,12 +139,12 @@ def extrace_call_trace(report):
     record_flag = 0
     for line in report:
         line = line.strip('\n')
-        if record_flag and \
-                not regx_match(implicit_call_regx, line) and \
-                not regx_match(regs_regx, line) and \
-                not regx_match(fs_regx, line) and \
-                not regx_match(ignore_func_regx, line) and \
-                not line in exceptions:
+        if record_flag and is_trace(line):
+            """not regx_match(implicit_call_regx, line) and \
+            not regx_match(regs_regx, line) and \
+            not regx_match(fs_regx, line) and \
+            not regx_match(ignore_func_regx, line) and \
+            not line in exceptions:"""
             res.append(line)
             """
             I cannot believe we do have a calltrace starting without dump_stack like this:
