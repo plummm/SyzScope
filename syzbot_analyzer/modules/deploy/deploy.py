@@ -123,8 +123,8 @@ class Deployer(Workers):
                 limitedMutation = True
                 if 'patch' in case:
                     limitedMutation = False
-                exitcode = self.run_syzkaller(hash_val, limitedMutation)
-                self.save_case(hash_val, exitcode, case, limitedMutation, impact_without_mutating, title=title)
+                #exitcode = self.run_syzkaller(hash_val, limitedMutation)
+                self.save_case(hash_val, 0, case, limitedMutation, impact_without_mutating, title=title)
             else:
                 self.logger.info("{} has finished fuzzing".format(hash_val[:7]))
 
@@ -686,7 +686,7 @@ class Deployer(Workers):
                                 self.__trigger_alert(base, alert_key)
             dst = os.path.join(output, base)
             if os.path.exists(dst):
-                os.remove(dst)
+                os.rmdir(dst)
             shutil.copytree(path, dst)
     
     def __trigger_alert(self, name, alert_key):
