@@ -99,11 +99,13 @@ class CrashChecker:
         return utilities.levenshtein("\n".join(old_testcase), "\n".join(new_testcase))
 
     
-    def repro_on_fixed_kernel(self, syz_commit, linux_commit=None, config=None, c_repro=None, i386=None, patch_commit=None, crashes_path=None):
+    def repro_on_fixed_kernel(self, syz_commit, linux_commit=None, config=None, c_repro=None, i386=None, patch_commit=None, crashes_path=None, limitedMutation=False):
         if crashes_path == None:
             crashes_path = self.extract_existed_crash(self.case_path)
             if len(crashes_path) == 0:
                 return []
+        if limitedMutation:
+            return crashes_path
         self.case_logger.info("=============================crash.repro_on_fixed_kernel=============================")
         res = []
         reproduceable = {}

@@ -81,7 +81,7 @@ if [ "$COMPILE" == "0" ]; then
       exit 1
     fi
     COMPILER=$CASE_PATH/compiler/compiler
-    wait_for_other_compiling
+    #wait_for_other_compiling
     make -j$N_CORES CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
     exit 0
   fi
@@ -121,10 +121,11 @@ pip3 list | grep wllvm || pip3 install wllvm
 make olddefconfig CC=wllvm
 ERROR=0
 wait_for_other_compiling
+make clean CC=wllvm
 make -j$N_CORES CC=wllvm > make.log 2>&1 || ERROR=1 && copy_log_then_exit make.log
 if [ $ERROR == "0" ]; then
   extract-bc vmlinux
-  mv vmlinux.bc one.bc
+  mv vmlinux.bc one.bc || (find -type f -name '*.bc' ! -name "timeconst.bc" -delete && exit 1)
   exit 0
 else
   # back to manual compile and link

@@ -124,10 +124,23 @@ def extrace_call_trace(report):
         line = line.strip('\n')
         if record_flag and \
                 not regx_match(implicit_call_regx, line) and \
-                not is_kasan_func(extract_debug_info(line)) and \
                 not regx_match(regs_regx, line) and \
-                not regx_match(fs_regx, line):
+                not regx_match(fs_regx, line) and \
+                not line in exceptions:
             res.append(line)
+            """
+            I cannot believe we do have a calltrace starting without dump_stack like this:
+
+            __read_once_size include/linux/compiler.h:199 [inline]
+            arch_atomic_read arch/x86/include/asm/atomic.h:31 [inline]
+            atomic_read include/asm-generic/atomic-instrumented.h:27 [inline]
+            dump_stack+0x152/0x1ca lib/dump_stack.c:114
+            print_address_description.constprop.0.cold+0xd4/0x30b mm/kasan/report.c:375
+            __kasan_report.cold+0x1b/0x41 mm/kasan/report.c:507
+            kasan_report+0xc/0x10 mm/kasan/common.c:641
+            """
+            if is_kasan_func(extract_debug_info(line)):
+                res = []
         if regx_match(r'Call Trace', line):
             record_flag = 1
             res = []
@@ -213,8 +226,6 @@ def extract_vul_obj_offset_and_size(report):
                 offset = bug_mem_addr - addr_begin
         if size == None:
             size = offset
-        if rel_type == 1:
-            size = None
     return offset, size
 
 def strip_part_funcs(func):
