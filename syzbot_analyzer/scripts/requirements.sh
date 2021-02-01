@@ -122,6 +122,15 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_STATIC_ANALYSIS" ]; then
   cd ..
 fi
 
+echo "[+] Download pwndbg"
+if [ ! -f "$TOOLS_PATH/.stamp/SETUP_PWNDBG" ]; then
+  git clone https://github.com/pwndbg/pwndbg
+  cd pwndbg
+  ./setup.sh
+  touch $TOOLS_PATH/.stamp/SETUP_PWNDBG
+  cd ..
+fi
+
 echo "[+] Setup golang environment"
 if [ ! -f "$TOOLS_PATH/.stamp/SETUP_GOLANG" ]; then
   wget https://dl.google.com/go/go1.14.2.linux-amd64.tar.gz
