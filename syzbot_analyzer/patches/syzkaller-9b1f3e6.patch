@@ -1609,7 +1609,7 @@ index 62648336..e31b664a 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index 2a0b7dd4..77789322 100644
+index 2a0b7dd4..60be5c40 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
 @@ -6,6 +6,7 @@ package main
@@ -1725,7 +1725,7 @@ index 2a0b7dd4..77789322 100644
  				}
  			}
  		case res := <-reproDone:
-+			if res.res != nil && isCriticalCrash(res.res.Report.Title, storeRead) != nonCritical {
++			if isCriticalCrash(res.res.Report.Title, storeRead) != nonCritical {
 +				prog := res.res.Prog.Serialize()
 +				courier.AppendCriticalPoCQueue(prog)
 +				flagExtraMutating = true
@@ -2394,10 +2394,10 @@ index 33b9ccef..6796b061 100644
  		log.Logf(0, "vm-%v: running long enough, restarting", index)
 diff --git a/tools/syz-logparser/syz-logparser.go b/tools/syz-logparser/syz-logparser.go
 new file mode 100644
-index 00000000..bd50681a
+index 00000000..b613297e
 --- /dev/null
 +++ b/tools/syz-logparser/syz-logparser.go
-@@ -0,0 +1,66 @@
+@@ -0,0 +1,89 @@
 +package main
 +
 +import (
@@ -2406,19 +2406,20 @@ index 00000000..bd50681a
 +	"fmt"
 +	"os"
 +
-+	"github.com/google/syzkaller/pkg/report"
 +	"github.com/google/syzkaller/pkg/mgrconfig"
++	"github.com/google/syzkaller/pkg/report"
 +)
 +
 +func main() {
 +	var (
-+		flagInput    = flag.String("i", "", "input: path of a raw bug report")
-+		flagUsage       = flag.Bool("u", false, "Get the usage")
-+		flagConfig    = flag.String("cfg", "", "Path of syzkaller config")
++		flagInput  = flag.String("i", "", "input: path of a raw bug report")
++		flagOutput = flag.String("o", "", "output: path of a decent bug report")
++		flagUsage  = flag.Bool("u", false, "Get the usage")
++		flagConfig = flag.String("cfg", "", "Path of syzkaller config")
 +	)
 +	flag.Parse()
-+	if (*flagInput == "" || *flagConfig == "" || *flagUsage) {
-+		fmt.Printf("Usage:  syz-logparser -cfg path2cfg -i path2log\n")
++	if *flagInput == "" || *flagConfig == "" || *flagOutput == "" || *flagUsage {
++		fmt.Printf("Usage:  syz-logparser -cfg path2cfg -i path2log -o path2write\n")
 +		return
 +	}
 +
@@ -2427,7 +2428,6 @@ index 00000000..bd50681a
 +		fmt.Println(err)
 +		return
 +	}
-+	fmt.Println(cfg.Type)
 +	output := loadLog(*flagInput)
 +	if len(output) == 0 {
 +		fmt.Printf("No bug report found in the given path\n")
@@ -2439,7 +2439,15 @@ index 00000000..bd50681a
 +		return
 +	}
 +	report := rep.Parse(output)
-+	fmt.Println(string(report.Report))
++	if err := rep.Symbolize(report); err != nil {
++		fmt.Println(err)
++		return
++	}
++
++	if !writeLog(*flagOutput, report.Report) {
++		fmt.Println("Fail to write to the given path")
++		return
++	}
 +}
 +
 +func loadLog(path string) []byte {
@@ -2458,13 +2466,27 @@ index 00000000..bd50681a
 +		}
 +		if err != nil {
 +			fmt.Println(err)
-+			return output
++			break
 +		}
++		ln = append(ln, '\n')
 +		output = append(output, ln...)
 +	}
++	logFile.Close()
 +	return output
 +}
-\ No newline at end of file
++
++func writeLog(path string, output []byte) bool {
++	logFile, err := os.Create(path)
++	if err != nil {
++		fmt.Println(err)
++		return false
++	}
++	w := bufio.NewWriter(logFile)
++	w.Write(output)
++	w.Flush()
++	logFile.Close()
++	return true
++}
 diff --git a/tools/syz-runtest/runtest.go b/tools/syz-runtest/runtest.go
 index 76c120cd..d7d5f1fa 100644
 --- a/tools/syz-runtest/runtest.go
