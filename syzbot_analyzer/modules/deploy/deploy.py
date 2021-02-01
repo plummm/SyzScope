@@ -140,6 +140,8 @@ class Deployer(Workers):
                 else:
                     self.case_logger.info("skip an invalid context")
                 continue
+
+            self.logger.info("Dynamic validate {}".format(context['workdir']))
             if self.static_analysis:
                 if not self.finished_static_analysis(hash_val, 'incomplete'):
                     try:
