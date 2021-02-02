@@ -118,6 +118,9 @@ fi
 echo "[+] Build static analysis tool"
 if [ ! -f "$TOOLS_PATH/.stamp/BUILD_STATIC_ANALYSIS" ]; then
   git clone https://github.com/plummm/dr_checker_x.git dr_checker
+  cd dr_checker
+  git checkout taint-analysis-on-llvm-10
+  cd ..
   touch $TOOLS_PATH/.stamp/BUILD_STATIC_ANALYSIS
   cd ..
 fi

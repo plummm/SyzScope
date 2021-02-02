@@ -51,4 +51,4 @@ def saveCallTrace_test(case):
     sa.saveCallTrace2File(trace, vul_site)
 
 if __name__ == '__main__':
-    KasanVulnChecker_test('247a5fa16b0c71424d2447c4190e2d60062cbaaf')
+    KasanVulnChecker_test('93e67d1ae66524b264d8308b7e275edc84d70ff7')

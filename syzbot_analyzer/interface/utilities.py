@@ -133,7 +133,7 @@ def extrace_call_trace(report):
     implicit_call_regx = r'\[.+\]  \?.*'
     fs_regx = r'FS-Cache:'
     ignore_func_regx = r'__(read|write)_once'
-    call_trace_end = [r"entry_SYSENTER", r"entry_SYSCALL", r"ret_from_fork", r"bpf_prog_[a-z0-9]{16}\+"]
+    call_trace_end = [r"entry_SYSENTER", r"entry_SYSCALL", r"ret_from_fork", r"bpf_prog_[a-z0-9]{16}\+", r"Allocated by"]
     exceptions = [" <IRQ>", " </IRQ>"]
     res = []
     record_flag = 0
