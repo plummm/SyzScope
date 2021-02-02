@@ -686,7 +686,7 @@ class Deployer(Workers):
                                 self.__trigger_alert(base, alert_key)
             dst = os.path.join(output, base)
             if os.path.exists(dst):
-                os.rmdir(dst)
+                shutil.rmtree(dst)
             shutil.copytree(path, dst)
     
     def __trigger_alert(self, name, alert_key):
