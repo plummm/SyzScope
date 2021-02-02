@@ -667,8 +667,9 @@ class Deployer(Workers):
                     f.write(r.text)
             crash_log = "{}/{}".format(self.current_case_path, "poc/crash_log-ori")
             if os.path.isfile(crash_log):
-                shutil.copy(crash_log, os.path.join(ori, "repro.log"))
-                self.generate_decent_report(crash_log, os.path.join(ori, "repro.report"))
+                repro_log = os.path.join(ori, "repro.log")
+                self.copy_only_impact(crash_log, repro_log)
+                self.generate_decent_report(repro_log, os.path.join(ori, "repro.report"))
             with open(os.path.join(ori, "description"), "w") as f:
                     f.write(title)
         else:

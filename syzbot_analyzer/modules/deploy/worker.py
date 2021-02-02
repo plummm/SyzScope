@@ -387,6 +387,22 @@ class Workers(Case):
                     ret.append({'title':title, 'workdir': each_case[:7], 'offset': offset, 'size': size, 'repro': prog,  'report': report, 'type': utilities.CASE, 'c_repro': None})
         return ret
     
+    def copy_only_impact(self, input_log, output_log):
+        flag_record = False
+        new_text = []
+        with open(input_log, 'r') as f:
+            text = f.readlines()
+            for line in text:
+                if utilities.regx_match(utilities.kasan_oob_regx, line) or \
+                    utilities.regx_match(utilities.kasan_uaf_regx, line) or \
+                    utilities.regx_match(utilities.double_free_regx, line):
+                    flag_record = True
+                if flag_record:
+                    new_text.append(line)
+        with open(output_log, 'w') as f:
+            f.writelines(new_text)
+            f.truncate()
+    
     def generate_decent_report(self, input_log, output_log):
         syzkaller_workdir = os.path.join(self.current_case_path, "gopath/src/github.com/google/syzkaller/workdir")
         files = os.listdir(syzkaller_workdir)
