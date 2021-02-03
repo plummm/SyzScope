@@ -97,7 +97,7 @@ class Deployer(Workers):
         succeed = 0
         #if self.__need_kasan_patch(case['title']):
         #    need_patch = 1
-        if not self.kernel_fuzzing:
+        if not self.kernel_fuzzing and not self.reproduce_ori_bug:
             contexts = self.get_buggy_contexts(case)
             valid = 0
             for context in contexts:
