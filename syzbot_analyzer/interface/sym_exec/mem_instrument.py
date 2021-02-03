@@ -75,7 +75,7 @@ class MemInstrument(StateManager):
         if stack != addr:
             # Finite address write includes write to UAF/OOB memory(addr is concrete but addr point to UAF/OOB memory)
             # or write to an address that comes from UAF/OOB memory(addr is symbolic)
-            if self.get_states_globals(addr, StateManager.G_SYM):
+            if self.get_states_globals(addr, StateManager.G_SYM) and state.solver.unique(bv_addr):
                 self.wrap_high_risk_state(state, StateManager.OOB_UAF_WRITE)
             if self.is_symbolic(bv_addr) and state.scratch.ins_addr not in self.exploitable_state:
                 if self._is_arbitrary_value(bv_addr):

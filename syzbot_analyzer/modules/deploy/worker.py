@@ -216,6 +216,8 @@ class Workers(Case):
             self.logger.warning("Arbitrary address write found")
         if result & StateManager.FINITE_ADDR_WRITE:
             self.logger.warning("Finite address write found")
+        if result & StateManager.OOB_UAF_WRITE:
+            self.logger.warning("OOB/UAF write found")
         """if is_propagating_global:
             if raw_tracing:
                 self.logger.warning("{} access to global/local variables on symbolic tracing".format(self.hash_val))

@@ -179,9 +179,11 @@ class SymExec(MemInstrument):
             self.logger.info("There is no primitive found")
             return self.state_privilege
         self.logger.info("Total {} primitives found during symbolic execution\n".format(len(self.impacts_collector)))
-        n_AAW, n_AVW, n_FAW, n_FVW, n_CFH= 0, 0, 0, 0, 0
+        n_OUW, n_AAW, n_AVW, n_FAW, n_FVW, n_CFH= 0, 0, 0, 0, 0
         for addr in self.impacts_collector:
             each_primitive = self.impacts_collector[addr]
+            if each_primitive == StateManager.OOB_UAF_WRITE:
+                n_OUW += 1
             if each_primitive == StateManager.ARBITRARY_ADDR_WRITE:
                 n_AAW += 1
             if each_primitive == StateManager.ARBITRARY_VALUE_WRITE:
@@ -192,6 +194,7 @@ class SymExec(MemInstrument):
                 n_FVW += 1
             if each_primitive == StateManager.CONTROL_FLOW_HIJACK:
                 n_CFH += 1
+        self.logger.info("The number of OOB/UAF write is {}\n".format(n_OUW))
         self.logger.info("The number of arbitrary address write is {}\n".format(n_AAW))
         self.logger.info("The number of finite address write is {}\n".format(n_FAW))
         self.logger.info("The number of arbitrary value write is {}\n".format(n_AVW))
