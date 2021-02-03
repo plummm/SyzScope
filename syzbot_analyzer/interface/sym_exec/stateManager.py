@@ -106,7 +106,9 @@ class StateManager:
         key = "{}:{}".format(file, line)
         if key in self.target_site and self.target_site[key] == StateManager.NO_ADDITIONAL_USE:
             target_sign = "-Target"
-        self.target_site[key] = impact_type
+        if key not in self.target_site[key]:
+            self.target_site[key] == StateManager.NO_ADDITIONAL_USE
+        self.target_site[key] |= impact_type
         if self.all_targets_covered():
             self.stop_execution = True
         if (state.scratch.ins_addr in self.exploitable_state) and (self.exploitable_state[state.scratch.ins_addr] & impact_type):
