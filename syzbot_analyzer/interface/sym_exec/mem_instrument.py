@@ -100,7 +100,7 @@ class MemInstrument(StateManager):
             self.update_states_globals(addr, size, StateManager.G_SYM)
     
     def track_call(self, state):
-        if state.regs.rip.symbolic and state.scratch.ins_addr not in self.exploitable_state:
+        if state.regs.rip.symbolic and state.solver.unique(state.regs.rip) and state.scratch.ins_addr not in self.exploitable_state:
             self.wrap_high_risk_state(state, StateManager.CONTROL_FLOW_HIJACK)
             return
 

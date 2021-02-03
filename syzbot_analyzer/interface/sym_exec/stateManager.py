@@ -107,7 +107,7 @@ class StateManager:
         if key in self.target_site and self.target_site[key] == StateManager.NO_ADDITIONAL_USE:
             target_sign = "-Target"
         if key not in self.target_site:
-            self.target_site[key] == StateManager.NO_ADDITIONAL_USE
+            self.target_site[key] = StateManager.NO_ADDITIONAL_USE
         self.target_site[key] |= impact_type
         if self.all_targets_covered():
             self.stop_execution = True
