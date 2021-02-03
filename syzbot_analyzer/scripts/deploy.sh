@@ -84,8 +84,8 @@ function retrieve_proper_patch() {
   git rev-list 9b1f3e6 | grep $(git rev-parse HEAD) || cp $PATCHES_PATH/syzkaller-9b1f3e6.patch ./syzkaller.patch
 }
 
-if [ $# -ne 13 ]; then
-  echo "Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image arch gcc_version kasan_patch max_compiling_kernel"
+if [ $# -ne 12 ]; then
+  echo "Usage ./deploy.sh linux_clone_path case_hash linux_commit syzkaller_commit linux_config testcase index catalog image arch gcc_version max_compiling_kernel"
   exit 1
 fi
 
@@ -99,8 +99,7 @@ CATALOG=$8
 IMAGE=$9
 ARCH=${10}
 COMPILER_VERSION=${11}
-COMPILE_SYZKALLER=${12}
-MAX_COMPILING_KERNEL=${13}
+MAX_COMPILING_KERNEL=${12}
 PROJECT_PATH="$(pwd)"
 PKG_NAME="syzbot_analyzer"
 CASE_PATH=$PROJECT_PATH/work/$CATALOG/$HASH
@@ -143,36 +142,35 @@ if [ ! -f "$CASE_PATH/compiler/compiler" ]; then
   ln -s $COMPILER ./compiler
 fi
 
-if [ "$COMPILE_SYZKALLER" == "1" ]; then
-  #Building for syzkaller
-  echo "[+] Building syzkaller"
-  if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then
-    if [ -d "$GOPATH/src/github.com/google/syzkaller" ]; then
-      rm -rf $GOPATH/src/github.com/google/syzkaller
-    fi
-    mkdir -p $GOPATH/src/github.com/google/ || echo "Dir exists"
-    cd $GOPATH/src/github.com/google/
-    cp -r $PROJECT_PATH/tools/gopath/src/github.com/google/syzkaller ./
-    #go get -u -d github.com/google/syzkaller/prog
-    #fi
-    cd $GOPATH/src/github.com/google/syzkaller || exit 1
-    make clean
-    git stash --all || set_git_config
-    git checkout -f 9b1f3e665308ee2ddd5b3f35a078219b5c509cdb
-    #git checkout -
-    #retrieve_proper_patch
-    cp $PATCHES_PATH/syzkaller-9b1f3e6.patch ./syzkaller.patch
-    patch -p1 -i syzkaller.patch
-    #rm -r executor
-    #cp -r $PROJECT_PATH/tools/syzkaller/executor ./executor
-    make TARGETARCH=$ARCH TARGETVMARCH=amd64
-    if [ ! -d "workdir" ]; then
-      mkdir workdir
-    fi
-    curl $TESTCASE > $GOPATH/src/github.com/google/syzkaller/workdir/testcase-$HASH
-    touch $CASE_PATH/.stamp/BUILD_SYZKALLER
+#Building for syzkaller
+echo "[+] Building syzkaller"
+if [ ! -f "$CASE_PATH/.stamp/BUILD_SYZKALLER" ]; then
+  if [ -d "$GOPATH/src/github.com/google/syzkaller" ]; then
+    rm -rf $GOPATH/src/github.com/google/syzkaller
   fi
+  mkdir -p $GOPATH/src/github.com/google/ || echo "Dir exists"
+  cd $GOPATH/src/github.com/google/
+  cp -r $PROJECT_PATH/tools/gopath/src/github.com/google/syzkaller ./
+  #go get -u -d github.com/google/syzkaller/prog
+  #fi
+  cd $GOPATH/src/github.com/google/syzkaller || exit 1
+  make clean
+  git stash --all || set_git_config
+  git checkout -f 9b1f3e665308ee2ddd5b3f35a078219b5c509cdb
+  #git checkout -
+  #retrieve_proper_patch
+  cp $PATCHES_PATH/syzkaller-9b1f3e6.patch ./syzkaller.patch
+  patch -p1 -i syzkaller.patch
+  #rm -r executor
+  #cp -r $PROJECT_PATH/tools/syzkaller/executor ./executor
+  make TARGETARCH=$ARCH TARGETVMARCH=amd64
+  if [ ! -d "workdir" ]; then
+    mkdir workdir
+  fi
+  curl $TESTCASE > $GOPATH/src/github.com/google/syzkaller/workdir/testcase-$HASH
+  touch $CASE_PATH/.stamp/BUILD_SYZKALLER
 fi
+
 
 cd $CASE_PATH || exit 1
 echo "[+] Copy image"

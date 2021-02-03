@@ -112,7 +112,7 @@ class Deployer(Workers):
                 self.__move_to_completed()
                 return
 
-        r = self.__run_delopy_script(hash_val[:7], case, need_patch, kernel_fuzzing=self.kernel_fuzzing)
+        r = self.__run_delopy_script(hash_val[:7], case, need_patch)
         if r != 0:
             self.logger.error("Error occur in deploy.sh")
             self.__save_error(hash_val)
@@ -467,7 +467,7 @@ class Deployer(Workers):
         self.logger.info("run: scripts/linux-clone.sh {} {}".format(self.index, self.linux_folder, index))
         call(["syzbot_analyzer/scripts/linux-clone.sh", self.linux_folder, index])
 
-    def __run_delopy_script(self, hash_val, case, kasan_patch=0, kernel_fuzzing=True):
+    def __run_delopy_script(self, hash_val, case, kasan_patch=0):
         commit = case["commit"]
         syzkaller = case["syzkaller"]
         config = case["config"]
@@ -475,19 +475,16 @@ class Deployer(Workers):
         time = case["time"]
         self.case_info_logger.info("\ncommit: {}\nsyzkaller: {}\nconfig: {}\ntestcase: {}\ntime: {}\narch: {}".format(commit,syzkaller,config,testcase,time,self.arch))
 
-        compile_syzkaller = 0
         case_time = time_parser.parse(time)
         if self.image_switching_date <= case_time:
             image = "stretch"
         else:
             image = "wheezy"
-        if kernel_fuzzing:
-            compile_syzkaller = 1
         target = os.path.join(self.package_path, "scripts/deploy.sh")
         chmodX(target)
         index = str(self.index)
         self.logger.info("run: scripts/deploy.sh")
-        p = Popen([target, self.linux_folder, hash_val, commit, syzkaller, config, testcase, index, self.catalog, image, self.arch, self.compiler, str(compile_syzkaller), str(self.max_compiling_kernel)],
+        p = Popen([target, self.linux_folder, hash_val, commit, syzkaller, config, testcase, index, self.catalog, image, self.arch, self.compiler, str(self.max_compiling_kernel)],
                 stdout=PIPE,
                 stderr=STDOUT
                 )

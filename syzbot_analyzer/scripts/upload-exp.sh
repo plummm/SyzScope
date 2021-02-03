@@ -61,9 +61,10 @@ scp -F /dev/null -o UserKnownHostsFile=/dev/null \
 
 if [ "$FIXED" == "0" ]; then
     #Only for reproduce original PoC
-    if [ ! -d "$CASE_PATH/poc/gopath" ]; then
-        mkdir $CASE_PATH/poc/gopath
+    if [ -d "$CASE_PATH/poc/gopath" ]; then
+        rm -rf $CASE_PATH/poc/gopath
     fi
+    mkdir -p $CASE_PATH/poc/gopath
     export GOPATH=$CASE_PATH/poc/gopath
     if [ ! -d "$GOPATH/src/github.com/google/syzkaller" ]; then
         mkdir -p $GOPATH/src/github.com/google/ || echo "Dir exists"
