@@ -179,7 +179,7 @@ class SymExec(MemInstrument):
             self.logger.info("There is no primitive found")
             return self.state_privilege
         self.logger.info("Total {} primitives found during symbolic execution\n".format(len(self.impacts_collector)))
-        n_OUW, n_AAW, n_AVW, n_FAW, n_FVW, n_CFH= 0, 0, 0, 0, 0
+        n_OUW, n_AAW, n_AVW, n_FAW, n_FVW, n_CFH= 0, 0, 0, 0, 0, 0
         for addr in self.impacts_collector:
             each_primitive = self.impacts_collector[addr]
             if each_primitive == StateManager.OOB_UAF_WRITE:
@@ -517,16 +517,16 @@ class SymExec(MemInstrument):
     def _my_successor_func(self, state):
         self.setup_current_state(state)
         self.skip_unexpected_opcode(state.addr)
-        try:
-            succ = state.step()
-        except Exception as e:
+        #try:
+        succ = state.step()
+        """except Exception as e:
             self.logger.error("Execution error at {}".format(hex(state.scratch.ins_addr)))
             code = self.vm.inspect_code(state.scratch.ins_addr, 1)
             if code != None:
                 self.logger.info(code)
             self.logger.error(e)
             self.kill_current_state = False
-            raise ExecutionError
+            raise ExecutionError"""
         if self._is_fallen_state(state):
             self.logger.warning("kill a fallen state")
             succ.flat_successors = []
