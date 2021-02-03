@@ -179,7 +179,10 @@ class VMState:
     
     def prepare_context(self, pc):
         index = self.mon.choose_cpu(pc)
+        if index == -1:
+            return False
         self.mon.set_cpu(index)
+        return True
     
     def read_reg(self, reg, timeout=5):
         if self.__check_initialization():

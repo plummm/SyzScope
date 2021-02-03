@@ -2,7 +2,8 @@ import angr
 import logging
 import os
 import archinfo
-from datetime import datetime
+import datetime
+import time
 from angr import SimUnsatError
 class StateManager:
     G_MEM = 0
@@ -16,6 +17,7 @@ class StateManager:
     ARBITRARY_ADDR_WRITE = 1 << 2
     FINITE_ADDR_WRITE = 1 << 3
     CONTROL_FLOW_HIJACK = 1 << 4
+    OOB_UAF_WRITE = 1 << 5
 
     def __init__(self, index, workdir):
         self.index = index
@@ -58,9 +60,10 @@ class StateManager:
         else:
             return None
 
-        now = datetime.now()
-        current_time = now.strftime("%m/%d/%y %H:%M:%S")
-        logger.info("Primitive found at {}".format(current_time))
+
+        #now = datetime.datetime.now()
+        #current_time = now.strftime("%m/%d/%y %H:%M:%S")
+        logger.info("Primitive found at {} seconds".format(time.time() - self.start_time))
         return logger
     
     def setup_current_state(self, init_state):
@@ -76,9 +79,9 @@ class StateManager:
         self.simgr = self.proj.factory.simgr(self._current_state, save_unconstrained=True)
         if not symbolic_tracing:
             self.add_constraints = True
-            #if dfs:
-                #legth_limiter = angr.exploration_techniques.LengthLimiter(max_length=3000, drop=True)
-                #self.simgr.use_technique(legth_limiter)
+            if dfs:
+                legth_limiter = angr.exploration_techniques.LengthLimiter(max_length=15000, drop=True)
+                self.simgr.use_technique(legth_limiter)
         if dfs:
             dfs = angr.exploration_techniques.DFS()
             self.simgr.use_technique(dfs)
@@ -87,7 +90,7 @@ class StateManager:
     def get_current_state(self):
         return self._current_state
     
-    def wrap_high_risk_state(self, state, impact_type):
+    def wrap_high_risk_state(self, state, impact_type, bv=None):
         prim_logger = None
         func_name = self.vm.get_func_name(state.scratch.ins_addr)
         if func_name == None:
@@ -98,8 +101,11 @@ class StateManager:
             #self.dump_trace(state)
             self.purge_current_state()
             return None
+        target_sign = ""
         file, line = self.vm.get_dbg_info(state.scratch.ins_addr)
         key = "{}:{}".format(file, line)
+        if key in self.target_site and self.target_site[key] == StateManager.NO_ADDITIONAL_USE:
+            target_sign = "-Target"
         self.target_site[key] = impact_type
         if self.all_targets_covered():
             self.stop_execution = True
@@ -108,29 +114,34 @@ class StateManager:
         self.exploitable_state[state.scratch.ins_addr] = impact_type
         if impact_type == StateManager.FINITE_ADDR_WRITE:
             self.state_privilege |= impact_type
-            prim_name = "{}-{}-{}".format("FAW", func_name, hex(state.scratch.ins_addr))
+            prim_name = "{}-{}-{}".format("FAW", func_name, hex(state.scratch.ins_addr)) + target_sign
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("Finite address write found")
         if impact_type == StateManager.ARBITRARY_ADDR_WRITE:
             self.state_privilege |= impact_type
-            prim_name = "{}-{}-{}".format("AAW", func_name, hex(state.scratch.ins_addr))
+            prim_name = "{}-{}-{}".format("AAW", func_name, hex(state.scratch.ins_addr)) + target_sign
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("Arbitrary address write found")
         if impact_type == StateManager.FINITE_VALUE_WRITE:
             self.state_privilege |= impact_type
-            prim_name = "{}-{}-{}".format("FVW", func_name, hex(state.scratch.ins_addr))
+            prim_name = "{}-{}-{}".format("FVW", func_name, hex(state.scratch.ins_addr)) + target_sign
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("Finite value write found")
         if impact_type == StateManager.ARBITRARY_VALUE_WRITE:
             self.state_privilege |= impact_type
-            prim_name = "{}-{}-{}".format("AVW", func_name, hex(state.scratch.ins_addr))
+            prim_name = "{}-{}-{}".format("AVW", func_name, hex(state.scratch.ins_addr)) + target_sign
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("Arbitrary value write found")
         if impact_type == StateManager.CONTROL_FLOW_HIJACK:
             self.state_privilege |= impact_type
-            prim_name = "{}-{}-{}".format("CFH", func_name, hex(state.scratch.ins_addr))
+            prim_name = "{}-{}-{}".format("CFH", func_name, hex(state.scratch.ins_addr)) + target_sign
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("Control flow hijack found!")
+        if impact_type == StateManager.OOB_UAF_WRITE:
+            self.state_privilege |= impact_type
+            prim_name = "{}-{}-{}".format("OUW", func_name, hex(state.scratch.ins_addr)) + target_sign
+            prim_logger = self.init_primitive_logger(prim_name)
+            prim_logger.warning("OOB UAF write found!")
             """
             for addr in state.globals['sym']:
                 size = state.globals['sym'][addr]
@@ -138,6 +149,10 @@ class StateManager:
                 val = state.solver.eval(bv)
                 prim_logger.info("addr {} eval to {} with {} bytes".format(hex(addr), hex(val), size))
             """
+        if bv != None:
+            prim_logger.info('constraint begin')
+            prim_logger.info(bv)
+            prim_logger.info('constraint end')
         self.dump_state(state, prim_logger)
         self.dump_stack(state, prim_logger)
         self.dump_trace(state, prim_logger)
@@ -208,12 +223,45 @@ class StateManager:
             ret = -1
         return ret
     
+    def _arg_be_zero(self, bv):
+        for arg in bv.args:
+            if self._current_state.solver.solution(arg, 0):
+                return True
+        return False
+    
+    def _is_arbitrary_value(self, bv):
+        range_limit_op = ['__le__', 'SLE', '__lt__', 'SLT', 'UGT', 'UGE'\
+            '__gt__', '__ge__', 'SGT', 'SGE', 'ULT', 'ULE', '__eq__', '__ne__', 'Concat']
+        ret = None
+        if type(bv) == int or bv.op == 'BVV':
+            return False
+        if bv.op == 'BVS':
+            return True
+        if bv.args == None:
+            return True
+        for each_arg in bv.args:
+            if ret == None:
+                ret = self._is_arbitrary_value(each_arg)
+            else:
+                if bv.op in range_limit_op:
+                    ret &= self._is_arbitrary_value(each_arg)
+                else:
+                    if bv.op == '__mul__' and self._arg_be_zero(bv):
+                        return False
+                    else:
+                        ret |= self._is_arbitrary_value(each_arg)
+        return ret
+        
+
     def is_under_constrained(self, bv):
         # '0x100000000000000'
+        print(bv)
+        for e in bv.leaf_asts():
+            print(e)
         if bv.depth > 10:
             # Too many depth (8^10) make the recursive a blackhol
-            return self._current_state.solver.solution(bv, 0) and \
-                self._current_state.solver.solution(bv, 0x100000000000000)
+            return not (self._current_state.solver.solution(bv, 0) and \
+                self._current_state.solver.solution(bv, 0x100000000000000))
         sym_value_4_state = []
         sym_value_4_bv = []
         constraints = self._current_state.solver.constraints

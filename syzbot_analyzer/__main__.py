@@ -54,7 +54,11 @@ def args_parse():
                         help='Time for each running(in hour)\n'
                         '(default value is 8 hour)')
     parser.add_argument('-KF', '--kernel-fuzzing',
-                        action='store_true')
+                        action='store_true',
+                        help='Enable kernel fuzzing and reproducing the original impact')
+    parser.add_argument('-RO', '--reproduce',
+                        action='store_true',
+                        help='Enable reproducing the original impact separatly')
     parser.add_argument('-SA', '--static-analysis',
                         action='store_true',
                         help='Enable static analysis separatly')
@@ -73,7 +77,7 @@ def args_parse():
     parser.add_argument('--qemu-monitor', nargs='?',
                         default='9700',
                         help='Default port of qemu monitor')
-    parser.add_argument('--max-compiling-kernel-concurrently', nargs='?',
+    parser.add_argument('-max', '--max-compiling-kernel-concurrently', nargs='?',
                         default='-1',
                         help='maximum of kernel that compiling at the same time. Default is unlimited.')
     parser.add_argument('--timeout-dynamic-validation', nargs='?',
@@ -149,7 +153,7 @@ def read_cases_from_cache():
 def deploy_one_case(index, args, hash_val):
     case = crawler.cases[hash_val]
     dp = Deployer(index=index, debug=args.debug, force=args.force, port=int(args.ssh), replay=args.replay, \
-                linux_index=int(args.linux), time=int(args.time), kernel_fuzzing=args.kernel_fuzzing, alert=args.alert, \
+                linux_index=int(args.linux), time=int(args.time), kernel_fuzzing=args.kernel_fuzzing, reproduce= args.reproduce, alert=args.alert, \
                 static_analysis=args.static_analysis, symbolic_execution=args.symbolic_execution, gdb_port=int(args.gdb), \
                 qemu_monitor_port=int(args.qemu_monitor), max_compiling_kernel=int(args.max_compiling_kernel_concurrently), \
                 timeout_dynamic_validation=args.timeout_dynamic_validation, timeout_static_analysis=args.timeout_static_analysis, \

@@ -13,7 +13,7 @@ from syzbot_analyzer.interface.vm import VM
 from math import e
 from syzbot_analyzer.interface.vm.error import QemuIsDead
 from .mem_instrument import MemInstrument
-from .error import VulnerabilityNotTrigger, ExecutionError, AbnormalGDBBehavior
+from .error import VulnerabilityNotTrigger, ExecutionError, AbnormalGDBBehavior, InvalidCPU
 
 class SymExec(MemInstrument):
     def __init__(self, index, workdir, sections=None, logger=None, debug=False):
@@ -37,6 +37,7 @@ class SymExec(MemInstrument):
         self._branches = None
         self.target_site = None
         self.terminating_func = None
+        self.start_time = None
         self.state_tracking = []
         if logger == None:
             self.logger = logging
@@ -165,11 +166,11 @@ class SymExec(MemInstrument):
         #self._init_state.inspect.b('constraints', when=angr.BP_BEFORE, action=self.track_contraint)
 
         self.terminating_func = terminating_func
-        start_time = time.time()
-        self._run_simgr(dfs, path, raw_tracing, start_time)
+        self.start_time = time.time()
+        self._run_simgr(dfs, path, raw_tracing)
         
         self.logger.info("*******************primitives*******************\n")
-        running_time = time.time() - start_time
+        running_time = time.time() - self.start_time
         self.logger.info("Running for {}".format(str(datetime.timedelta(seconds=running_time))))
         if len(self.impacts_collector) == 0:
             self.logger.info("There is no primitive found")
@@ -197,7 +198,7 @@ class SymExec(MemInstrument):
 
         return self.state_privilege
     
-    def _run_simgr(self, dfs, path, raw_tracing, start_time):
+    def _run_simgr(self, dfs, path, raw_tracing):
         self.init_execution()
         #self.build_path_fence(path)
         self.build_path_table(path)
@@ -217,10 +218,10 @@ class SymExec(MemInstrument):
                 if meta_time == 0:
                     meta_time = current_time + 60*60
                 if current_time >= meta_time:
-                    self.logger.info("{} seconds left".format(self._timeout - (meta_time - start_time)))
+                    self.logger.info("{} seconds left".format(self._timeout - (meta_time - self.start_time)))
                     meta_time = current_time + 60*60
                 #self.logger.info("time left: {}".format(current_time - start_time))
-                if current_time - start_time > self._timeout:
+                if current_time - self.start_time > self._timeout:
                     self.logger.info("Timeout, stop symbolic execution")
                     self.stop_execution = True
 
@@ -288,18 +289,18 @@ class SymExec(MemInstrument):
 
     def _symbolize_vuln_mem(self, raw_tracing):
         for i in range(0, self.vul_mem_size, self.vm.addr_bytes):
-            val = self.vm.read_mem(self.vul_mem_start + i, 1)
-            if len(val) == 1:
-                self.make_symbolic(self._init_state, self.vul_mem_start + i, self.vm.addr_bytes, "s_obj_{}".format(self.vul_mem_start + i))
-                if raw_tracing:
+            self.make_symbolic(self._init_state, self.vul_mem_start + i, self.vm.addr_bytes, "s_obj_{}".format(self.vul_mem_start + i))
+            if raw_tracing:
+                val = self.vm.read_mem(self.vul_mem_start + i, 1)
+                if len(val) == 1:
                     bv = self._init_state.memory.load(self.vul_mem_start + i, size=self.vm.addr_bytes, inspect=False, endness=archinfo.Endness.LE)
                     if not bv.symbolic:
                         self.logger.info("Vulnerable memory ({}) is not symbolic".format(hex(self.vul_mem_start + i)))
                         continue
                     self._init_state.solver.add(bv == val[0])
-            else:
-                self.logger.info("Vulnerable memory has strange data: {}".format(val))
-                return
+                else:
+                    self.logger.info("Vulnerable memory has strange data: {}".format(val))
+                    return
     
     def _restore_registers(self):
         regs = self.vm.read_regs()
@@ -370,12 +371,13 @@ class SymExec(MemInstrument):
         if val != None:
             pc = val
         if self.vm.addr_bytes == 4:
-            val = self.vm.gdb.get_register('rip')
+            val = self.vm.gdb.get_register('eip')
             if val != None:
                 pc = val
         if pc == 0:
             return
-        self.vm.prepare_context(pc)
+        if not self.vm.prepare_context(pc):
+            raise InvalidCPU
 
     def _restore_memory(self):
         self.setup_sections(self.cus_sections)

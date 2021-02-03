@@ -42,8 +42,8 @@ syz_config_template="""
 }}"""
 
 class Deployer(Workers):
-    def __init__(self, index, parallel_max, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=True, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None):
-        Workers.__init__(self, index, parallel_max, debug, force, port, replay, linux_index, time, kernel_fuzzing, alert, static_analysis, symbolic_execution, gdb_port, qemu_monitor_port, max_compiling_kernel, timeout_dynamic_validation, timeout_static_analysis, timeout_symbolic_execution)
+    def __init__(self, index, parallel_max, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=False, reproduce=False, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None):
+        Workers.__init__(self, index, parallel_max, debug, force, port, replay, linux_index, time, kernel_fuzzing, reproduce, alert, static_analysis, symbolic_execution, gdb_port, qemu_monitor_port, max_compiling_kernel, timeout_dynamic_validation, timeout_static_analysis, timeout_symbolic_execution)
         self.clone_linux()
     
     def init_replay_crash(self, hash_val):
@@ -70,12 +70,15 @@ class Deployer(Workers):
         impact_without_mutating = False
         self.__create_dir_for_case()
         if self.force:
-            self.cleanup_finished_fuzzing(hash_val)
             self.cleanup_built_kernel(hash_val)
             self.cleanup_built_syzkaller(hash_val)
-            self.cleanup_finished_symbolic_execution(hash_val)
-            self.cleanup_finished_static_analysis(hash_val)
-            self.cleanup_reproduced_ori_poc(hash_val)
+            if self.kernel_fuzzing:
+                self.cleanup_reproduced_ori_poc(hash_val)
+                self.cleanup_finished_fuzzing(hash_val)
+            if self.symbolic_execution:
+                self.cleanup_finished_symbolic_execution(hash_val)
+            if self.static_analysis:
+                self.cleanup_finished_static_analysis(hash_val)
         self.case_logger = self.__init_case_logger("{}-log".format(hash_val))
         self.case_info_logger = self.__init_case_logger("{}-info".format(hash_val))
         url = syzbot_host_url + syzbot_bug_base_url + hash_val
@@ -123,10 +126,14 @@ class Deployer(Workers):
                 limitedMutation = True
                 if 'patch' in case:
                     limitedMutation = False
-                #exitcode = self.run_syzkaller(hash_val, limitedMutation)
-                self.save_case(hash_val, 0, case, limitedMutation, impact_without_mutating, title=title)
+                exitcode = self.run_syzkaller(hash_val, limitedMutation)
+                self.save_case(hash_val, exitcode, case, limitedMutation, impact_without_mutating, title=title)
             else:
                 self.logger.info("{} has finished fuzzing".format(hash_val[:7]))
+        elif self.reproduce_ori_bug:
+            if not self.reproduced_ori_poc(hash_val, 'incomplete'):
+                impact_without_mutating, title = self.do_reproducing_ori_poc(case, hash_val, i386)
+                self.save_case(hash_val, 0, case, False, impact_without_mutating, title=title)
 
         valid_contexts = self.get_buggy_contexts(case)
         for context in valid_contexts:
@@ -279,7 +286,7 @@ class Deployer(Workers):
         brackets = -1 #-1 means no '{' found ever 
 
         if not os.path.isdir(src):
-            self.logger.info("{} do not exist".format(self.index, src))
+            self.logger.info("{} do not exist".format(src))
             return find_it
         for file_name in os.listdir(src):
             if file_name.endswith(ends):
@@ -314,7 +321,7 @@ class Deployer(Workers):
                     break
         
         if not os.path.isdir(dst):
-            self.logger.info("{} do not exist".format(self.index, dst))
+            self.logger.info("{} do not exist".format(dst))
             return False
         for file_name in os.listdir(dst):
             if file_name.endswith(ends):

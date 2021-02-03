@@ -15,7 +15,7 @@ from syzbot_analyzer.modules.crash import CrashChecker
 from syzbot_analyzer.interface.utilities import chmodX
 from dateutil import parser as time_parser
 from .case import Case, stamp_build_kernel, stamp_build_syzkaller, stamp_finish_fuzzing, stamp_reproduce_ori_poc, stamp_symbolic_execution, stamp_static_analysis
-from syzbot_analyzer.interface.sym_exec.error import VulnerabilityNotTrigger, ExecutionError, AbnormalGDBBehavior
+from syzbot_analyzer.interface.sym_exec.error import VulnerabilityNotTrigger, ExecutionError, AbnormalGDBBehavior, InvalidCPU
 from syzbot_analyzer.interface.static_analysis.error import CompilingError
 from syzbot_analyzer.interface.vm.error import QemuIsDead, AngrRefuseToLoadKernel
 
@@ -23,8 +23,8 @@ TIMEOUT_DYNAMIC_VALIDATION=60*60
 TIMEOUT_STATIC_ANALYSIS=60*30
 
 class Workers(Case):
-    def __init__(self, index, parallel_max, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=True, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None):
-        Case.__init__(self, index, parallel_max, debug, force, port, replay, linux_index, time, kernel_fuzzing, alert, static_analysis, symbolic_execution, gdb_port, qemu_monitor_port, max_compiling_kernel)
+    def __init__(self, index, parallel_max, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=False, reproduce=False, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None):
+        Case.__init__(self, index, parallel_max, debug, force, port, replay, linux_index, time, kernel_fuzzing, reproduce, alert, static_analysis, symbolic_execution, gdb_port, qemu_monitor_port, max_compiling_kernel)
         if timeout_dynamic_validation == None:
             self.timeout_dynamic_validation=TIMEOUT_DYNAMIC_VALIDATION
         else:
@@ -195,6 +195,9 @@ class Workers(Case):
                 exception_count += 1
             except QemuIsDead:
                 self.logger.error("Error occur when executing symbolic tracing: QemuIsDead")
+                exception_count += 1
+            except InvalidCPU:
+                self.logger.error("Fail to determine which cpu is using for current context")
                 exception_count += 1
             #except Exception as e:
             #    sym_logger.error("Unknown exception occur during symboulic execution: {}".format(e))

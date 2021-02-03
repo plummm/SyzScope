@@ -6,3 +6,6 @@ class ExecutionError(Exception):
 
 class AbnormalGDBBehavior(Exception):
     pass
+
+class InvalidCPU(Exception):
+    pass

@@ -120,16 +120,23 @@ class Monitor:
 
     
     def choose_cpu(self, pc):
-        ret = 0
+        ret = -1
+        n = 0
         cmd = 'info cpus'
         cpu_regx = r'CPU #(\d+): pc=(0x[a-f0-9]+)'
         raw = self.sendline(cmd)
-        for line in raw.split('\n'):
+        for line in raw.split('\n')[1:]:
             line = line.strip('\n')
             cpu_index = utilities.regx_get(cpu_regx, line, 0)
             cpu_pc = utilities.regx_get(cpu_regx, line, 1)
             if cpu_index == None or cpu_pc == None:
-                continue
+                self.set_cpu(n)
+                cpu_pc = self.get_register('rip')
+                if self.s_group == 4:
+                    cpu_pc = self.get_register('eip')
+                cpu_pc = hex(cpu_pc)
+                cpu_index = n
+            n += 1
             if pc == int(cpu_pc, 16):
                 ret = int(cpu_index)
                 break

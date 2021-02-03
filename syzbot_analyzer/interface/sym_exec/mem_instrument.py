@@ -75,17 +75,18 @@ class MemInstrument(StateManager):
         if stack != addr:
             # Finite address write includes write to UAF/OOB memory(addr is concrete but addr point to UAF/OOB memory)
             # or write to an address that comes from UAF/OOB memory(addr is symbolic)
-            if (self.is_symbolic(bv_addr) or self.get_states_globals(addr, StateManager.G_SYM) != None ) \
-                    and state.scratch.ins_addr not in self.exploitable_state:
-                if self.get_states_globals(addr, StateManager.G_SYM) or self.is_under_constrained(bv_addr) != None:
-                    self.wrap_high_risk_state(state, StateManager.FINITE_ADDR_WRITE)
+            if self.get_states_globals(addr, StateManager.G_SYM):
+                self.wrap_high_risk_state(state, StateManager.OOB_UAF_WRITE)
+            if self.is_symbolic(bv_addr) and state.scratch.ins_addr not in self.exploitable_state:
+                if self._is_arbitrary_value(bv_addr):
+                    self.wrap_high_risk_state(state, StateManager.ARBITRARY_ADDR_WRITE, bv_addr)
                 else:
-                    self.wrap_high_risk_state(state, StateManager.ARBITRARY_ADDR_WRITE)
+                    self.wrap_high_risk_state(state, StateManager.FINITE_ADDR_WRITE, bv_addr)
             if self.is_symbolic(bv_expr) and state.scratch.ins_addr not in self.exploitable_state:
-                if self.is_under_constrained(bv_expr):
-                    self.wrap_high_risk_state(state, StateManager.FINITE_VALUE_WRITE)
+                if self._is_arbitrary_value(bv_expr):
+                    self.wrap_high_risk_state(state, StateManager.ARBITRARY_VALUE_WRITE, bv_expr)
                 else:
-                    self.wrap_high_risk_state(state, StateManager.ARBITRARY_VALUE_WRITE)
+                    self.wrap_high_risk_state(state, StateManager.FINITE_VALUE_WRITE, bv_expr)
         if not self._validate_inst(state):
             return
         if self.symbolic_tracing and self.ppg_handler.is_kasan_write(addr):
