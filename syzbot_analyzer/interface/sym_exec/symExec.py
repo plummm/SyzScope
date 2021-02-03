@@ -87,7 +87,10 @@ class SymExec(MemInstrument):
             if self.vm.qemu_ready:
                 break
             if n > 5*60:
-                p.kill()
+                #p.kill()
+                # For some reaons, 'Debian GNU\/Linux \d+ syzkaller ttyS\d+' may not show up
+                # Qemu probably is ready
+                break
             poll = p.poll()
             if poll != None:
                 raise QemuIsDead
