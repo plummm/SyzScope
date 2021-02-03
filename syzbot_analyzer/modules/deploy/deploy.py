@@ -75,6 +75,8 @@ class Deployer(Workers):
             if self.kernel_fuzzing:
                 self.cleanup_reproduced_ori_poc(hash_val)
                 self.cleanup_finished_fuzzing(hash_val)
+            if self.reproduce_ori_bug:
+                self.cleanup_reproduced_ori_poc(hash_val)
             if self.symbolic_execution:
                 self.cleanup_finished_symbolic_execution(hash_val)
             if self.static_analysis:
