@@ -72,7 +72,7 @@ if [ "$FIXED" == "0" ]; then
         #go get -u -d github.com/google/syzkaller/prog
         cd $GOPATH/src/github.com/google/syzkaller || exit 1
 
-        git checkout -f $SYZKALLER
+        git checkout -f $SYZKALLER || (git pull https://github.com/google/syzkaller.git master > /dev/null 2>&1 && git checkout -f $SYZKALLER)
         git rev-list HEAD | grep $(git rev-parse dfd609eca1871f01757d6b04b19fc273c87c14e5) || EXITCODE=2
         make TARGETARCH=$ARCH TARGETVMARCH=amd64 execprog executor
         touch MAKE_COMPLETED
