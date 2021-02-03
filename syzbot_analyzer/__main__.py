@@ -56,7 +56,7 @@ def args_parse():
     parser.add_argument('-KF', '--kernel-fuzzing',
                         action='store_true',
                         help='Enable kernel fuzzing and reproducing the original impact')
-    parser.add_argument('-RO', '--reproduce',
+    parser.add_argument('-RP', '--reproduce',
                         action='store_true',
                         help='Enable reproducing the original impact separatly')
     parser.add_argument('-SA', '--static-analysis',
