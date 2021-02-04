@@ -103,7 +103,7 @@ class Workers(Case):
                         func = f.readline()
                         terminating_func = func.strip('\n')
                         continue
-                if int(n_basic_block) < 40:
+                if int(n_basic_block) < 30:
                     continue
                 guided_path = os.path.join(static_analysis_result_paths, each_file)
                 p = self.retrieve_guided_paths(guided_path)
