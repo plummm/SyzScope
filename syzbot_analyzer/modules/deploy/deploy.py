@@ -138,6 +138,8 @@ class Deployer(Workers):
                 self.save_case(hash_val, 0, case, False, impact_without_mutating, title=title)
 
         valid_contexts = self.get_buggy_contexts(case)
+        if len(valid_contexts) == 0:
+            self.logger.info("No valid buggy context")
         for context in valid_contexts:
             if context['offset'] == None or context['size'] == None or \
                  ((context['type'] == utilities.CASE and not os.path.exists(context['repro'])) or\
