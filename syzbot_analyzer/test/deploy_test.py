@@ -34,13 +34,14 @@ def save_case_test(hash_val, exitcode, case, need_fuzzing, title=None, secondary
     d = getMinimalDeployer("work/incomplete/974293d")
     d.save_case(hash_val, exitcode, case, need_fuzzing, title=title, secondary_fuzzing=secondary_fuzzing)
 
+def copy_new_impact_test(case):
+    d = getMinimalDeployer('work/completed/232223b')
+    d.copy_new_impact(case, True, "KASAN: slab-out-of-bounds in hpet_alloc")
+
 if __name__ == '__main__':
-    hash_val = "974293d3a48ddb44c35d97f946107559bda669ff"
+    hash_val = "232223b1e1dc405ba8ca60125d643ea8bbeb65ac"
     exitcode = 0
     crawler = getCrawler()
     crawler.run_one_case(hash_val)
     case = crawler.cases.pop(hash_val)
-    need_fuzzing = True
-    write_without_mutating = True
-    #save_case_test(hash_val, exitcode, case, need_fuzzing)
-    save_case_test(hash_val, 0, case, need_fuzzing=False, title="AAA")
+    copy_new_impact_test(case)
