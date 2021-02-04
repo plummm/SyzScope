@@ -107,8 +107,8 @@ class Workers(Case):
                     continue
                 guided_path = os.path.join(static_analysis_result_paths, each_file)
                 p = self.retrieve_guided_paths(guided_path)
-                #if p != []:
-                #    paths.append(p)
+                if p != []:
+                    paths.append(p)
 
         os.mkdir(sym_folder)
         is_propagating_global = False
