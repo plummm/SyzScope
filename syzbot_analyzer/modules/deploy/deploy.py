@@ -118,13 +118,13 @@ class Deployer(Workers):
             self.__save_error(hash_val)
             return
 
+        req = requests.request(method='GET', url=case["syz_repro"])
+        self.__write_config(req.content.decode("utf-8"), hash_val[:7])
         if self.kernel_fuzzing:
             title = None
             if not self.reproduced_ori_poc(hash_val, 'incomplete'):
                 impact_without_mutating, title = self.do_reproducing_ori_poc(case, hash_val, i386)
             if not self.finished_fuzzing(hash_val, 'incomplete'):
-                req = requests.request(method='GET', url=case["syz_repro"])
-                self.__write_config(req.content.decode("utf-8"), hash_val[:7])
                 limitedMutation = True
                 if 'patch' in case:
                     limitedMutation = False
@@ -639,24 +639,24 @@ class Deployer(Workers):
                 paths = self.confirmSuccess(hash_val, case, limitedMutation)
                 if len(paths) > 0:
                     if impact_without_mutating:
-                        self.__copy_new_impact(case, impact_without_mutating, title)
+                        self.copy_new_impact(case, impact_without_mutating, title)
                     for each in paths:
-                        self.__copy_new_impact(each, False, title)
+                        self.copy_new_impact(each, False, title)
                         self.write_to_confirm(hash_val, new_impact_type)
                     #self.__move_to_succeed(new_impact_type)
                 elif impact_without_mutating:
-                    self.__copy_new_impact(case, impact_without_mutating, title)
+                    self.copy_new_impact(case, impact_without_mutating, title)
                     self.write_to_confirm(hash_val, new_impact_type)
                     #self.__move_to_succeed(new_impact_type)
                 else:
                     if exitcode !=0:
                         self.__save_error(hash_val)
         elif impact_without_mutating:
-            self.__copy_new_impact(case, impact_without_mutating, title)
+            self.copy_new_impact(case, impact_without_mutating, title)
             #self.__move_to_succeed(new_impact_type)
         return
 
-    def __copy_new_impact(self, path, impact_without_mutating, title):
+    def copy_new_impact(self, path, impact_without_mutating, title):
         output = os.path.join(self.current_case_path, "output")
         os.makedirs(output, exist_ok=True)
         if impact_without_mutating:
