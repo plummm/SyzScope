@@ -167,6 +167,8 @@ def prepare_cases(index, args):
         try:
             hash_val = g_cases.get(block=True, timeout=3)
             if hash_val in ignore:
+                rest.value -= 1
+                lock.release()
                 continue
             print("Thread {}: run case {} [{}/{}] left".format(index, hash_val, rest.value-1, total))
             rest.value -= 1

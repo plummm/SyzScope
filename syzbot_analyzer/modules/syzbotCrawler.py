@@ -47,11 +47,11 @@ class Crawler:
         self.logger2file.addHandler(handler)
 
     def run(self):
-        cases_hash = self.gather_cases()
+        cases_hash, high_risk_impacts = self.gather_cases()
         for each in cases_hash:
             if 'Patch' in each:
                 patch_url = each['Patch']
-                if patch_url in self.patches:
+                if patch_url in self.patches or patch_url in high_risk_impacts:
                     continue
                 self.patches[patch_url] = True
             if self.retreive_case(each['Hash']) != -1:
@@ -96,12 +96,13 @@ class Crawler:
         self.cases[hash]["obj_size"] = detail[10]
 
     def gather_cases(self):
+        high_risk_impacts = {}
+        res = []
         tables = self.__get_table(self.url)
         if tables == []:
             self.logger.error("error occur in gather_cases")
-            return
+            return res, high_risk_impacts
         count = 0
-        res = []
         for table in tables:
             #self.logger.info("table caption {}".format(table.caption.text))
             for case in table.tbody.contents:
@@ -112,6 +113,14 @@ class Crawler:
                     for keyword in self.keyword:
                         keyword = keyword.lower()
                         low_case_title = title.text.lower()
+                        if 'out-of-bounds write' in low_case_title or \
+                                'use-after-free write' in low_case_title:
+                            commit_list = case.find('td', {"class": "commit_list"})
+                            try:
+                                patch_url = commit_list.contents[1].contents[1].attrs['href']
+                            except:
+                                continue
+                            high_risk_impacts[patch_url] = True
                         if keyword in low_case_title or keyword=='':
                             crash = {}
                             commit_list = case.find('td', {"class": "commit_list"})
@@ -139,7 +148,7 @@ class Crawler:
                             break
                     if count == self.max_retrieve:
                         break
-        return res
+        return res, high_risk_impacts
 
     def request_detail(self, hash, index=1):
         self.logger.debug("\nDetail: {}{}{}".format(syzbot_host_url, syzbot_bug_base_url, hash))
