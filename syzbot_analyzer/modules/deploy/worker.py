@@ -23,7 +23,7 @@ TIMEOUT_DYNAMIC_VALIDATION=60*60
 TIMEOUT_STATIC_ANALYSIS=60*30
 
 class Workers(Case):
-    def __init__(self, index, parallel_max, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=False, reproduce=False, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None):
+    def __init__(self, index, parallel_max, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=False, reproduce=False, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None, guided=False):
         Case.__init__(self, index, parallel_max, debug, force, port, replay, linux_index, time, kernel_fuzzing, reproduce, alert, static_analysis, symbolic_execution, gdb_port, qemu_monitor_port, max_compiling_kernel)
         if timeout_dynamic_validation == None:
             self.timeout_dynamic_validation=TIMEOUT_DYNAMIC_VALIDATION
@@ -41,6 +41,7 @@ class Workers(Case):
                 self.timeout_symbolic_execution = None
             else:
                 self.timeout_symbolic_execution = 365*24*60*60
+        self.guided_execution = guided
 
     def do_symbolic_execution(self, case, context, i386, max_round=3, raw_tracing=False, timeout=None):
         path_regx = r'path2(MemWrite|FuncPtrDef)-(\d+)-\d+'
@@ -94,28 +95,29 @@ class Workers(Case):
 
         paths = []
         terminating_func = ''
-        for each_file in path_files:
-            if each_file != None:
-                n_basic_block = utilities.regx_get(path_regx, each_file, 1)
-                if n_basic_block == None and each_file == 'TerminatingFunc':
-                    terminating_func_path = os.path.join(static_analysis_result_paths, each_file)
-                    with open(terminating_func_path, 'r') as f:
-                        func = f.readline()
-                        terminating_func = func.strip('\n')
+        if self.guided_execution:
+            for each_file in path_files:
+                if each_file != None:
+                    n_basic_block = utilities.regx_get(path_regx, each_file, 1)
+                    if n_basic_block == None and each_file == 'TerminatingFunc':
+                        terminating_func_path = os.path.join(static_analysis_result_paths, each_file)
+                        with open(terminating_func_path, 'r') as f:
+                            func = f.readline()
+                            terminating_func = func.strip('\n')
+                            continue
+                    if int(n_basic_block) < 30:
                         continue
-                if int(n_basic_block) < 30:
-                    continue
-                guided_path = os.path.join(static_analysis_result_paths, each_file)
-                p = self.retrieve_guided_paths(guided_path)
-                if p != []:
-                    paths.append(p)
+                    guided_path = os.path.join(static_analysis_result_paths, each_file)
+                    p = self.retrieve_guided_paths(guided_path)
+                    if p != []:
+                        paths.append(p)
 
         os.mkdir(sym_folder)
         is_propagating_global = False
         result = StateManager.NO_ADDITIONAL_USE
         exception_count = 0
         flag_stop_execution = False
-        if terminating_func == '':
+        if terminating_func == '' and self.guided_execution:
             self.logger.info("No terminating function found")
             return 1
         for i in range(0, max_round):

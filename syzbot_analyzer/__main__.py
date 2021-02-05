@@ -30,8 +30,8 @@ def args_parse():
                              '(By default, it retrieve all cases)\n'
                              'This argument could be multiple values')
     parser.add_argument('-pm', '--parallel-max', nargs='?', action='store',
-                        default='5', help='The maximum of parallel processes\n'
-                                        '(default valus is 5)')
+                        default='1', help='The maximum of parallel processes\n'
+                                        '(default valus is 1)')
     parser.add_argument('--force', action='store_true',
                         help='Force to run all cases even it has finished\n')
     parser.add_argument('--linux', nargs='?', action='store',
