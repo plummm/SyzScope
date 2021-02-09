@@ -1,17 +1,17 @@
 import logging
-from syzbot_analyzer.interface.sym_exec.stateManager import StateManager
+from syzscope.interface.sym_exec.stateManager import StateManager
 import time
 import angr
 import math
 import threading
 import archinfo
-import syzbot_analyzer.interface.utilities as utilities
+import syzscope.interface.utilities as utilities
 import datetime
 import sys
 
-from syzbot_analyzer.interface.vm import VM
+from syzscope.interface.vm import VM
 from math import e
-from syzbot_analyzer.interface.vm.error import QemuIsDead
+from syzscope.interface.vm.error import QemuIsDead
 from .mem_instrument import MemInstrument
 from .error import VulnerabilityNotTrigger, ExecutionError, AbnormalGDBBehavior, InvalidCPU
 

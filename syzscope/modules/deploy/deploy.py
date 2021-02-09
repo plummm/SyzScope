@@ -1,17 +1,17 @@
 from math import trunc
 import re
 import os, stat, sys
-from syzbot_analyzer.modules.deploy.case import Case
-from syzbot_analyzer.interface.static_analysis.error import CompilingError
+from syzscope.modules.deploy.case import Case
+from syzscope.interface.static_analysis.error import CompilingError
 import requests
 import shutil
 import logging
-import syzbot_analyzer.interface.utilities as utilities
+import syzscope.interface.utilities as utilities
 
-from syzbot_analyzer.modules.syzbotCrawler import syzbot_host_url, syzbot_bug_base_url
-from syzbot_analyzer.interface import s2e, static_analysis, sym_exec
+from syzscope.modules.syzbotCrawler import syzbot_host_url, syzbot_bug_base_url
+from syzscope.interface import s2e, static_analysis, sym_exec
 from subprocess import call, Popen, PIPE, STDOUT
-from syzbot_analyzer.interface.utilities import URL, chmodX
+from syzscope.interface.utilities import URL, chmodX
 from dateutil import parser as time_parser
 from .worker import Workers
 
@@ -42,19 +42,19 @@ syz_config_template="""
 }}"""
 
 class Deployer(Workers):
-    def __init__(self, index, parallel_max, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=False, reproduce=False, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None):
-        Workers.__init__(self, index, parallel_max, debug, force, port, replay, linux_index, time, kernel_fuzzing, reproduce, alert, static_analysis, symbolic_execution, gdb_port, qemu_monitor_port, max_compiling_kernel, timeout_dynamic_validation, timeout_static_analysis, timeout_symbolic_execution)
+    def __init__(self, index, parallel_max, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=False, reproduce=False, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None, guided=False):
+        Workers.__init__(self, index, parallel_max, debug, force, port, replay, linux_index, time, kernel_fuzzing, reproduce, alert, static_analysis, symbolic_execution, gdb_port, qemu_monitor_port, max_compiling_kernel, timeout_dynamic_validation, timeout_static_analysis, timeout_symbolic_execution, guided)
         self.clone_linux()
     
     def init_replay_crash(self, hash_val):
-        chmodX("syzbot_analyzer/scripts/init-replay.sh")
+        chmodX("syzscope/scripts/init-replay.sh")
         self.logger.info("run: scripts/init-replay.sh {} {}".format(self.catalog, hash_val))
-        call(["syzbot_analyzer/scripts/init-replay.sh", self.catalog, hash_val])
+        call(["syzscope/scripts/init-replay.sh", self.catalog, hash_val])
 
     def deploy(self, hash_val, case):
         self.setup_hash(hash_val)
         self.project_path = os.getcwd()
-        self.package_path = os.path.join(self.project_path, "syzbot_analyzer")
+        self.package_path = os.path.join(self.project_path, "syzscope")
         self.current_case_path = "{}/work/{}/{}".format(self.project_path, self.catalog, hash_val[:7])
         self.image_path = "{}/img".format(self.current_case_path)
         self.syzkaller_path = "{}/gopath/src/github.com/google/syzkaller".format(self.current_case_path)
@@ -464,10 +464,10 @@ class Deployer(Workers):
         return False
     
     def __run_linux_clone_script(self):
-        chmodX("syzbot_analyzer/scripts/linux-clone.sh")
+        chmodX("syzscope/scripts/linux-clone.sh")
         index = str(self.index)
         self.logger.info("run: scripts/linux-clone.sh {} {}".format(self.index, self.linux_folder, index))
-        call(["syzbot_analyzer/scripts/linux-clone.sh", self.linux_folder, index])
+        call(["syzscope/scripts/linux-clone.sh", self.linux_folder, index])
 
     def __run_delopy_script(self, hash_val, case, kasan_patch=0):
         commit = case["commit"]

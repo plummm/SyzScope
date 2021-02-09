@@ -1,11 +1,11 @@
 import shutil
 import os
-import syzbot_analyzer.interface.static_analysis as static_analysis
+import syzscope.interface.static_analysis as static_analysis
 import logging
-import syzbot_analyzer.interface.utilities as utilities
+import syzscope.interface.utilities as utilities
 
 from subprocess import PIPE, STDOUT, Popen
-from syzbot_analyzer.test.deploy_test import getMinimalDeployer, getCrawler
+from syzscope.test.deploy_test import getMinimalDeployer, getCrawler
 
 def compile_bc_extra_test():
     d = getMinimalDeployer("work/incomplete/01e2ff6")

@@ -3,7 +3,7 @@ import os, stat
 from socket import timeout
 import logging
 import shutil
-import syzbot_analyzer.interface.utilities as utilities
+import syzscope.interface.utilities as utilities
 import threading
 import time
 import queue
@@ -16,7 +16,7 @@ class StaticAnalysis:
     def __init__(self, logger, proj_path, index, workdir, case_path, linux_folder, max_compiling_kernel, timeout=30*60):
         self.case_logger = logger
         self.proj_path = proj_path
-        self.package_path = os.path.join(proj_path, "syzbot_analyzer")
+        self.package_path = os.path.join(proj_path, "syzscope")
         self.case_path = case_path
         self.index = index
         self.work_path = os.path.join(case_path, workdir)

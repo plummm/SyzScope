@@ -1,5 +1,5 @@
-from syzbot_analyzer.interface.vm.state import VMState
-from syzbot_analyzer.interface.vm import VM
+from syzscope.interface.vm.state import VMState
+from syzscope.interface.vm import VM
 
 def init_vmstate():
     vm = VMState('/home/xzou017/projects/SyzbotAnalyzer/work/incomplete/00939fa/linux/')

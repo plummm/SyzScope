@@ -2,7 +2,7 @@ import logging
 import time
 import pexpect
 import math
-import syzbot_analyzer.interface.utilities as utilities
+import syzscope.interface.utilities as utilities
 
 from subprocess import Popen, PIPE, STDOUT, TimeoutExpired
 from pwn import *

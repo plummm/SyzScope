@@ -3,7 +3,7 @@ import threading
 import logging
 import time
 import os
-import syzbot_analyzer.interface.utilities as utilities
+import syzscope.interface.utilities as utilities
 
 from subprocess import Popen, PIPE, STDOUT, call
 
@@ -167,7 +167,7 @@ class VMInstance:
             # self.run()                                                                                           │
             # File "/usr/lib/python3.6/threading.py", line 864, in run                                               │
             # self._target(*self._args, **self._kwargs)                                                            │
-            # File "/home/xzou017/projects/SyzbotAnalyzer/syzbot_analyzer/interface/vm/instance.py", line 140, in __log_qemu                                                                                                  │
+            # File "/home/xzou017/projects/SyzbotAnalyzer/syzscope/interface/vm/instance.py", line 140, in __log_qemu                                                                                                  │
             # for line in iter(pipe.readline, b''):                                                                │
             # ValueError: PyMemoryView_FromBuffer(): info->buf must not be NULL
             pass

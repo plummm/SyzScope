@@ -1,13 +1,13 @@
 import os, re, stat, sys
 import logging
 import argparse
-import syzbot_analyzer.interface.utilities as utilities
+import syzscope.interface.utilities as utilities
 import time
 import threading
 import json
 import pathlib
 import queue
-from syzbot_analyzer.interface.vm import VM
+from syzscope.interface.vm import VM
 
 from subprocess import call, Popen, PIPE, STDOUT
 from .syzbotCrawler import Crawler
@@ -38,7 +38,7 @@ class CrashChecker:
         os.makedirs("{}/poc".format(case_path), exist_ok=True)
         self.logger = logger
         self.project_path = project_path
-        self.package_path = os.path.join(project_path, "syzbot_analyzer")
+        self.package_path = os.path.join(project_path, "syzscope")
         self.case_path = case_path
         self.image_path = "{}/img".format(self.case_path)
         self.linux_path = "{}/linux".format(self.case_path)

@@ -196,10 +196,9 @@ class VMState:
         func_name = None
         if addr not in self.addr_info or 'func' not in self.addr_info[addr]:
             func_name = self.gdb.get_func_name(addr)
-            if func_name != None:
-                if addr not in self.addr_info:
-                    self.addr_info[addr] = {}
-                self.addr_info[addr]['func'] = func_name
+            if addr not in self.addr_info:
+                self.addr_info[addr] = {}
+            self.addr_info[addr]['func'] = func_name
         else:
             func_name = self.addr_info[addr]['func']
         return func_name

@@ -1,23 +1,23 @@
 import re
 import os, stat, sys
-from syzbot_analyzer.interface.sym_exec.stateManager import StateManager
+from syzscope.interface.sym_exec.stateManager import StateManager
 import requests
 import threading
 import logging
 import time
 import shutil
-import syzbot_analyzer.interface.utilities as utilities
+import syzscope.interface.utilities as utilities
 
-from syzbot_analyzer.modules.syzbotCrawler import syzbot_host_url, syzbot_bug_base_url
-from syzbot_analyzer.interface import s2e, static_analysis, sym_exec
+from syzscope.modules.syzbotCrawler import syzbot_host_url, syzbot_bug_base_url
+from syzscope.interface import s2e, static_analysis, sym_exec
 from subprocess import call, Popen, PIPE, STDOUT
-from syzbot_analyzer.modules.crash import CrashChecker
-from syzbot_analyzer.interface.utilities import chmodX
+from syzscope.modules.crash import CrashChecker
+from syzscope.interface.utilities import chmodX
 from dateutil import parser as time_parser
 from .case import Case, stamp_build_kernel, stamp_build_syzkaller, stamp_finish_fuzzing, stamp_reproduce_ori_poc, stamp_symbolic_execution, stamp_static_analysis
-from syzbot_analyzer.interface.sym_exec.error import VulnerabilityNotTrigger, ExecutionError, AbnormalGDBBehavior, InvalidCPU
-from syzbot_analyzer.interface.static_analysis.error import CompilingError
-from syzbot_analyzer.interface.vm.error import QemuIsDead, AngrRefuseToLoadKernel
+from syzscope.interface.sym_exec.error import VulnerabilityNotTrigger, ExecutionError, AbnormalGDBBehavior, InvalidCPU
+from syzscope.interface.static_analysis.error import CompilingError
+from syzscope.interface.vm.error import QemuIsDead, AngrRefuseToLoadKernel
 
 TIMEOUT_DYNAMIC_VALIDATION=60*60
 TIMEOUT_STATIC_ANALYSIS=60*30

@@ -5,7 +5,6 @@ import json
 import datetime
 
 from bs4 import BeautifulSoup
-#from syzbot_analyzer.modules import Crawler
 from dateutil import parser as time_parser
 
 FOLDER=0
@@ -689,7 +688,7 @@ def calculate_patch_info(each):
 def save_cases_as_json(key, max_num):
     import importlib.util
     pwd = os.getcwd()
-    spec = importlib.util.spec_from_file_location("syzbotCrawler", pwd+"/syzbot_analyzer/modules/syzbotCrawler.py")
+    spec = importlib.util.spec_from_file_location("syzbotCrawler", pwd+"/syzscope/modules/syzbotCrawler.py")
     foo = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(foo)
     foo.Crawler()

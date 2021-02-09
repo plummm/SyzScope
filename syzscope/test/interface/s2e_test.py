@@ -1,4 +1,4 @@
-from syzbot_analyzer.interface.s2e import S2EInterface
+from syzscope.interface.s2e import S2EInterface
 
 s2e_path = '/home/xzou017/projects/KOOBE-test/s2e'
 kernel_path = '/home/xzou017/projects/KOOBE-test/s2e/images/debian-9.2.1-x86_64-0e2adab6/guestfs/vmlinux'

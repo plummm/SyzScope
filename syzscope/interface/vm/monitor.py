@@ -1,4 +1,4 @@
-import syzbot_analyzer.interface.utilities as utilities
+import syzscope.interface.utilities as utilities
 import math
 import logging
 

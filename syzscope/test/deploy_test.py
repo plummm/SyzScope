@@ -1,4 +1,4 @@
-from syzbot_analyzer.modules import deploy, syzbotCrawler, crash
+from syzscope.modules import deploy, syzbotCrawler, crash
 import os
 
 project_path = os.getcwd()

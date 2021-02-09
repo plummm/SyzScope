@@ -1,4 +1,4 @@
-from syzbot_analyzer.interface.vm.error import AngrRefuseToLoadKernel
+from syzscope.interface.vm.error import AngrRefuseToLoadKernel
 import angr
 import json
 import re

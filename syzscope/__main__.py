@@ -5,9 +5,9 @@ import multiprocessing, threading
 import gc
 
 sys.path.append(os.getcwd())
-from syzbot_analyzer.modules import Crawler, Deployer
+from syzscope.modules import Crawler, Deployer
 from subprocess import call
-from syzbot_analyzer.interface.utilities import urlsOfCases
+from syzscope.interface.utilities import urlsOfCases
 
 def args_parse():
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
@@ -68,6 +68,9 @@ def args_parse():
     parser.add_argument('-DV', '--dynamic-validation',
                         action='store_true',
                         help='Enable symbolic execution separatly')
+    parser.add_argument('--guided',
+                        action='store_true',
+                        help='Enable path guided symbolic execution')
     parser.add_argument('--use-cache',
                         action='store_true',
                         help='Read cases from cache, this will overwrite the --input feild')
@@ -125,7 +128,7 @@ def print_args_info(args):
         os._exit(1)
 
 def check_kvm():
-    proj_path = os.path.join(os.getcwd(), "syzbot_analyzer")
+    proj_path = os.path.join(os.getcwd(), "syzscope")
     check_kvm_path = os.path.join(proj_path, "scripts/check_kvm.sh")
     st = os.stat(check_kvm_path)
     os.chmod(check_kvm_path, st.st_mode | stat.S_IEXEC)
@@ -157,7 +160,8 @@ def deploy_one_case(index, args, hash_val):
                 static_analysis=args.static_analysis, symbolic_execution=args.symbolic_execution, gdb_port=int(args.gdb), \
                 qemu_monitor_port=int(args.qemu_monitor), max_compiling_kernel=int(args.max_compiling_kernel_concurrently), \
                 timeout_dynamic_validation=args.timeout_dynamic_validation, timeout_static_analysis=args.timeout_static_analysis, \
-                timeout_symbolic_execution=args.timeout_symbolic_execution, parallel_max=int(args.parallel_max))
+                timeout_symbolic_execution=args.timeout_symbolic_execution, parallel_max=int(args.parallel_max), \
+                guided=args.guided)
     dp.deploy(hash_val, case)
     del dp
 
@@ -190,7 +194,7 @@ def remove_using_flag(index):
         os.remove(flag_path)
 
 def install_requirments():
-    proj_path = os.path.join(os.getcwd(), "syzbot_analyzer")
+    proj_path = os.path.join(os.getcwd(), "syzscope")
     requirements_path = os.path.join(proj_path, "scripts/requirements.sh")
     st = os.stat(requirements_path)
     os.chmod(requirements_path, st.st_mode | stat.S_IEXEC)
