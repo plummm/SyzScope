@@ -7,9 +7,9 @@ import syzscope.interface.utilities as utilities
 from subprocess import PIPE, STDOUT, Popen
 from syzscope.test.deploy_test import getMinimalDeployer, getCrawler
 
-def compile_bc_extra_test():
-    d = getMinimalDeployer("work/incomplete/01e2ff6")
-    sa = static_analysis.StaticAnalysis(logging, d.project_path, 1, d.current_case_path, "linux", d.max_compiling_kernel)
+def compile_bc_extra_test(hash_val):
+    d = getMinimalDeployer("work/completed/{}".format(hash_val[:7]))
+    sa = static_analysis.StaticAnalysis(logging, d.project_path, 1, 'static-ori', d.current_case_path, "linux", 1)
     sa.compile_bc_extra()
     """
     link_cmd = '{}/tools/llvm/build/bin/llvm-link -o one.bc `find ./ -name "*.bc" ! -name "timeconst.bc"` && mv one.bc {}'.format(d.project_path, d.current_case_path)
@@ -51,4 +51,4 @@ def saveCallTrace_test(case):
     sa.saveCallTrace2File(trace, vul_site)
 
 if __name__ == '__main__':
-    KasanVulnChecker_test('93e67d1ae66524b264d8308b7e275edc84d70ff7')
+    compile_bc_extra_test('a0baab60775fd411b40856d541de27944cf3f230')

@@ -13,7 +13,7 @@ from subprocess import Popen, PIPE, STDOUT, TimeoutExpired, call
 from .error import CompilingError
 
 class StaticAnalysis:
-    def __init__(self, logger, proj_path, index, workdir, case_path, linux_folder, max_compiling_kernel, timeout=30*60):
+    def __init__(self, logger, proj_path, index, workdir, case_path, linux_folder, max_compiling_kernel, timeout=30*60, debug=False):
         self.case_logger = logger
         self.proj_path = proj_path
         self.package_path = os.path.join(proj_path, "syzscope")
@@ -26,6 +26,7 @@ class StaticAnalysis:
         self.bc_ready = False
         self.timeout = timeout
         self.max_compiling_kernel = max_compiling_kernel
+        self.debug = debug
 
     def prepare_static_analysis(self, case, vul_site, func_site):
         exitcode = 0
@@ -121,7 +122,7 @@ class StaticAnalysis:
                     for e in cmds:
                         call(e, cwd=base)"""
                     continue
-                if 'arch/x86' in p2obj:
+                if 'arch/x86/boot' in p2obj or 'arch/x86/entry/vdso' in p2obj:
                     continue
                 #print("CC {}".format(p2obj))
                 new_cmd = []
@@ -183,7 +184,8 @@ class StaticAnalysis:
                 except TimeoutExpired:
                     if p.poll() == None:
                         p.kill()
-                #print("CC {}".format(obj))
+                if self.debug:
+                    print("CC {}".format(obj))
                 if p.poll() == None:
                     p.kill()
             except queue.Empty:
