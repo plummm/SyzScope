@@ -218,17 +218,18 @@ class StaticAnalysis:
             if func == 'fail_dump':
                 func = None
                 func_site = None
-            if utilities.regx_match(r'__read_once', func) or utilities.regx_match(r'__write_once', func):
+            """if utilities.regx_match(r'__read_once', func) or utilities.regx_match(r'__write_once', func):
                 vul_site = ''
                 func = ''
                 func_site = ''
-                continue
+                continue"""
             break
         
         return vul_site, func_site, func
     
     def saveCallTrace2File(self, trace, vul_site):
         syscall_entrance = [r'SYS', r'_sys_', r'^sys_', r'entry_SYSENTER', r'entry_SYSCALL', r'ret_from_fork', r'bpf_prog_[a-z0-9]{16}']
+        syscall_file = [r'arch/x86/entry']
         text = []
         flag_record = 0
         last_inline = ''
@@ -249,6 +250,11 @@ class StaticAnalysis:
                 site = utilities.extract_debug_info(each)
                 if site == None:
                     continue
+                for entrance in syscall_file:
+                    if utilities.regx_match(entrance, site):
+                        # system call entrance is not included
+                        flag_stop = True
+                        break
                 t = "{} {}".format(func, site)
                 file, line = site.split(':')
                 s, e = self.getFuncBounds(func, file, int(line))
