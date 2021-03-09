@@ -306,7 +306,7 @@ class Workers(Case):
         trace = utilities.extrace_call_trace(kasan_report)
         if self.sa.saveCallTrace2File(trace, vul_site):
             self.logger.error("Error occur at saveCallTrace2File, please manually add boundaries in {}".format(self.sa.work_path, "CallTrace"))
-        r, time_on_static_analysis = self.sa.run_static_analysis(vul_site, func_site, func, offset, size)
+        r, time_on_static_analysis = self.sa.run_static_analysis(offset, size)
         if r != 0:
             self.logger.error("Error occur during taint analysis")
         if self.timeout_symbolic_execution == None:

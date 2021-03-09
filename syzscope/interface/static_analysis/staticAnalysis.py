@@ -304,16 +304,12 @@ class StaticAnalysis:
                 self.case_logger.error("Incorrect range of {}()".format(func))
         return s ,e
 
-    def run_static_analysis(self, vul_site, func_site, func, offset, size):
-        vul_file, vul_line = vul_site.split(':')
-        func_file, func_line = func_site.split(':')
+    def run_static_analysis(self, offset, size):
         calltrace = os.path.join(self.work_path, 'CallTrace')
         cmd = ["{}/tools/llvm/build/bin/opt".format(self.proj_path), "-load", "{}/tools/dr_checker/build/SoundyAliasAnalysis/libSoundyAliasAnalysis.so".format(self.proj_path), 
                 "-dr_checker", "-disable-output", "{}/one.bc".format(self.case_path),
                 "-CalltraceFile={}".format(calltrace),
-                "-VulFile={}".format(vul_file), "-VulLine={}".format(vul_line), 
-                "-FuncFile={}".format(func_file), "-FuncLine={}".format(func_line),
-                "-Func={}".format(func), "-Offset={}".format(offset),
+                "-Offset={}".format(offset),
                 "-PrintPathDir={}/paths".format(self.work_path)]
         if size != None:
             cmd.append("-Size={}".format(size))

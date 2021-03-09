@@ -1312,7 +1312,7 @@ index c8c030aa..d6923aca 100644
  }
  
 diff --git a/syz-fuzzer/fuzzer.go b/syz-fuzzer/fuzzer.go
-index b6e8be4b..9fef8907 100644
+index b6e8be4b..bcab28bd 100644
 --- a/syz-fuzzer/fuzzer.go
 +++ b/syz-fuzzer/fuzzer.go
 @@ -102,6 +102,8 @@ const (
@@ -1332,18 +1332,15 @@ index b6e8be4b..9fef8907 100644
  	)
  	flag.Parse()
  	outputType := parseOutputType(*flagOutput)
-@@ -247,9 +250,9 @@ func main() {
+@@ -247,6 +250,7 @@ func main() {
  	for _, id := range r.CheckResult.EnabledCalls[sandbox] {
  		calls[target.Syscalls[id]] = true
  	}
-+	fuzzer.sendCallsToManager(r.CheckResult.EnabledCalls, sandbox)
++	go fuzzer.sendCallsToManager(r.CheckResult.EnabledCalls, sandbox)
  	prios := target.CalculatePriorities(fuzzer.corpus)
  	fuzzer.choiceTable = target.BuildChoiceTable(prios, calls)
--
- 	for pid := 0; pid < *flagProcs; pid++ {
- 		proc, err := newProc(fuzzer, pid)
- 		if err != nil {
-@@ -259,6 +262,13 @@ func main() {
+ 
+@@ -259,6 +263,13 @@ func main() {
  		go proc.loop()
  	}
  
@@ -1357,7 +1354,7 @@ index b6e8be4b..9fef8907 100644
  	fuzzer.pollLoop()
  }
  
-@@ -315,6 +325,7 @@ func (fuzzer *Fuzzer) pollLoop() {
+@@ -315,6 +326,7 @@ func (fuzzer *Fuzzer) pollLoop() {
  	var lastPoll time.Time
  	var lastPrint time.Time
  	ticker := time.NewTicker(3 * time.Second).C
@@ -1365,7 +1362,7 @@ index b6e8be4b..9fef8907 100644
  	for {
  		poll := false
  		select {
-@@ -327,6 +338,11 @@ func (fuzzer *Fuzzer) pollLoop() {
+@@ -327,6 +339,11 @@ func (fuzzer *Fuzzer) pollLoop() {
  			log.Logf(0, "alive, executed %v", execTotal)
  			lastPrint = time.Now()
  		}
@@ -1377,7 +1374,7 @@ index b6e8be4b..9fef8907 100644
  		if poll || time.Since(lastPoll) > 10*time.Second {
  			needCandidates := fuzzer.workQueue.wantCandidates()
  			if poll && !needCandidates {
-@@ -367,9 +383,11 @@ func (fuzzer *Fuzzer) poll(needCandidates bool, stats map[string]uint64) bool {
+@@ -367,9 +384,11 @@ func (fuzzer *Fuzzer) poll(needCandidates bool, stats map[string]uint64) bool {
  	for _, inp := range r.NewInputs {
  		fuzzer.addInputFromAnotherFuzzer(inp)
  	}
@@ -1389,7 +1386,7 @@ index b6e8be4b..9fef8907 100644
  	if needCandidates && len(r.Candidates) == 0 && atomic.LoadUint32(&fuzzer.triagedCandidates) == 0 {
  		atomic.StoreUint32(&fuzzer.triagedCandidates, 1)
  	}
-@@ -541,3 +559,23 @@ func parseOutputType(str string) OutputType {
+@@ -541,3 +560,23 @@ func parseOutputType(str string) OutputType {
  		return OutputNone
  	}
  }
