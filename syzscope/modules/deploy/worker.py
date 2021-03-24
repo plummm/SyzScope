@@ -136,6 +136,11 @@ class Workers(Case):
                 sym.cleanup()
                 del sym
                 continue
+            except Exception as e:
+                self.logger.error("Unknown error occur: {}".format(e))
+                sym.cleanup()
+                del sym
+                continue
             if p == None:
                 self.logger.error("Fail to launch qemu")
                 sym.cleanup()
