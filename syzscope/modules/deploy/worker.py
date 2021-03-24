@@ -307,7 +307,7 @@ class Workers(Case):
         if self.sa.saveCallTrace2File(trace, vul_site):
             self.logger.error("Error occur at saveCallTrace2File, please manually add boundaries in {}".format(self.sa.work_path, "CallTrace"))
         r, time_on_static_analysis = self.sa.run_static_analysis(offset, size)
-        if r != 0:
+        if r != 0 and r != 1:
             self.logger.error("Error occur during taint analysis")
         if self.timeout_symbolic_execution == None:
             self.timeout_symbolic_execution = self.timeout_dynamic_validation - time_on_static_analysis

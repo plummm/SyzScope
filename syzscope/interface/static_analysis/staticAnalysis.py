@@ -122,7 +122,9 @@ class StaticAnalysis:
                     for e in cmds:
                         call(e, cwd=base)"""
                     continue
-                if 'arch/x86/boot' in p2obj or 'arch/x86/entry/vdso' in p2obj:
+                if 'arch/x86/boot' in p2obj \
+                    or 'arch/x86/entry/vdso' in p2obj \
+                    or 'arch/x86/realmode' in p2obj:
                     continue
                 #print("CC {}".format(p2obj))
                 new_cmd = []

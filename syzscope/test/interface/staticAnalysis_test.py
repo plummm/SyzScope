@@ -8,7 +8,7 @@ from subprocess import PIPE, STDOUT, Popen
 from syzscope.test.deploy_test import getMinimalDeployer, getCrawler
 
 def compile_bc_extra_test(hash_val):
-    d = getMinimalDeployer("work/completed/{}".format(hash_val[:7]))
+    d = getMinimalDeployer("work/incomplete/{}".format(hash_val[:7]))
     sa = static_analysis.StaticAnalysis(logging, d.project_path, 1, 'static-ori', d.current_case_path, "linux", 1)
     sa.compile_bc_extra()
     """
@@ -51,4 +51,4 @@ def saveCallTrace_test(case):
     sa.saveCallTrace2File(trace, vul_site)
 
 if __name__ == '__main__':
-    compile_bc_extra_test('a0baab60775fd411b40856d541de27944cf3f230')
+    compile_bc_extra_test('ab72104359c8066fb418e18d9227eb00b677360a')
