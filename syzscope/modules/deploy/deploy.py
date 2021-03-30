@@ -68,7 +68,7 @@ class Deployer(Workers):
             self.init_replay_crash(hash_val[:7])    
         self.compiler = utilities.set_compiler_version(time_parser.parse(case["time"]), case["config"])
         impact_without_mutating = False
-        self.__create_dir_for_case()
+        succeed = self.__create_dir_for_case()
         if self.force:
             self.cleanup_built_kernel(hash_val)
             self.cleanup_built_syzkaller(hash_val)
@@ -96,7 +96,6 @@ class Deployer(Workers):
         self.init_crash_checker(self.ssh_port)
 
         need_patch = 0
-        succeed = 0
         #if self.__need_kasan_patch(case['title']):
         #    need_patch = 1
         if not self.kernel_fuzzing and not self.reproduce_ori_bug:
@@ -147,7 +146,7 @@ class Deployer(Workers):
                 title = context['title']
                 if self.__success_check(hash_val, "ConfirmedDoubleFree") or \
                    self.__success_check(hash_val, "ConfirmedAbnormallyMemWrite"):
-                    succeed = 1
+                    succeed = True
                 else:
                     self.case_logger.info("skip an invalid context")
                 continue
@@ -167,7 +166,7 @@ class Deployer(Workers):
                 if not self.finished_symbolic_execution(hash_val, 'incomplete'):
                     r = self.do_symbolic_execution(case, context, i386)
                     if r == 0:
-                        succeed = 1
+                        succeed = True
                 else:
                     self.logger.info("{} has finished symbolic execution".format(hash_val[:7]))
 
@@ -771,11 +770,13 @@ class Deployer(Workers):
         self.current_case_path = des
 
     def __create_dir_for_case(self):
-        if self.__copy_from_duplicated_cases():
-            return
+        res, succeed = self.__copy_from_duplicated_cases()
+        if res:
+            return succeed
         path = "{}/.stamp".format(self.current_case_path)
         if not os.path.isdir(path):
             os.makedirs(path, exist_ok=True)
+        return succeed
 
     def __copy_from_duplicated_cases(self):
         des = self.current_case_path
@@ -788,10 +789,10 @@ class Deployer(Workers):
                 try:
                     shutil.move(src, des)
                     self.logger.info("Found duplicated case in {}".format(src))
-                    return True
+                    return True, dirs == "succeed"
                 except:
                     self.logger.info("Fail to copy the duplicated case from {}".format(src))
-        return False
+        return False, False
     
     def __get_default_log_format(self):
         return logging.Formatter('%(asctime)s %(levelname)s [{}] %(message)s'.format(self.index))

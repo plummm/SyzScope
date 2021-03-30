@@ -46,6 +46,8 @@ class Workers(Case):
     def do_symbolic_execution(self, case, context, i386, max_round=3, raw_tracing=False, timeout=None):
         path_regx = r'path2(MemWrite|FuncPtrDef)-(\d+)-\d+'
         self.logger.info("initial environ of symbolic execution")
+        #if not self.guided_execution:
+        #    return 1
         if timeout != None:
             self.timeout_symbolic_execution = timeout
         else:

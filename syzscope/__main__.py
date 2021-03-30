@@ -7,7 +7,7 @@ import gc
 sys.path.append(os.getcwd())
 from syzscope.modules import Crawler, Deployer
 from subprocess import call
-from syzscope.interface.utilities import urlsOfCases
+from syzscope.interface.utilities import urlsOfCases, urlsOfCases, FOLDER, CASE
 
 def args_parse():
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
@@ -96,6 +96,9 @@ def args_parse():
     parser.add_argument('--timeout-symbolic-execution', nargs='?',
                         help='The timeout(by second) of symbolic execution\n'
                             'Default timeout is (timeout_dynamic_validation - timeout_static_analysis)')
+    parser.add_argument('--get-hash', nargs='?',
+                        help='Get the hash of cases\n'
+                            'eg. work/completed')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug mode')
 
@@ -187,6 +190,17 @@ def prepare_cases(index, args):
             break
     print("Thread {} exit->".format(index))
 
+def get_hash(path):
+    ret = []
+    log_path = os.path.join(path, "log")
+    if os.path.exists(log_path):
+        ret=urlsOfCases(path, CASE)
+    else:
+        ret=urlsOfCases(path, FOLDER)
+    print("The hash of {}".format(path))
+    for each in ret:
+        print(each)
+
 def remove_using_flag(index):
     project_path = os.getcwd()
     flag_path = "{}/tools/linux-{}/THIS_KERNEL_IS_BEING_USED".format(project_path,index)
@@ -213,6 +227,10 @@ if __name__ == '__main__':
     print_args_info(args)
     check_kvm()
     args_dependencies()
+
+    if args.get_hash != None:
+        get_hash(args.get_hash)
+        sys.exit(0)
 
     ignore = []
     manager = multiprocessing.Manager()
