@@ -23,6 +23,7 @@ class MemInstrument(StateManager):
         else:
             self.logger = logger
         self._segment_regs = {}
+        self.counter = 0
     
     def setup_sections(self, name=None):
         self.sections = {}
@@ -106,6 +107,7 @@ class MemInstrument(StateManager):
 
     def track_instruction(self, state):
         self.logger.warning("trace_instruction")
+        self.counter+=1
         self.dump_state(state)
     
     def track_symbolic_variable(self, state):

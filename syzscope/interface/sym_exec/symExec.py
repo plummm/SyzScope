@@ -37,6 +37,7 @@ class SymExec(MemInstrument):
         self._branches = None
         self.target_site = None
         self.terminating_func = None
+        self.out_of_scope = False
         self.start_time = None
         self.state_tracking = []
         if logger == None:
@@ -162,10 +163,10 @@ class SymExec(MemInstrument):
 
         self._init_state.inspect.b('mem_read', when=angr.BP_BEFORE, action=self.track_mem_read)
         self._init_state.inspect.b('mem_write', when=angr.BP_BEFORE, action=self.track_mem_write)
-        #self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff826c99be)
+        self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff81005648)
         self._init_state.inspect.b('symbolic_variable', when=angr.BP_BOTH, action=self.track_symbolic_variable)
         self._init_state.inspect.b('call', when=angr.BP_BEFORE, action=self.track_call)
-        #self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff826c98fd)
+        #self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff81005672)
         #self._init_state.inspect.b('constraints', when=angr.BP_BEFORE, action=self.track_contraint)
 
         self.terminating_func = terminating_func
@@ -642,7 +643,7 @@ class SymExec(MemInstrument):
         return last_inst.mnemonic[0] == 'j' and last_inst.mnemonic != 'jmp'
     
     def _is_fallen_state(self, state):
-        if self._branches != {}:
+        if self._branches != {} or self.out_of_scope:
             self.update_states_globals(0, 0, StateManager.G_BB)
             n = self.get_states_globals(0, StateManager.G_BB)
             return n > StateManager.MAX_BB_WITHOUT_SYM
@@ -657,7 +658,9 @@ class SymExec(MemInstrument):
                 return False
             func_name = self.vm.get_func_name(state.scratch.ins_addr)
             if callstack.next == None and insns[n-1].mnemonic == 'ret' and func_name == self.terminating_func:
-                return True
+                self.out_of_scope = True
+                self.logger.info("Reach termination function")
+                return False
             return False
     
     def _after_gdb_resume(self, timeout):

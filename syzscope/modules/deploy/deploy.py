@@ -42,8 +42,8 @@ syz_config_template="""
 }}"""
 
 class Deployer(Workers):
-    def __init__(self, index, parallel_max, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=False, reproduce=False, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None, guided=False):
-        Workers.__init__(self, index, parallel_max, debug, force, port, replay, linux_index, time, kernel_fuzzing, reproduce, alert, static_analysis, symbolic_execution, gdb_port, qemu_monitor_port, max_compiling_kernel, timeout_dynamic_validation, timeout_static_analysis, timeout_symbolic_execution, guided)
+    def __init__(self, index, parallel_max, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=False, reproduce=False, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None, guided=False, be_bully=False):
+        Workers.__init__(self, index, parallel_max, debug, force, port, replay, linux_index, time, kernel_fuzzing, reproduce, alert, static_analysis, symbolic_execution, gdb_port, qemu_monitor_port, max_compiling_kernel, timeout_dynamic_validation, timeout_static_analysis, timeout_symbolic_execution, guided, be_bully)
         self.clone_linux()
     
     def init_replay_crash(self, hash_val):

@@ -23,7 +23,7 @@ TIMEOUT_DYNAMIC_VALIDATION=60*60
 TIMEOUT_STATIC_ANALYSIS=60*30
 
 class Workers(Case):
-    def __init__(self, index, parallel_max, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=False, reproduce=False, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None, guided=False):
+    def __init__(self, index, parallel_max, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=False, reproduce=False, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None, guided=False, be_bully=False):
         Case.__init__(self, index, parallel_max, debug, force, port, replay, linux_index, time, kernel_fuzzing, reproduce, alert, static_analysis, symbolic_execution, gdb_port, qemu_monitor_port, max_compiling_kernel)
         if timeout_dynamic_validation == None:
             self.timeout_dynamic_validation=TIMEOUT_DYNAMIC_VALIDATION
@@ -42,6 +42,7 @@ class Workers(Case):
             else:
                 self.timeout_symbolic_execution = 365*24*60*60
         self.guided_execution = guided
+        self.be_bully = be_bully
 
     def do_symbolic_execution(self, case, context, i386, max_round=3, raw_tracing=False, timeout=None):
         path_regx = r'path2(MemWrite|FuncPtrDef)-(\d+)-\d+'
@@ -133,6 +134,8 @@ class Workers(Case):
                 p = sym.run_vm()
             except QemuIsDead:
                 self.logger.error("Error occur when executing symbolic tracing: QemuIsDead")
+                if self.be_bully:
+                    self.kill_proc_by_port(self.ssh_port)
             except AngrRefuseToLoadKernel:
                 self.logger.error("Error occur when loading kernel into angr: AngrRefuseToLoadKernel")
                 sym.cleanup()
@@ -437,6 +440,21 @@ class Workers(Case):
         if exitcode != 0:
             self.case_logger.info("Fail to generate a decent report from bug log")
         return
+    
+    def kill_proc_by_port(self, ssh_port):
+        p = Popen("lsof -i :{} | awk '{{print $2}}'".format(ssh_port), shell=True, stdout=PIPE, stderr=PIPE)
+        is_pid = False
+        pid = -1
+        with p.stdout as pipe:
+            for line in iter(pipe.readline, b''):
+                line = line.strip().decode('utf-8')
+                if line == 'PID':
+                    is_pid = True
+                    continue
+                if is_pid:
+                    pid = int(line)
+                    call("kill -9 {}".format(pid), shell=True)
+                    break
     
     def init_crash_checker(self, port):
         self.crash_checker = CrashChecker(
