@@ -30,6 +30,7 @@ class StateManager:
         self.state_counter = None
         self.add_constraints = False
         self.symbolic_tracing = False
+        self.out_of_scope = False
         self.dfs = True
         self.guided= False
         self.proj_path = None
@@ -261,7 +262,7 @@ class StateManager:
         for e in bv.leaf_asts():
             print(e)
         if bv.depth > 10:
-            # Too many depth (8^10) make the recursive a blackhol
+            # Too many depth (8^10) make the recursive a blackhole
             return not (self._current_state.solver.solution(bv, 0) and \
                 self._current_state.solver.solution(bv, 0x100000000000000))
         sym_value_4_state = []
@@ -292,6 +293,7 @@ class StateManager:
     
     def reset_state_bb(self):
         self._current_state.globals['bb'] = 0
+        self.out_of_scope = False
 
     def purge_current_state(self):
         self.kill_current_state = True
