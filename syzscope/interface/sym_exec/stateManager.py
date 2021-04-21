@@ -110,39 +110,40 @@ class StateManager:
         if key not in self.target_site:
             self.target_site[key] = StateManager.NO_ADDITIONAL_USE
         self.target_site[key] |= impact_type
-        if self.all_targets_covered():
-            self.stop_execution = True
+        #if self.all_targets_covered():
+        #    self.stop_execution = True
         if (state.scratch.ins_addr in self.exploitable_state) and (self.exploitable_state[state.scratch.ins_addr] & impact_type):
             return None
         self.exploitable_state[state.scratch.ins_addr] = impact_type
+        index = len(self.exploitable_state)
         if impact_type == StateManager.FINITE_ADDR_WRITE:
             self.state_privilege |= impact_type
-            prim_name = "{}-{}-{}".format("FAW", func_name, hex(state.scratch.ins_addr)) + target_sign
+            prim_name = "{}-{}-{}".format("FAW", func_name, hex(state.scratch.ins_addr)) + target_sign + "-" + str(index)
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("Finite address write found")
         if impact_type == StateManager.ARBITRARY_ADDR_WRITE:
             self.state_privilege |= impact_type
-            prim_name = "{}-{}-{}".format("AAW", func_name, hex(state.scratch.ins_addr)) + target_sign
+            prim_name = "{}-{}-{}".format("AAW", func_name, hex(state.scratch.ins_addr)) + target_sign + "-" + str(index)
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("Arbitrary address write found")
         if impact_type == StateManager.FINITE_VALUE_WRITE:
             self.state_privilege |= impact_type
-            prim_name = "{}-{}-{}".format("FVW", func_name, hex(state.scratch.ins_addr)) + target_sign
+            prim_name = "{}-{}-{}".format("FVW", func_name, hex(state.scratch.ins_addr)) + target_sign + "-" + str(index)
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("Finite value write found")
         if impact_type == StateManager.ARBITRARY_VALUE_WRITE:
             self.state_privilege |= impact_type
-            prim_name = "{}-{}-{}".format("AVW", func_name, hex(state.scratch.ins_addr)) + target_sign
+            prim_name = "{}-{}-{}".format("AVW", func_name, hex(state.scratch.ins_addr)) + target_sign + "-" + str(index)
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("Arbitrary value write found")
         if impact_type == StateManager.CONTROL_FLOW_HIJACK:
             self.state_privilege |= impact_type
-            prim_name = "{}-{}-{}".format("CFH", func_name, hex(state.scratch.ins_addr)) + target_sign
+            prim_name = "{}-{}-{}".format("CFH", func_name, hex(state.scratch.ins_addr)) + target_sign + "-" + str(index)
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("Control flow hijack found!")
         if impact_type == StateManager.OOB_UAF_WRITE:
             self.state_privilege |= impact_type
-            prim_name = "{}-{}-{}".format("OUW", func_name, hex(state.scratch.ins_addr)) + target_sign
+            prim_name = "{}-{}-{}".format("OUW", func_name, hex(state.scratch.ins_addr)) + target_sign + "-" + str(index)
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("OOB UAF write found!")
             """
@@ -369,8 +370,15 @@ class StateManager:
         if logger == None:
             logger = self.logger
         n = 0
+        intra_proc_n = 0
+        depth = 0
+        in_call_n = [0]
         for addr in state.history.bbl_addrs: 
             n += 1
+            intra_proc_n += 1
+            in_call_n[depth] += 1
+            insns = self.proj.factory.block(addr).capstone.insns
+            length = len(insns)
             func_name = self.vm.get_func_name(addr)
             file, line = self.vm.get_dbg_info(addr)
             if func_name == None or file == None or line == None:
@@ -379,4 +387,17 @@ class StateManager:
                 logger.info(hex(addr))
                 logger.info("{} {}:{}".format(func_name, file, line))
                 logger.info("--------------------------------------")
+            if length != 0:
+                    if insns[length-1].mnemonic == 'call':
+                        depth += 1
+                        if len(in_call_n) > depth:
+                            in_call_n[depth] = 0
+                        else:
+                            in_call_n.append(0)
+                    if insns[length-1].mnemonic == 'ret' or \
+                        'kasan' in file or 'kcov' in file:
+                        if depth > 0:
+                            intra_proc_n -= in_call_n[depth]
+                            depth -= 1
+        logger.info("Total {} intraprocedural basic block".format(intra_proc_n))
         logger.info("Total {} basic block".format(n))

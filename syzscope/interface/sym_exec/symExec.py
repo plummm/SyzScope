@@ -115,7 +115,7 @@ class SymExec(MemInstrument):
             self.logger.warning("Timeout of symbolic execution is longer than timeout of qemu")
         dfs = True
         if path == []:
-            dfs = True
+            dfs = False
         self._timeout = timeout
         if not self._context_ready:
             if self.vm == None:
@@ -162,7 +162,7 @@ class SymExec(MemInstrument):
 
         self._init_state.inspect.b('mem_read', when=angr.BP_BEFORE, action=self.track_mem_read)
         self._init_state.inspect.b('mem_write', when=angr.BP_BEFORE, action=self.track_mem_write)
-        self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff8116b93f)
+        self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff82f54fed)
         self._init_state.inspect.b('symbolic_variable', when=angr.BP_BOTH, action=self.track_symbolic_variable)
         self._init_state.inspect.b('call', when=angr.BP_BEFORE, action=self.track_call)
         #self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff81005672)

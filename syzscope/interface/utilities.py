@@ -808,6 +808,26 @@ def duplicated_warning():
                     if 'use-after-free' in dup['Title'] or 'out-of-bounds' in dup or 'double-free' in dup:
                         print(each_hash, dup['Title'])
 
+def get_case_timeout_sym_exec(path):
+    files=os.listdir(path)
+    for each in files:
+        timeout=False
+        exec_log = os.path.join(path, '{}/sym-ori/symbolic_execution.log-'.format(each))
+        for i in range(2,-1,-1):
+            if os.path.exists(exec_log+str(i)):
+                with open(exec_log+str(i), 'r') as f:
+                    texts=f.readlines()
+                    for line in texts:
+                        line = line.strip()
+                        if "Timeout, stop symbolic execution" in line:
+                            timeout=True
+                            break
+                break
+        if timeout:
+            r = get_hash_from_log(os.path.join(path, '{}/log'.format(each)))
+            print(r)
+
+
 if __name__ == '__main__':
     #cases = save_cases_as_json([''], 999999)
     """
@@ -825,12 +845,14 @@ if __name__ == '__main__':
     reported_days = cases[len(cases)-1]['Reported']
     day = int(regx_get('(\d+)d', reported_days, 0))
     print("{} days with {} bugs: {} bugs/day".format(day, len(cases), round(len(cases)/day, 2)))
-    """
+    
     base = '/home/xzou017/projects/SyzbotAnalyzer/work/succeed'
     files = os.listdir(base)
     for each in files:
         r = get_hash_from_log(os.path.join(base, '{}/log'.format(each)))
         print(r)
+    """
+    get_case_timeout_sym_exec('/home/xzou017/projects/SyzbotAnalyzer/work/succeed')
     
 
     
