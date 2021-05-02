@@ -482,7 +482,7 @@ class CrashChecker:
     def make_commands(self, text, support_enable_features, i386):
         command = "/syz-execprog -executor=/syz-executor "
         enabled = "-enable="
-        normal_pm = {"arch":"amd64", "threaded":"false", "collide":"false", "sandbox":"none", "fault_call":"-1", "fault_nth":"0"}
+        normal_pm = {"arch":"amd64", "threaded":"false", "collide":"false", "sandbox":"none", "fault_call":"-1", "fault_nth":"0", "slowdown":"1"}
         for line in text:
             if line.find('{') != -1 and line.find('}') != -1:
                 pm = {}
@@ -525,6 +525,14 @@ class CrashChecker:
                         enabled += "net_reset,"
                     if "usb" in pm and str(pm["usb"]).lower() == "true":
                         enabled += "usb,"
+                    if "ieee802154" in pm and str(pm["ieee802154"]).lower() == "true":
+                        enabled += "ieee802154,"
+                    if "sysctl" in pm and str(pm["sysctl"]).lower() == "true":
+                        enabled += "sysctl,"
+                    if "vhci" in pm and str(pm["vhci"]).lower() == "true":
+                        enabled += "vhci,"
+                    if "wifi" in pm and str(pm["wifi"]).lower() == "true":
+                        enabled += "wifi," 
                 
                 if enabled[-1] == ',':
                     command += enabled[:-1] + " testcase"
