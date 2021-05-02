@@ -144,11 +144,16 @@ if [ ! -f "$TOOLS_PATH/.stamp/SETUP_GOLANG" ]; then
     mkdir gopath
   fi
   rm go1.14.2.linux-amd64.tar.gz
+  touch $TOOLS_PATH/.stamp/SETUP_GOLANG
+fi
 
+echo "[+] Setup syzkaller"
+if [ ! -f "$TOOLS_PATH/.stamp/SETUP_SYZKALLER" ]; then
   mkdir -p $GOPATH/src/github.com/google/ || echo "Dir exists"
   cd $GOPATH/src/github.com/google/
+  rm -rf syzkaller || echo "syzkaller does not exist"
   git clone https://github.com/google/syzkaller.git
-  touch $TOOLS_PATH/.stamp/SETUP_GOLANG
+  touch $TOOLS_PATH/.stamp/SETUP_SYZKALLER
 fi
 
 touch $TOOLS_PATH/.stamp/ENV_SETUP

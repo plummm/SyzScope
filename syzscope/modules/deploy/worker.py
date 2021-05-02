@@ -108,16 +108,16 @@ class Workers(Case):
                             func = f.readline()
                             terminating_func = func.strip('\n')
                             continue
-                    if int(n_basic_block) < 0:
+                    if int(n_basic_block) < 40:
                         continue
                     guided_path = os.path.join(static_analysis_result_paths, each_file)
                     p = self.retrieve_guided_paths(guided_path)
                     if p != []:
                         paths.append(p)
 ### DEBUG
-            if paths == []:
-                self.logger.info("No paths found, skip")
-                return
+            #if paths == []:
+            #    self.logger.info("No paths found, skip")
+            #    return
 ### DEBUG
         os.mkdir(sym_folder)
         is_propagating_global = False

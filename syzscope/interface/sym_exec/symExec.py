@@ -270,7 +270,11 @@ class SymExec(MemInstrument):
 
             if len(self.simgr.active) == 0:
                 # No dfs no deferred
-                if dfs and len(self.simgr.deferred) == 0:
+                if dfs:
+                    if len(self.simgr.deferred) == 0:
+                        self.logger.info("No active states")
+                        self.stop_execution = True
+                else:
                     self.logger.info("No active states")
                     self.stop_execution = True
             
@@ -642,7 +646,7 @@ class SymExec(MemInstrument):
         return last_inst.mnemonic[0] == 'j' and last_inst.mnemonic != 'jmp'
     
     def _is_fallen_state(self, state):
-        if self._branches != {} or self.out_of_scope:
+        if self.out_of_scope:
             self.update_states_globals(0, 0, StateManager.G_BB)
             n = self.get_states_globals(0, StateManager.G_BB)
             return n > StateManager.MAX_BB_WITHOUT_SYM
