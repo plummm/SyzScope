@@ -470,7 +470,7 @@ class CrashChecker:
         p2 = Popen(["ssh", "-F", "/dev/null", "-o", "UserKnownHostsFile=/dev/null", 
         "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=no", 
         "-i", "{}/stretch.img.key".format(self.image_path), 
-        "-p", str(port), "root@localhost", "chmod +x run.sh && ./run.sh"],
+        "-p", str(port), "root@localhost", "chmod +x run.sh && ./run.sh "+str(th_index and 1)],
         stdout=PIPE,
         stderr=STDOUT)
         with p2.stdout:

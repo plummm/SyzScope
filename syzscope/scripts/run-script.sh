@@ -29,13 +29,19 @@ set -ex
 #    ./poc
 #fi
 
+RAW=\$1
+
 for i in {1..10}
 do
     # some crashes may be triggered after current process exit
-    ${NON_REPEAT_COMMAND} || ${NON_REPEAT_RAW_COMMAND}
-
     # some crashes need race-condition or multiple executions
-    ${COMMAND} || ${RAW_COMMAND}
+    if [ "\$RAW" != "0" ]; then
+        ${NON_REPEAT_RAW_COMMAND}
+        ${RAW_COMMAND}
+    else
+        ${NON_REPEAT_COMMAND}
+        ${COMMAND}
+    fi
     
     #Sometimes the testcase is not required to repeat, but we still give a shot
     sleep 5
