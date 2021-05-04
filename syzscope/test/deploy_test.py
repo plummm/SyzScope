@@ -30,18 +30,18 @@ def replaceTemplate_test(pattern, pattern_type):
     d = getMinimalDeployer()
     d.replaceTemplate(pattern, pattern_type)
 
-def save_case_test(hash_val, exitcode, case, need_fuzzing, title=None, secondary_fuzzing=False):
-    d = getMinimalDeployer("work/incomplete/974293d")
-    d.save_case(hash_val, exitcode, case, need_fuzzing, title=title, secondary_fuzzing=secondary_fuzzing)
+def save_case_test(hash_val, exitcode, case, limitedMutation, impact_without_mutating, title=None, secondary_fuzzing=False):
+    d = getMinimalDeployer("work/incomplete/f3b77e3")
+    d.save_case(hash_val, exitcode, case, limitedMutation=limitedMutation, impact_without_mutating=impact_without_mutating, title=title, secondary_fuzzing=secondary_fuzzing)
 
 def copy_new_impact_test(case):
     d = getMinimalDeployer('work/completed/232223b')
     d.copy_new_impact(case, True, "KASAN: slab-out-of-bounds in hpet_alloc")
 
 if __name__ == '__main__':
-    hash_val = "232223b1e1dc405ba8ca60125d643ea8bbeb65ac"
+    hash_val = "f3b77e3aaf3eba7e5cec0a33ad031e720a358920"
     exitcode = 0
     crawler = getCrawler()
     crawler.run_one_case(hash_val)
     case = crawler.cases.pop(hash_val)
-    copy_new_impact_test(case)
+    save_case_test(hash_val, 0, case, True, False, case['title'])

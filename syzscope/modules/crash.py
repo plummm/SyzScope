@@ -104,7 +104,7 @@ class CrashChecker:
             crashes_path = self.extract_existed_crash(self.case_path)
             if len(crashes_path) == 0:
                 return []
-        if limitedMutation:
+        if limitedMutation and len(crashes_path) == 1:
             return crashes_path
         self.case_logger.info("=============================crash.repro_on_fixed_kernel=============================")
         res = []
