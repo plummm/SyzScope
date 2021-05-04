@@ -53,8 +53,6 @@ class Workers(Case):
             self.timeout_symbolic_execution = timeout
         else:
             self.timeout_symbolic_execution = self.timeout_dynamic_validation - self.timeout_static_analysis
-        offset = context['offset']
-        size = context['size']
         workdir = 'sym-' + context['workdir']
         static_workdir = 'static-' + context['workdir']
         self.sa = static_analysis.StaticAnalysis(logger=self.case_logger, proj_path=self.project_path, workdir=static_workdir, index=self.index, case_path=self.current_case_path, linux_folder=self.linux_folder, max_compiling_kernel=self.max_compiling_kernel)
@@ -173,7 +171,6 @@ class Workers(Case):
                 continue
 
             self.crash_checker.run_exp(case["syz_repro"], self.ssh_port, utilities.URL, ok, i386, 0, sym_logger)
-            sym.setup_bug_capture(offset, size)
             try:
                 if paths != []:
                     self.logger.info("Running under-constrained symbolic execution with guided paths")
@@ -380,16 +377,20 @@ class Workers(Case):
     
     def get_buggy_contexts(self, case):
         ret = []
+        ori_ready = False
         if not self.store_read:
             # OOB/UAF read
             offset = case["vul_offset"]
             size = case["obj_size"]
             if offset != None and size != None:
+                ori_ready = True
                 ret.append({'title':case["title"], 'workdir': 'ori', 'offset': offset, 'size': size, 'repro': case["syz_repro"], 'report': case['report'], 'type': utilities.URL, 'c_repro': case["syz_repro"]})
         output = os.path.join(self.current_case_path, "output")
         if os.path.exists(output):
             all_cases = os.listdir(output)
             for each_case in all_cases:
+                if each_case == 'ori' and ori_ready:
+                    continue
                 case_base = os.path.join(output, each_case)
                 description = os.path.join(case_base, "description")
                 if not os.path.exists(description):

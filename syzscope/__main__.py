@@ -50,7 +50,7 @@ def args_parse():
                         default=[''],
                         help='Set alert for specific crash description')
     parser.add_argument('-t', '--time', nargs='?',
-                        default='8',
+                        default='3',
                         help='Time for each running(in hour)\n'
                         '(default value is 8 hour)')
     parser.add_argument('-KF', '--kernel-fuzzing',

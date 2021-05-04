@@ -389,9 +389,9 @@ class CrashChecker:
                                     trgger_hunted_bug = True
                                     if write_flag:
                                         self.logger.debug("QEMU threaded {}: OOB/UAF write triggered".format(th_index))
+                                        qemu.kill_qemu = True
                                     if read_flag:
-                                        self.logger.debug("QEMU threaded {}: OOB/UAF read triggered".format(th_index))
-                                    p.kill()
+                                        self.logger.debug("QEMU threaded {}: OOB/UAF read triggered".format(th_index))                       
                                     break
                             record_flag = 1
                             continue
@@ -470,7 +470,7 @@ class CrashChecker:
         p2 = Popen(["ssh", "-F", "/dev/null", "-o", "UserKnownHostsFile=/dev/null", 
         "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=no", 
         "-i", "{}/stretch.img.key".format(self.image_path), 
-        "-p", str(port), "root@localhost", "chmod +x run.sh && ./run.sh "+str(th_index and 1)],
+        "-p", str(port), "root@localhost", "chmod +x run.sh && ./run.sh "+str(th_index & 1)],
         stdout=PIPE,
         stderr=STDOUT)
         with p2.stdout:
@@ -482,7 +482,7 @@ class CrashChecker:
     def make_commands(self, text, support_enable_features, i386):
         command = "/syz-execprog -executor=/syz-executor "
         enabled = "-enable="
-        normal_pm = {"arch":"amd64", "threaded":"false", "collide":"false", "sandbox":"none", "fault_call":"-1", "fault_nth":"0", "slowdown":"1"}
+        normal_pm = {"arch":"amd64", "threaded":"false", "collide":"false", "sandbox":"none", "fault_call":"-1", "fault_nth":"0"}
         for line in text:
             if line.find('{') != -1 and line.find('}') != -1:
                 pm = {}
@@ -506,6 +506,8 @@ class CrashChecker:
                     command += "-procs=" + str(pm["procs"]) + " "
                 if "repeat" in pm and pm["repeat"] != "":
                     command += "-repeat=" + "0 "
+                if "slowdown" in pm and pm["slowdown"] != "":
+                    command += "-slowdown=" + "1 "
                 #It makes no sense that limiting the features of syz-execrpog, just enable them all
                 
                 if support_enable_features != 2:

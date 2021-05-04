@@ -61,10 +61,7 @@ class SymExec(MemInstrument):
         if self.vm != None:
             self.vm.kill()
 
-    def setup_bug_capture(self, offset, size, vuln_site=None, extra_noisy_func=None):
-        self.vul_mem_offset = offset
-        self.vul_mem_size = size
-        self.vuln_site = vuln_site
+    def setup_bug_capture(self, extra_noisy_func=None):
         self.extra_noisy_func = extra_noisy_func
 
     def run_vm(self):
@@ -121,19 +118,17 @@ class SymExec(MemInstrument):
             if self.vm == None:
                 self.logger.error("Call setup_vm() to initialize the vm first")
                 raise VulnerabilityNotTrigger
-            if self.vul_mem_offset == None:
-                self.logger.error("Call setup_bug_capture() to initialize vulnerability information")
-                raise VulnerabilityNotTrigger
             self.vm.lock_thread()
             vul_mem = self._read_vul_mem()
             if vul_mem == None:
                 self.logger.error("vulnerable oject addr is incorrect: {}".format(vul_mem))
                 raise VulnerabilityNotTrigger   
+            self.vm.back_to_kasan_ret()
+            self._after_gdb_resume(300)
+            self._read_offset_and_size()
             self.vul_mem_start = vul_mem - self.vul_mem_offset
             self.vul_mem_end = self.vul_mem_start + self.vul_mem_size
             self.logger.info("Vuln mem: {} to {}".format(hex(self.vul_mem_start), hex(self.vul_mem_end)))
-            self.vm.back_to_kasan_ret()
-            self._after_gdb_resume(300)
             self._context_ready = True
         return self.symbolic_execute(path, terminating_func, dfs=dfs, raw_tracing=raw_tracing)
     
@@ -675,3 +670,9 @@ class SymExec(MemInstrument):
         self.vm.gdb.waitfor("pwndbg>")
         rdi_val = self.vm.gdb.get_register('rdi')
         return rdi_val
+    
+    def _read_offset_and_size(self):
+        self.vul_mem_offset, self.vul_mem_size = utilities.extract_vul_obj_offset_and_size(self.vm.output)
+        if self.vul_mem_offset == None or self.vul_mem_size == None:
+            self.logger.error("vulnerable oject offset or size is incorrect: {} {}".format(self.vul_mem_offset, self.vul_mem_size))
+            raise VulnerabilityNotTrigger   
