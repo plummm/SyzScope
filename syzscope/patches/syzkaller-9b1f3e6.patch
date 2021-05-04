@@ -1606,7 +1606,7 @@ index 62648336..e31b664a 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index 2a0b7dd4..77789322 100644
+index 2a0b7dd4..190e3eb8 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
 @@ -6,6 +6,7 @@ package main
@@ -1738,19 +1738,19 @@ index 2a0b7dd4..77789322 100644
 +				if isCriticalCrash(res.res.Report.Title, storeRead) != nonCritical {
 +					succeed++
 +				}
-+				if (isCriticalCrash(res.res.Report.Title, storeRead) | abMemWrite) == 1 {
++				if (isCriticalCrash(res.res.Report.Title, storeRead) & abMemWrite) != nonCritical {
 +					if succeed == 1 {
 +						log.Logf(0, "Save to success file")
 +						courier.SaveToFile("AbnormallyMemWrite")
 +					}
 +				}
-+				if (isCriticalCrash(res.res.Report.Title, storeRead) | abMemRead) == 1 {
++				if (isCriticalCrash(res.res.Report.Title, storeRead) & abMemRead) != nonCritical {
 +					if succeed == 1 {
 +						log.Logf(0, "Abnormally memory read found")
 +						courier.SaveToFile("AbnormallyMemRead")
 +					}
 +				}
-+				if (isCriticalCrash(res.res.Report.Title, storeRead) | invalidFree) == 1 {
++				if (isCriticalCrash(res.res.Report.Title, storeRead) & invalidFree) != nonCritical {
 +					if succeed == 1 {
 +						log.Logf(0, "double free or invalid free")
 +						courier.SaveToFile("DoubleFree")
