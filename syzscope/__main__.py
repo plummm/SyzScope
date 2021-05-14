@@ -49,10 +49,6 @@ def args_parse():
     parser.add_argument('--alert', nargs='*', action='store',
                         default=[''],
                         help='Set alert for specific crash description')
-    parser.add_argument('-t', '--time', nargs='?',
-                        default='3',
-                        help='Time for each running(in hour)\n'
-                        '(default value is 8 hour)')
     parser.add_argument('-KF', '--kernel-fuzzing',
                         action='store_true',
                         help='Enable kernel fuzzing and reproducing the original impact')
@@ -83,6 +79,16 @@ def args_parse():
     parser.add_argument('-max', '--max-compiling-kernel-concurrently', nargs='?',
                         default='-1',
                         help='maximum of kernel that compiling at the same time. Default is unlimited.')
+    parser.add_argument('--filter-by-reported', nargs='?',
+                        default='-1',
+                        help='filter bugs by the days they were reported\n')
+    parser.add_argument('--filter-by-closed', nargs='?',
+                        default='-1',
+                        help='filter bugs by the days they were closed\n')
+    parser.add_argument('--timeout-kernel-fuzzing', nargs='?',
+                        default='3',
+                        help='Timeout for kernel fuzzing(by hour)\n'
+                        'default timeout is 3 hour')
     parser.add_argument('--timeout-dynamic-validation', nargs='?',
                         help='The timeout(by second) of static analysis and symbolic execution\n'
                             'If you specify the timeout of static analysis or symbolic execution individually\n'
@@ -127,9 +133,9 @@ def print_args_info(args):
         os._exit(1)
     
     try:
-        int(args.time)
+        int(args.timeout_kernel_fuzzing)
     except:
-        print("[-] invalid argument value time: {}".format(args.time))
+        print("[-] invalid argument value time: {}".format(args.timeout_kernel_fuzzing))
         os._exit(1)
 
 def check_kvm():
@@ -161,7 +167,7 @@ def read_cases_from_cache():
 def deploy_one_case(index, args, hash_val):
     case = crawler.cases[hash_val]
     dp = Deployer(index=index, debug=args.debug, force=args.force, port=int(args.ssh), replay=args.replay, \
-                linux_index=int(args.linux), time=int(args.time), kernel_fuzzing=args.kernel_fuzzing, reproduce= args.reproduce, alert=args.alert, \
+                linux_index=int(args.linux), time=int(args.timeout_kernel_fuzzing), kernel_fuzzing=args.kernel_fuzzing, reproduce= args.reproduce, alert=args.alert, \
                 static_analysis=args.static_analysis, symbolic_execution=args.symbolic_execution, gdb_port=int(args.gdb), \
                 qemu_monitor_port=int(args.qemu_monitor), max_compiling_kernel=int(args.max_compiling_kernel_concurrently), \
                 timeout_dynamic_validation=args.timeout_dynamic_validation, timeout_static_analysis=args.timeout_static_analysis, \
@@ -245,7 +251,8 @@ if __name__ == '__main__':
     if args.input != None and args.use_cache:
         print("Can not use cache when specifying inputs")
         sys.exit(1)
-    crawler = Crawler(url=args.url, keyword=args.key, max_retrieve=int(args.max), debug=args.debug)
+    crawler = Crawler(url=args.url, keyword=args.key, max_retrieve=int(args.max), 
+        filter_by_reported=int(args.filter_by_reported), filter_by_closed=int(args.filter_by_closed), debug=args.debug)
     if args.replay != None:
         for url in urlsOfCases(args.replay):
             crawler.run_one_case(url)

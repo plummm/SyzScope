@@ -518,19 +518,19 @@ def get_case_from_file(path, workdir, folder=[]):
                     print("No hash found on case: {}".format(case_hash))
     return res
 
-def check_keyword_on_patch(hash):
+def get_patch_title(hash):
     url = syzbot_host_url + syzbot_bug_base_url + hash
     req = request_get(url)
     soup = BeautifulSoup(req.text, "html.parser")
     try:
-        fix = soup.body.span.contents[1]
+        fix = soup.find_all('span', {'class': 'mono'})[0].contents[1]
         url = fix.attrs['href']
     except:
         res=None
     req = request_get(url)
-    if regx_match(r' race(s)?( |-)| race(s)?\n| Race(s)?( |-)| Race(s)?\n', req.text):
-        return True
-    return False
+    soup = BeautifulSoup(req.text, "html.parser")
+    title = soup.find_all('div', {'class': 'commit-subject'})
+    return title[0].text
 
 def set_compiler_version(time, config_url):
     GCC = 0
@@ -852,7 +852,8 @@ if __name__ == '__main__':
         r = get_hash_from_log(os.path.join(base, '{}/log'.format(each)))
         print(r)
     """
-    get_case_timeout_sym_exec('/home/xzou017/projects/SyzbotAnalyzer/work/succeed')
+    #hashs = 
+    #title = get_patch_title("ea398dda44234c25765ebf943afad5d099cc542f")
     
 
     

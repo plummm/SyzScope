@@ -14,8 +14,8 @@ num_of_elements = 8
 class Crawler:
     def __init__(self,
                  url="https://syzkaller.appspot.com/upstream/fixed",
-                 keyword=[''],
-                 max_retrieve=10, debug=False):
+                 keyword=[''], max_retrieve=10, filter_by_reported=-1, 
+                 filter_by_closed=-1, debug=False):
         self.url = url
         if type(keyword) == list:
             self.keyword = keyword
@@ -27,6 +27,8 @@ class Crawler:
         self.logger = None
         self.logger2file = None
         self.init_logger(debug)
+        self.filter_by_reported = filter_by_reported
+        self.filter_by_closed = filter_by_closed
 
     def init_logger(self, debug):
         handler = logging.FileHandler("{}/info".format(os.getcwd()))
@@ -132,9 +134,13 @@ class Crawler:
                             crash['Last'] = stats[3].text
                             try:
                                 crash['Reported'] = stats[4].text
+                                if self.filter_by_reported > -1 and int(crash['Reported'][:-1]) > self.filter_by_reported:
+                                    continue
                                 patch_url = commit_list.contents[1].contents[1].attrs['href']
                                 crash['Patch'] = patch_url
                                 crash['Closed'] = stats[4].text
+                                if self.filter_by_closed > -1 and int(crash['Closed'][:-1]) > self.filter_by_closed:
+                                    continue
                             except:
                                 # patch only works on fixed cases
                                 pass
