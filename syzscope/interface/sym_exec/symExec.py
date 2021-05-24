@@ -111,7 +111,7 @@ class SymExec(MemInstrument):
         if timeout > self._timeout:
             self.logger.warning("Timeout of symbolic execution is longer than timeout of qemu")
         dfs = True
-        if path == []:
+        if path == [] and not self.debug:
             dfs = False
         self._timeout = timeout
         if not self._context_ready:
@@ -397,6 +397,7 @@ class SymExec(MemInstrument):
             code = self.vm.inspect_code(addr, 1)
             if 'ud' in code or 'int3' in code:
                 self.logger.info("Unexpected opcode")
+                self.logger.debug(code)
                 self.purge_current_state()
             if not self.proj.is_hooked(addr):
                 self.skip_insn(addr, 1)
@@ -406,6 +407,7 @@ class SymExec(MemInstrument):
             opcode = inst.mnemonic
             if opcode in error_opcode:
                 self.logger.info("Unexpected opcode")
+                self.logger.debug(opcode)
                 self.purge_current_state()
             if opcode in skip_opcode or opcode in error_opcode:
                 if not self.proj.is_hooked(addr+offset):

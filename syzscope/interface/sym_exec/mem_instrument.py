@@ -146,7 +146,7 @@ class MemInstrument(StateManager):
             "queued_spin_lock_slowpath", "__pv_queued_spin_lock_slowpath", "queued_read_lock_slowpath", "queued_write_lock_slowpath", \
             "preempt_schedule_common", "schedule_idle", "schedule", "preempt_schedule_irq", "preempt_schedule_notrace", \
             "lock_acquire", "lock_release", "dump_stack", "__pv_queued_spin_unlock_slowpath", "save_stack", "check_memory_region",\
-            "set_next_entity", "__schedule", "native_write_msr"]
+            "set_next_entity", "__schedule", "native_write_msr", "prepare_to_wait_event", "synchronize_rcu"]
         noisy_func.extend(kcov_funcs)
         
         if type(extra) == list:

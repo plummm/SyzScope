@@ -461,12 +461,7 @@ class CrashChecker:
         if exitcode == 1:
             self.case_logger.error("QEMU threaded {}: Usually, there is no reproducer in the crash".format(th_index))
             return 0
-
-        """p2 = process(["ssh", "-F", "/dev/null", "-o", "UserKnownHostsFile=/dev/null", 
-        "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=no", 
-        "-i", "{}/stretch.img.key".format(self.image_path), 
-        "-p", str(port), "root@localhost"])
-        p2.sendline("chmod +x run.sh && ./run.sh")"""
+        
         p2 = Popen(["ssh", "-F", "/dev/null", "-o", "UserKnownHostsFile=/dev/null", 
         "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=no", 
         "-i", "{}/stretch.img.key".format(self.image_path), 
@@ -477,6 +472,12 @@ class CrashChecker:
             if logger != None:
                 x = threading.Thread(target=log_anything, args=(p2.stdout, logger, self.debug), name="{} run.sh logger".format(th_index))
                 x.start()
+        """
+        call(["ssh", "-F", "/dev/null", "-o", "UserKnownHostsFile=/dev/null", 
+        "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=no", 
+        "-i", "{}/stretch.img.key".format(self.image_path), 
+        "-p", str(port), "root@localhost", "chmod +x run.sh && ./run.sh "+str(th_index & 1)])
+        """
         return 1
 
     def make_commands(self, text, support_enable_features, i386):

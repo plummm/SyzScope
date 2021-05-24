@@ -39,8 +39,9 @@ do
         ${NON_REPEAT_RAW_COMMAND}
         ${RAW_COMMAND}
     else
-        ${NON_REPEAT_COMMAND}
-        ${COMMAND}
+        # old version syz-execprog may not support -enable
+        ${NON_REPEAT_COMMAND} || ${NON_REPEAT_RAW_COMMAND}
+        ${COMMAND} || ${RAW_COMMAND}
     fi
     
     #Sometimes the testcase is not required to repeat, but we still give a shot
