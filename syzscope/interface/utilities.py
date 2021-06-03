@@ -845,15 +845,12 @@ if __name__ == '__main__':
     reported_days = cases[len(cases)-1]['Reported']
     day = int(regx_get('(\d+)d', reported_days, 0))
     print("{} days with {} bugs: {} bugs/day".format(day, len(cases), round(len(cases)/day, 2)))
-    
-    base = '/home/xzou017/projects/SyzbotAnalyzer/work/succeed'
+    """
+    base = '/home/xzou017/projects/result_syzbot/Debian_bugs/succeed'
     files = os.listdir(base)
     for each in files:
         r = get_hash_from_log(os.path.join(base, '{}/log'.format(each)))
         print(r)
-    """
-    #hashs = 
-    #title = get_patch_title("ea398dda44234c25765ebf943afad5d099cc542f")
     
 
     

@@ -231,6 +231,8 @@ class Workers(Case):
             self.logger.warning("Finite address write found")
         if result & StateManager.OOB_UAF_WRITE:
             self.logger.warning("OOB/UAF write found")
+        if result & StateManager.DOUBLE_FREE:
+            self.logger.warning("Double free found")
         """if is_propagating_global:
             if raw_tracing:
                 self.logger.warning("{} access to global/local variables on symbolic tracing".format(self.hash_val))
@@ -371,7 +373,7 @@ class Workers(Case):
                             self.crash_checker.logger.info("OOB/UAF Read without mutating")
                             self.logger.info("Write to ConfirmedAbnormallyMemRead")
                             self.__write_to_AbnormallyMemRead(hash_val)
-                            flag_kasan_read
+                            flag_kasan_read = True
                             break
         return ret, title
     
@@ -471,7 +473,8 @@ class Workers(Case):
             self.index,
             self.max_qemu_for_one_case,
             store_read=self.store_read,
-            compiler=self.compiler)
+            compiler=self.compiler,
+            max_compiling_kernel=self.max_compiling_kernel)
     
     def write_to_confirm(self, hash_val, new_impact_type):
         if new_impact_type & utilities.AbMemRead:

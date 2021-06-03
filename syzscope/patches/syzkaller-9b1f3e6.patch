@@ -1606,7 +1606,7 @@ index 62648336..e31b664a 100644
  	wq.mu.Unlock()
  	if wantCandidates {
 diff --git a/syz-manager/manager.go b/syz-manager/manager.go
-index 2a0b7dd4..190e3eb8 100644
+index 2a0b7dd4..4870e013 100644
 --- a/syz-manager/manager.go
 +++ b/syz-manager/manager.go
 @@ -6,6 +6,7 @@ package main
@@ -1657,7 +1657,17 @@ index 2a0b7dd4..190e3eb8 100644
  const currentDBVersion = 4
  
  type Crash struct {
-@@ -267,6 +281,8 @@ func RunManager(cfg *mgrconfig.Config, target *prog.Target, sysTarget *targets.T
+@@ -201,7 +215,9 @@ func RunManager(cfg *mgrconfig.Config, target *prog.Target, sysTarget *targets.T
+ 	}
+ 
+ 	go func() {
++		c := 0
+ 		for lastTime := time.Now(); ; {
++			c += 1
+ 			time.Sleep(10 * time.Second)
+ 			now := time.Now()
+ 			diff := now.Sub(lastTime)
+@@ -267,6 +283,8 @@ func RunManager(cfg *mgrconfig.Config, target *prog.Target, sysTarget *targets.T
  		<-vm.Shutdown
  		return
  	}
@@ -1666,7 +1676,7 @@ index 2a0b7dd4..190e3eb8 100644
  	mgr.vmLoop()
  }
  
-@@ -311,6 +327,13 @@ func (mgr *Manager) vmLoop() {
+@@ -311,6 +329,13 @@ func (mgr *Manager) vmLoop() {
  	reproDone := make(chan *ReproResult, 1)
  	stopPending := false
  	shutdown := vm.Shutdown
@@ -1680,7 +1690,19 @@ index 2a0b7dd4..190e3eb8 100644
  	for shutdown != nil || len(instances) != vmCount {
  		mgr.mu.Lock()
  		phase := mgr.phase
-@@ -367,7 +390,14 @@ func (mgr *Manager) vmLoop() {
+@@ -339,6 +364,11 @@ func (mgr *Manager) vmLoop() {
+ 		}
+ 
+ 		if shutdown != nil {
++			executed := mgr.stats.execTotal.get()
++			if executed <= 1 && time.Since(start) > 300 && len(reproducing) == 0 {
++				log.Logf(0, "Restart syzkaller to avoid one executed")
++				os.Exit(4)
++			}
+ 			for canRepro() && len(instances) >= instancesPerRepro {
+ 				last := len(reproQueue) - 1
+ 				crash := reproQueue[last]
+@@ -367,7 +397,14 @@ func (mgr *Manager) vmLoop() {
  				instances = instances[:last]
  				log.Logf(1, "loop: starting instance %v", idx)
  				go func() {
@@ -1690,13 +1712,13 @@ index 2a0b7dd4..190e3eb8 100644
 +						timeLimit = 8
 +					}
 +					crash, err := mgr.runInstance(idx, start, timeLimit)
-+					if (err == shutdownErr || succeed > 2) && crash == nil && len(reproQueue)+len(pendingRepro)+len(reproducing) == 0 {
++					if (err == shutdownErr || succeed > 5) && crash == nil && len(reproQueue)+len(pendingRepro)+len(reproducing) == 0 {
 +						shutdown = nil
 +					}
  					runDone <- &RunResult{idx, crash, err}
  				}()
  			}
-@@ -387,6 +417,10 @@ func (mgr *Manager) vmLoop() {
+@@ -387,6 +424,10 @@ func (mgr *Manager) vmLoop() {
  			stopPending = true
  		case res := <-runDone:
  			log.Logf(1, "loop: instance %v finished, crash=%v", res.idx, res.crash != nil)
@@ -1707,7 +1729,7 @@ index 2a0b7dd4..190e3eb8 100644
  			if res.err != nil && shutdown != nil {
  				log.Logf(0, "%v", res.err)
  			}
-@@ -396,12 +430,19 @@ func (mgr *Manager) vmLoop() {
+@@ -396,12 +437,19 @@ func (mgr *Manager) vmLoop() {
  			// which we detect as "lost connection". Don't save that as crash.
  			if shutdown != nil && res.crash != nil {
  				needRepro := mgr.saveCrash(res.crash)
@@ -1730,7 +1752,7 @@ index 2a0b7dd4..190e3eb8 100644
  			atomic.AddUint32(&mgr.numReproducing, ^uint32(0))
  			crepro := false
  			title := ""
-@@ -423,6 +464,28 @@ func (mgr *Manager) vmLoop() {
+@@ -423,6 +471,28 @@ func (mgr *Manager) vmLoop() {
  				}
  			} else {
  				mgr.saveRepro(res.res, res.stats, res.hub)
@@ -1759,7 +1781,7 @@ index 2a0b7dd4..190e3eb8 100644
  			}
  		case <-shutdown:
  			log.Logf(1, "loop: shutting down...")
-@@ -528,7 +591,7 @@ func (mgr *Manager) loadCorpus() {
+@@ -528,7 +598,7 @@ func (mgr *Manager) loadCorpus() {
  	mgr.phase = phaseLoadedCorpus
  }
  
@@ -1768,7 +1790,7 @@ index 2a0b7dd4..190e3eb8 100644
  	mgr.checkUsedFiles()
  	inst, err := mgr.vmPool.Create(index)
  	if err != nil {
-@@ -569,14 +632,18 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
+@@ -569,14 +639,18 @@ func (mgr *Manager) runInstance(index int) (*Crash, error) {
  	defer atomic.AddUint32(&mgr.numFuzzing, ^uint32(0))
  	cmd := instance.FuzzerCmd(fuzzerBin, executorCmd, fmt.Sprintf("vm-%v", index),
  		mgr.cfg.TargetOS, mgr.cfg.TargetArch, fwdAddr, mgr.cfg.Sandbox, procs, fuzzerV,
@@ -1789,7 +1811,7 @@ index 2a0b7dd4..190e3eb8 100644
  		// This is the only "OK" outcome.
  		log.Logf(0, "vm-%v: running for %v, restarting", index, time.Since(start))
  		return nil, nil
-@@ -845,6 +912,12 @@ func (mgr *Manager) saveRepro(res *repro.Result, stats *repro.Stats, hub bool) {
+@@ -845,6 +919,12 @@ func (mgr *Manager) saveRepro(res *repro.Result, stats *repro.Stats, hub bool) {
  	if len(cprogText) > 0 {
  		osutil.WriteFile(filepath.Join(dir, "repro.cprog"), cprogText)
  	}
@@ -1802,7 +1824,7 @@ index 2a0b7dd4..190e3eb8 100644
  	saveReproStats(filepath.Join(dir, "repro.stats"), stats)
  }
  
-@@ -1187,3 +1260,28 @@ func publicWebAddr(addr string) string {
+@@ -1187,3 +1267,28 @@ func publicWebAddr(addr string) string {
  	}
  	return "http://" + addr
  }

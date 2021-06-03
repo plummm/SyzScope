@@ -22,8 +22,8 @@ function copy_log_then_exit() {
   exit 1
 }
 
-if [ $# -ne 5 ]; then
-  echo "Usage ./patch_applying_check.sh linux_path linux_commit config_url patch_commit gcc_version"
+if [ $# -ne 6 ]; then
+  echo "Usage ./patch_applying_check.sh linux_path linux_commit config_url patch_commit gcc_version max_compiling_kernel"
   exit 1
 fi
 
@@ -32,6 +32,8 @@ COMMIT=$2
 CONFIG=$3
 PATCH=$4
 COMPILER_VERSION=$5
+MAX_COMPILING_KERNEL=$6
+N_CORES=$((`nproc` / $MAX_COMPILING_KERNEL))
 echo "Compiler: "$COMPILER_VERSION | grep gcc && \
 COMPILER=`pwd`/tools/$COMPILER_VERSION/bin/gcc || COMPILER=`pwd`/tools/$COMPILER_VERSION/bin/clang
 
@@ -54,5 +56,5 @@ patch -p1 -R < fixed.patch
 curl $CONFIG > .config
 sed -i "s/CONFIG_BUG_ON_DATA_CORRUPTION=y/# CONFIG_BUG_ON_DATA_CORRUPTION is not set/g" .config
 make olddefconfig CC=$COMPILER
-make -j8 CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
+make -j$N_CORES CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
 exit 0

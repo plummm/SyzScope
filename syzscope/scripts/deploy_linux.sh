@@ -32,8 +32,8 @@ function config_enable() {
   sed -i "s/# $key is not set/$key=y/g" .config
 }
 
-if [ $# -ne 4 ] && [ $# -ne 7 ]; then
-  echo "Usage ./deploy_linux gcc_version fixed linux_path package_path [linux_commit, config_url, mode]"
+if [ $# -ne 5 ] && [ $# -ne 8 ]; then
+  echo "Usage ./deploy_linux gcc_version fixed linux_path package_path max_compiling_kernel [linux_commit, config_url, mode]"
   exit 1
 fi
 
@@ -41,24 +41,26 @@ COMPILER_VERSION=$1
 FIXED=$2
 LINUX=$3
 PATCH=$4/patches/kasan.patch
+MAX_COMPILING_KERNEL=$5
+N_CORES=$((`nproc` / $MAX_COMPILING_KERNEL))
 echo "Compiler: "$COMPILER_VERSION | grep gcc && \
 COMPILER=$4/tools/$COMPILER_VERSION/bin/gcc || COMPILER=$4/tools/$COMPILER_VERSION/bin/clang
 
-if [ $# -eq 7 ]; then
-  COMMIT=$5
-  CONFIG=$6
-  MODE=$7
+if [ $# -eq 8 ]; then
+  COMMIT=$6
+  CONFIG=$7
+  MODE=$8
 fi
 
 cd $LINUX
 cd ..
 CASE_PATH=`pwd`
 cd linux
-if [ $# -eq 4 ]; then
+if [ $# -eq 5 ]; then
   #patch -p1 -N -R < $PATCH
   echo "no more patch"
 fi
-if [ $# -eq 7 ]; then
+if [ $# -eq 8 ]; then
   if [ "$FIXED" != "1" ]; then
     git stash
     git clean -fdx -e THIS_KERNEL_IS_BEING_USED > /dev/null
@@ -134,5 +136,5 @@ do
 done
 
 make olddefconfig CC=$COMPILER
-make -j8 CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
+make -j$N_CORES CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
 exit 0

@@ -1,3 +1,4 @@
+from cgitb import Hook
 import logging
 import math
 import archinfo
@@ -73,7 +74,8 @@ class MemInstrument(StateManager):
             state.solver.add(bv_addr == addr)
         size = len(bv_expr) // 8
         stack = state.solver.eval(state.regs.rsp)
-        if stack != addr:
+        frame = state.solver.eval(state.regs.rbp)
+        if addr > frame or addr < stack: 
             # Finite address write includes write to UAF/OOB memory(addr is concrete but addr point to UAF/OOB memory)
             # or write to an address that comes from UAF/OOB memory(addr is symbolic)
             if addr >= self.vul_mem_start and addr <= self.vul_mem_end and state.solver.unique(bv_addr):
@@ -163,11 +165,13 @@ class MemInstrument(StateManager):
         
         kasan = KasanAccess(stack_addr, self)
         memcpy = MemCopy(mem_handler=self)
+        kfree = Kfree(mem_handler=self)
 
         self._hook_kernel_func("kasan_report", kasan)
         self._hook_kernel_func("__kasan_report", kasan)
         self._hook_kernel_func("memcpy", memcpy)
         self._hook_kernel_func("__memcpy", memcpy)
+        self._hook_kernel_func("kfree", kfree)
         
         
         kasan_1_r = KasanRead(size=1, stack_addr=stack_addr, mem_handler=self)
@@ -395,6 +399,17 @@ class HookInst(SimProcedure):
 
     def run(self):
         return
+
+class Kfree(HookInst):
+    def __init__(self, mem_handler):
+        HookInst.__init__(self)
+        self.mem = mem_handler
+    
+    def run(self, obj):
+        addr = self.state.solver.eval(obj)
+        if self.mem.is_symbolic(obj) or \
+                addr >= self.mem.vul_mem_start and addr <= self.mem.vul_mem_end and self.state.solver.unique(obj):
+            self.mem.wrap_high_risk_state(self.state, StateManager.DOUBLE_FREE)
 
 class MemCopy(HookInst):
     def __init__(self, mem_handler):

@@ -34,7 +34,7 @@ SUSPICIOUS = 2
 thread_fn = None
 
 class CrashChecker:
-    def __init__(self, project_path, case_path, ssh_port, logger, debug, offset, qemu_num, store_read=False, compiler="gcc-7"):
+    def __init__(self, project_path, case_path, ssh_port, logger, debug, offset, qemu_num, store_read=True, compiler="gcc-7", max_compiling_kernel=1):
         os.makedirs("{}/poc".format(case_path), exist_ok=True)
         self.logger = logger
         self.project_path = project_path
@@ -49,6 +49,7 @@ class CrashChecker:
         self.store_read = store_read
         self.compiler = compiler
         self.kill_qemu = False
+        self.max_compiling_kernel = max_compiling_kernel
         self.queue = queue.Queue()
         self.case_logger = self.__init_case_logger("{}-info".format(case_path))
 
@@ -104,8 +105,6 @@ class CrashChecker:
             crashes_path = self.extract_existed_crash(self.case_path)
             if len(crashes_path) == 0:
                 return []
-        if limitedMutation and len(crashes_path) == 1:
-            return crashes_path
         self.case_logger.info("=============================crash.repro_on_fixed_kernel=============================")
         res = []
         reproduceable = {}
@@ -159,7 +158,7 @@ class CrashChecker:
     def patch_applying_check(self, linux_commit, config, patch_commit):
         target = os.path.join(self.package_path, "scripts/patch_applying_check.sh")
         utilities.chmodX(target)
-        p = Popen([target, self.linux_path, linux_commit, config, patch_commit, self.compiler],
+        p = Popen([target, self.linux_path, linux_commit, config, patch_commit, self.compiler, str(self.max_compiling_kernel),   ],
                 stdout=PIPE,
                 stderr=STDOUT)
         with p.stdout:
@@ -320,12 +319,12 @@ class CrashChecker:
         p = None
         if commit == None and config == None:
             #self.logger.info("run: scripts/deploy_linux.sh {} {}".format(self.linux_path, patch_path))
-            p = Popen([target, self.compiler, str(fixed), self.linux_path, self.package_path],
+            p = Popen([target, self.compiler, str(fixed), self.linux_path, self.project_path, str(self.max_compiling_kernel)],
                 stdout=PIPE,
                 stderr=STDOUT)
         else:
             #self.logger.info("run: scripts/deploy_linux.sh {} {} {} {}".format(self.linux_path, patch_path, commit, config))
-            p = Popen([target, self.compiler, str(fixed), self.linux_path, self.package_path, commit, config,  "0"],
+            p = Popen([target, self.compiler, str(fixed), self.linux_path, self.project_path, str(self.max_compiling_kernel), commit, config,  "0"],
                 stdout=PIPE,
                 stderr=STDOUT)
         with p.stdout:
@@ -347,7 +346,7 @@ class CrashChecker:
                 self.logger.info("Failed to parse repro {}".format(syz_repro))
         else:
             c_hash = syz_commit + "-ori"
-        qemu = VM(hash_tag=syz_commit, linux=self.linux_path, port=self.ssh_port+th_index, image=self.image_path, proj_path="{}/poc/".format(self.case_path) ,log_name="qemu-{}.log".format(c_hash), log_suffix=str(th_index), timeout=10*60, debug=self.debug)
+        qemu = VM(hash_tag=c_hash, linux=self.linux_path, port=self.ssh_port+th_index, image=self.image_path, proj_path="{}/poc/".format(self.case_path) ,log_name="qemu-{}.log".format(c_hash), log_suffix=str(th_index), timeout=10*60, debug=self.debug)
         qemu.qemu_logger.info("QEMU-{} launched. Fixed={}\n".format(th_index, fixed))
         p = qemu.run()
         
@@ -357,6 +356,7 @@ class CrashChecker:
         record_flag = 0
         kasan_flag = 0
         write_flag = 0
+        double_free_flag = 0
         read_flag = 0
         crash = []
         try:
@@ -385,21 +385,24 @@ class CrashChecker:
                             if record_flag == 1:
                                 res.append(crash)
                                 crash = []
-                                if kasan_flag and (write_flag or read_flag):
+                                if kasan_flag and (write_flag or read_flag or double_free_flag):
                                     trgger_hunted_bug = True
                                     if write_flag:
                                         self.logger.debug("QEMU threaded {}: OOB/UAF write triggered".format(th_index))
                                         qemu.kill_qemu = True
+                                    if double_free_flag:
+                                        self.logger.debug("QEMU threaded {}: Double free triggered".format(th_index))
                                     if read_flag:
                                         self.logger.debug("QEMU threaded {}: OOB/UAF read triggered".format(th_index))                       
                                     break
                             record_flag = 1
                             continue
-                        if (utilities.regx_match(kasan_mem_regx, line) and 'null-ptr-deref' not in line) or \
-                        utilities.regx_match(kasan_double_free_regx, line):
+                        if (utilities.regx_match(kasan_mem_regx, line) and 'null-ptr-deref' not in line):
                             kasan_flag = 1
                         if utilities.regx_match(write_regx, line):
                             write_flag = 1
+                        if utilities.regx_match(kasan_double_free_regx, line):
+                            double_free_flag = 1
                         if self.store_read and utilities.regx_match(read_regx, line):
                             read_flag = 1
                         if record_flag or kasan_flag:

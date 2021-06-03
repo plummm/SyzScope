@@ -91,8 +91,8 @@ class Deployer(Workers):
         if utilities.regx_match(r'386', case["manager"]):
             i386 = True
         
-        if 'use-after-free' in case['title'] or 'out-of-bounds' in case['title']:
-            self.store_read = False
+        #if 'use-after-free' in case['title'] or 'out-of-bounds' in case['title']:
+        #    self.store_read = False
         self.init_crash_checker(self.ssh_port)
 
         need_patch = 0
@@ -187,43 +187,44 @@ class Deployer(Workers):
     def run_syzkaller(self, hash_val, limitedMutation):
         self.logger.info("run syzkaller".format(self.index))
         syzkaller = os.path.join(self.syzkaller_path, "bin/syz-manager")
-        exitcode = 0
+        exitcode = 4
         # First round, we only enable limited syscalls.
         # If failed to trigger a write crash, we enable more syscalls to run it again
-        if self.logger.level == logging.DEBUG:
-            p = Popen([syzkaller, "--config={}/workdir/{}-poc.cfg".format(self.syzkaller_path, hash_val[:7]), "-debug", "-poc"],
-                  stdout=PIPE,
-                  stderr=STDOUT
-                  )
-            with p.stdout:
-                self.__log_subprocess_output(p.stdout, logging.INFO)
-            exitcode = p.wait()
-
-            if not limitedMutation:
-                p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash_val[:7]), "-debug"],
+        while(exitcode != 4):
+            if self.logger.level == logging.DEBUG:
+                p = Popen([syzkaller, "--config={}/workdir/{}-poc.cfg".format(self.syzkaller_path, hash_val[:7]), "-debug", "-poc"],
                     stdout=PIPE,
                     stderr=STDOUT
                     )
                 with p.stdout:
                     self.__log_subprocess_output(p.stdout, logging.INFO)
-            exitcode = p.wait()
-        else:
-            p = Popen([syzkaller, "--config={}/workdir/{}-poc.cfg".format(self.syzkaller_path, hash_val[:7]), "-poc"],
-                stdout = PIPE,
-                stderr = STDOUT
-                )
-            with p.stdout:
-                self.__log_subprocess_output(p.stdout, logging.INFO)
-            exitcode = p.wait()
+                exitcode = p.wait()
 
-            if not limitedMutation:
-                p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash_val[:7])],
+                if not limitedMutation:
+                    p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash_val[:7]), "-debug"],
+                        stdout=PIPE,
+                        stderr=STDOUT
+                        )
+                    with p.stdout:
+                        self.__log_subprocess_output(p.stdout, logging.INFO)
+                exitcode = p.wait()
+            else:
+                p = Popen([syzkaller, "--config={}/workdir/{}-poc.cfg".format(self.syzkaller_path, hash_val[:7]), "-poc"],
                     stdout = PIPE,
                     stderr = STDOUT
                     )
                 with p.stdout:
                     self.__log_subprocess_output(p.stdout, logging.INFO)
-            exitcode = p.wait()
+                exitcode = p.wait()
+
+                if not limitedMutation:
+                    p = Popen([syzkaller, "--config={}/workdir/{}.cfg".format(self.syzkaller_path, hash_val[:7])],
+                        stdout = PIPE,
+                        stderr = STDOUT
+                        )
+                    with p.stdout:
+                        self.__log_subprocess_output(p.stdout, logging.INFO)
+                exitcode = p.wait()
         self.logger.info("syzkaller is done with exitcode {}".format(exitcode))
         if exitcode == 3:
             #Failed to parse the testcase
@@ -438,8 +439,26 @@ class Deployer(Workers):
                 self.logger.info("Write to confirmedSuccess")
                 self.__write_to_confirmed_sucess(hash_val)
             """
+            res = self.deduplicate_ori(res, syz_repro)
             return res
         return []
+    
+    def deduplicate_ori(self, paths, ori_prog):
+        res = []
+        for each in paths:
+            prog = os.path.join(each, "repro.prog")
+            if not os.path.exists(prog):
+                continue
+            f = open(prog, "r")
+            text = f.readlines()
+            prog_text1 = self.__distill_testcase(''.join(text))
+            req = utilities.request_get(ori_prog)
+            text = req.text
+            prog_text2 = self.__distill_testcase(''.join(text))
+            if prog_text1 == prog_text2:
+                continue
+            res.append(each)
+        return res
     
     def repro_on_fixed_kernel(self, hash_val, case, crashes_path=None, limitedMutation=False):
         syz_repro = case["syz_repro"]
@@ -852,3 +871,14 @@ class Deployer(Workers):
     
     def __need_kasan_patch(self, title):
         return utilities.regx_match(r'slab-out-of-bounds Read', title)
+    
+    def __distill_testcase(self, text):
+        res = ''
+        text = text.split('\n')
+        for i in range(0, len(text)):
+            line = text[i]
+            if line[0] == "#":
+                continue
+            res = ''.join(text[i:])
+            break
+        return res

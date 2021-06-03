@@ -157,7 +157,7 @@ class SymExec(MemInstrument):
 
         self._init_state.inspect.b('mem_read', when=angr.BP_BEFORE, action=self.track_mem_read)
         self._init_state.inspect.b('mem_write', when=angr.BP_BEFORE, action=self.track_mem_write)
-        self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff82f54fed)
+        self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff84e89970)
         self._init_state.inspect.b('symbolic_variable', when=angr.BP_BOTH, action=self.track_symbolic_variable)
         self._init_state.inspect.b('call', when=angr.BP_BEFORE, action=self.track_call)
         #self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff81005672)
@@ -174,7 +174,7 @@ class SymExec(MemInstrument):
             self.logger.info("There is no primitive found")
             return self.state_privilege
         self.logger.info("Total {} primitives found during symbolic execution\n".format(len(self.impacts_collector)))
-        n_OUW, n_AAW, n_AVW, n_FAW, n_FVW, n_CFH= 0, 0, 0, 0, 0, 0
+        n_OUW, n_AAW, n_AVW, n_FAW, n_FVW, n_CFH, n_DF= 0, 0, 0, 0, 0, 0, 0
         for addr in self.impacts_collector:
             each_primitive = self.impacts_collector[addr]
             if each_primitive == StateManager.OOB_UAF_WRITE:
@@ -189,6 +189,8 @@ class SymExec(MemInstrument):
                 n_FVW += 1
             if each_primitive == StateManager.CONTROL_FLOW_HIJACK:
                 n_CFH += 1
+            if each_primitive == StateManager.DOUBLE_FREE:
+                n_DF += 1
         self.logger.info("The number of OOB/UAF write is {}\n".format(n_OUW))
         self.logger.info("The number of arbitrary address write is {}\n".format(n_AAW))
         self.logger.info("The number of finite address write is {}\n".format(n_FAW))

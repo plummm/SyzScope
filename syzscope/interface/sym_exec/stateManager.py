@@ -18,6 +18,7 @@ class StateManager:
     FINITE_ADDR_WRITE = 1 << 3
     CONTROL_FLOW_HIJACK = 1 << 4
     OOB_UAF_WRITE = 1 << 5
+    DOUBLE_FREE = 1 << 6
 
     def __init__(self, index, workdir):
         self.index = index
@@ -146,6 +147,11 @@ class StateManager:
             prim_name = "{}-{}-{}".format("OUW", func_name, hex(state.scratch.ins_addr)) + target_sign + "-" + str(index)
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("OOB UAF write found!")
+        if impact_type == StateManager.DOUBLE_FREE:
+            self.state_privilege |= impact_type
+            prim_name = "{}-{}-{}".format("DF", func_name, hex(state.scratch.ins_addr)) + target_sign + "-" + str(index)
+            prim_logger = self.init_primitive_logger(prim_name)
+            prim_logger.warning("Double free found!")
             """
             for addr in state.globals['sym']:
                 size = state.globals['sym'][addr]
@@ -332,6 +338,7 @@ class StateManager:
         logger.info("rip: is_symbolic: {} {}".format(state.regs.rip.symbolic, hex(state.solver.eval(state.regs.rip))))
         logger.info("gs: is_symbolic: {} {}".format(state.regs.gs.symbolic, hex(state.solver.eval(state.regs.gs))))
         logger.info("================Thread-{} dump_state====================".format(self.index))
+        logger.info("The value of each register may not reflect the latest state. It only represent the value at the beginning of current basic block")
         insns = self.proj.factory.block(state.scratch.ins_addr).capstone.insns
         n = len(insns)
         t = self.vm.inspect_code(state.scratch.ins_addr, n)
