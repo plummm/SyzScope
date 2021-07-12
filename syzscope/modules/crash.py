@@ -434,6 +434,18 @@ class CrashChecker:
             return 0
         return exitcode
     
+    def upload_custom_exp(self, path, port, logger=None):
+        p = Popen(["scp", "-F", "/dev/null", "-o", "UserKnownHostsFile=/dev/null", \
+            "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=no", \
+            "-i", "{}/stretch.img.key".format(self.image_path), "-P", str(port), path, "root@localhost:/poc"],
+        stdout=PIPE,
+        stderr=STDOUT)
+        with p.stdout:
+            if logger != None:
+                log_anything(p.stdout, logger, self.debug)
+        exitcode = p.wait()
+        return exitcode
+    
     def run_exp(self, syz_repro, port, repro_type, exitcode, i386, th_index, logger=None):
         if repro_type == utilities.URL:
             r = utilities.request_get(syz_repro)
@@ -483,6 +495,18 @@ class CrashChecker:
         "-p", str(port), "root@localhost", "chmod +x run.sh && ./run.sh "+str(th_index & 1)])
         """
         return 1
+    
+    def run_custom_exp(self, port, logger=None):
+        p2 = Popen(["ssh", "-F", "/dev/null", "-o", "UserKnownHostsFile=/dev/null", 
+        "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=no", 
+        "-i", "{}/stretch.img.key".format(self.image_path), 
+        "-p", str(port), "root@localhost", "./poc"],
+        stdout=PIPE,
+        stderr=STDOUT)
+        with p2.stdout:
+            if logger != None:
+                x = threading.Thread(target=log_anything, args=(p2.stdout, logger, self.debug), name="{} run.sh logger".format(th_index))
+                x.start()
 
     def make_commands(self, text, support_enable_features, i386):
         command = "/syz-execprog -executor=/syz-executor "
