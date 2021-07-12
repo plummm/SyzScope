@@ -157,7 +157,7 @@ class SymExec(MemInstrument):
 
         self._init_state.inspect.b('mem_read', when=angr.BP_BEFORE, action=self.track_mem_read)
         self._init_state.inspect.b('mem_write', when=angr.BP_BEFORE, action=self.track_mem_write)
-        self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff84e89970)
+        self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff841a9e80)
         self._init_state.inspect.b('symbolic_variable', when=angr.BP_BOTH, action=self.track_symbolic_variable)
         self._init_state.inspect.b('call', when=angr.BP_BEFORE, action=self.track_call)
         #self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff81005672)
@@ -193,10 +193,11 @@ class SymExec(MemInstrument):
                 n_DF += 1
         self.logger.info("The number of OOB/UAF write is {}\n".format(n_OUW))
         self.logger.info("The number of arbitrary address write is {}\n".format(n_AAW))
-        self.logger.info("The number of finite address write is {}\n".format(n_FAW))
+        self.logger.info("The number of constrained address write is {}\n".format(n_FAW))
         self.logger.info("The number of arbitrary value write is {}\n".format(n_AVW))
-        self.logger.info("The number of finite value write is {}\n".format(n_FVW))
+        self.logger.info("The number of constrained value write is {}\n".format(n_FVW))
         self.logger.info("The number of control flow hijacking is {}\n".format(n_CFH))
+        self.logger.info("The number of Double free is {}\n".format(n_DF))
         self.logger.info("************************************************\n")
 
         return self.state_privilege

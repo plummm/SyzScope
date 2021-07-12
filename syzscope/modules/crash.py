@@ -153,6 +153,7 @@ class CrashChecker:
                     self.logger.info("Invalid crash: {} unreproduceable on both fixed and unfixed kernel".format(key))
                 if reproduceable[key] == SUSPICIOUS:
                     self.logger.info("Suspicious crash: {} triggered a crash but doesn't belong to OOB/UAF write".format(key))
+        exitcode = self.deploy_linux(patch_commit, config, 0)
         return res
     
     def patch_applying_check(self, linux_commit, config, patch_commit):
@@ -228,12 +229,23 @@ class CrashChecker:
         self.kill_qemu = False
         res = []
         trigger = False
+        repro_type = utilities.CASE
+        if utilities.regx_match(r'https:\/\/syzkaller\.appspot\.com\/', syz_repro):
+            repro_type = utilities.URL
+        c_hash = ""
+        if repro_type == utilities.CASE:
+            try:
+                c_hash = syz_repro.split('/')[-2]
+            except:
+                self.logger.info("Failed to parse repro {}".format(syz_repro))
+        else:
+            c_hash = syz_commit + "-ori"
         if log != None:
             res = self.read_from_log(log)
         else:
             self.case_logger.info("=============================crash.read_crash=============================")
             for i in range(0, self.qemu_num):
-                x = threading.Thread(target=self.trigger_ori_crash, args=(syz_repro, syz_commit, c_repro, i386, i, fixed,), name="trigger_ori_crash-{}".format(i))
+                x = threading.Thread(target=self.trigger_ori_crash, args=(syz_repro, syz_commit, c_repro, i386, i, c_hash, repro_type, fixed, ), name="trigger_ori_crash-{}".format(i))
                 x.start()
                 if self.debug:
                     x.join()
@@ -247,7 +259,7 @@ class CrashChecker:
                     if utilities.regx_match(r'https:\/\/syzkaller\.appspot\.com\/', syz_repro):
                         self.save_crash_log(res, "ori")
                     else:
-                        self.save_crash_log(res, syz_commit[:7])
+                        self.save_crash_log(res, c_hash[:7])
                 if res == []:
                     res = crashes
         if len(res) == 1 and isinstance(res[0], str):
@@ -332,20 +344,9 @@ class CrashChecker:
         exitcode = p.wait()
         return exitcode
 
-    def trigger_ori_crash(self, syz_repro, syz_commit, c_repro, i386, th_index,fixed=0):
+    def trigger_ori_crash(self, syz_repro, syz_commit, c_repro, i386, th_index,c_hash,repro_type,fixed=0):
         res = []
         trgger_hunted_bug = False
-        repro_type = utilities.CASE
-        if utilities.regx_match(r'https:\/\/syzkaller\.appspot\.com\/', syz_repro):
-            repro_type = utilities.URL
-        c_hash = ""
-        if repro_type == utilities.CASE:
-            try:
-                c_hash = syz_repro.split('/')[-2]
-            except:
-                self.logger.info("Failed to parse repro {}".format(syz_repro))
-        else:
-            c_hash = syz_commit + "-ori"
         qemu = VM(hash_tag=c_hash, linux=self.linux_path, port=self.ssh_port+th_index, image=self.image_path, proj_path="{}/poc/".format(self.case_path) ,log_name="qemu-{}.log".format(c_hash), log_suffix=str(th_index), timeout=10*60, debug=self.debug)
         qemu.qemu_logger.info("QEMU-{} launched. Fixed={}\n".format(th_index, fixed))
         p = qemu.run()

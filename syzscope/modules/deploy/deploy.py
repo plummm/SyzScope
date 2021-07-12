@@ -140,6 +140,10 @@ class Deployer(Workers):
         if len(valid_contexts) == 0:
             self.logger.info("No valid buggy context")
         for context in valid_contexts:
+            ##debug remove ori from symbolic execution
+            if context['workdir'] == 'ori':
+                continue
+            ##debug
             if context['offset'] == None or context['size'] == None or \
                  ((context['type'] == utilities.CASE and not os.path.exists(context['repro'])) or\
                   (context['type'] == utilities.URL and context['repro'] == None)):
@@ -190,7 +194,7 @@ class Deployer(Workers):
         exitcode = 4
         # First round, we only enable limited syscalls.
         # If failed to trigger a write crash, we enable more syscalls to run it again
-        while(exitcode != 4):
+        while(exitcode == 4):
             if self.logger.level == logging.DEBUG:
                 p = Popen([syzkaller, "--config={}/workdir/{}-poc.cfg".format(self.syzkaller_path, hash_val[:7]), "-debug", "-poc"],
                     stdout=PIPE,
