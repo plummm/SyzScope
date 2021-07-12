@@ -109,6 +109,8 @@ def args_parse():
                         help='Enable debug mode')
     parser.add_argument('--be-bully', action='store_true',
                         help="Being a bully will kill the proc that occupies the port")
+    parser.add_argument('--SE-PoC', nargs='?', action='store',
+                        help='The path to a PoC that will be used by symbolic execution')
 
     args = parser.parse_args()
     return args
@@ -172,7 +174,7 @@ def deploy_one_case(index, args, hash_val):
                 qemu_monitor_port=int(args.qemu_monitor), max_compiling_kernel=int(args.max_compiling_kernel_concurrently), \
                 timeout_dynamic_validation=args.timeout_dynamic_validation, timeout_static_analysis=args.timeout_static_analysis, \
                 timeout_symbolic_execution=args.timeout_symbolic_execution, parallel_max=int(args.parallel_max), \
-                guided=args.guided, be_bully=args.be_bully)
+                guided=args.guided, be_bully=args.be_bully, se_poc=args.se_poc)
     dp.deploy(hash_val, case)
     del dp
 
