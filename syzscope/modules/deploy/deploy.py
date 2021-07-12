@@ -140,10 +140,6 @@ class Deployer(Workers):
         if len(valid_contexts) == 0:
             self.logger.info("No valid buggy context")
         for context in valid_contexts:
-            ##debug remove ori from symbolic execution
-            if context['workdir'] == 'ori':
-                continue
-            ##debug
             if context['offset'] == None or context['size'] == None or \
                  ((context['type'] == utilities.CASE and not os.path.exists(context['repro'])) or\
                   (context['type'] == utilities.URL and context['repro'] == None)):

@@ -42,6 +42,10 @@ class VMState:
         self.gdb = self.kernel.gdbhelper
         self.waitfor_pwndbg()
         self.gdb.connect(port)
+        self.waitfor_pwndbg()
+        if not self.gdb.is_pwndbg():
+            return False
+        return True
     
     def mon_connect(self, port):
         if self.__check_initialization():
@@ -225,3 +229,7 @@ class VMState:
 
     def __check_initialization(self):
         return not VMState.INITIAL
+    
+    def __check_pwndbg(self):
+        self.gdb.sendline('version')
+        self.gdb.recv()

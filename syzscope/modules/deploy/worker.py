@@ -113,11 +113,7 @@ class Workers(Case):
                     p = self.retrieve_guided_paths(guided_path)
                     if p != []:
                         paths.append(p)
-### DEBUG
-            #if paths == []:
-            #    self.logger.info("No paths found, skip")
-            #    return
-### DEBUG
+
         os.mkdir(sym_folder)
         is_propagating_global = False
         result = StateManager.NO_ADDITIONAL_USE
@@ -175,7 +171,7 @@ class Workers(Case):
                 self.crash_checker.run_exp(case["syz_repro"], self.ssh_port, utilities.URL, ok, i386, 0, sym_logger)
             else:
                 ok = self.crash_checker.upload_custom_exp(self.se_poc, self.ssh_port, sym_logger)
-                if ok == 0:
+                if ok != 0:
                     self.logger.error("Error occur at upload exp")
                     sym.cleanup()
                     del sym
@@ -391,7 +387,7 @@ class Workers(Case):
     def get_buggy_contexts(self, case):
         ret = []
         ori_ready = False
-        if not self.store_read:
+        if self.store_read:
             # OOB/UAF read
             offset = case["vul_offset"]
             size = case["obj_size"]

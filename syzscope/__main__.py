@@ -174,7 +174,7 @@ def deploy_one_case(index, args, hash_val):
                 qemu_monitor_port=int(args.qemu_monitor), max_compiling_kernel=int(args.max_compiling_kernel_concurrently), \
                 timeout_dynamic_validation=args.timeout_dynamic_validation, timeout_static_analysis=args.timeout_static_analysis, \
                 timeout_symbolic_execution=args.timeout_symbolic_execution, parallel_max=int(args.parallel_max), \
-                guided=args.guided, be_bully=args.be_bully, se_poc=args.se_poc)
+                guided=args.guided, be_bully=args.be_bully, se_poc=args.SE_PoC)
     dp.deploy(hash_val, case)
     del dp
 

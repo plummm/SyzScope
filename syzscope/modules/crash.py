@@ -437,7 +437,7 @@ class CrashChecker:
     def upload_custom_exp(self, path, port, logger=None):
         p = Popen(["scp", "-F", "/dev/null", "-o", "UserKnownHostsFile=/dev/null", \
             "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=no", \
-            "-i", "{}/stretch.img.key".format(self.image_path), "-P", str(port), path, "root@localhost:/poc"],
+            "-i", "{}/stretch.img.key".format(self.image_path), "-P", str(port), path, "root@localhost:/root/poc"],
         stdout=PIPE,
         stderr=STDOUT)
         with p.stdout:
@@ -505,7 +505,7 @@ class CrashChecker:
         stderr=STDOUT)
         with p2.stdout:
             if logger != None:
-                x = threading.Thread(target=log_anything, args=(p2.stdout, logger, self.debug), name="{} run.sh logger".format(th_index))
+                x = threading.Thread(target=log_anything, args=(p2.stdout, logger, self.debug), name="{} run.sh logger")
                 x.start()
 
     def make_commands(self, text, support_enable_features, i386):

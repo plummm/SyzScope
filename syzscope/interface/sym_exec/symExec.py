@@ -72,7 +72,10 @@ class SymExec(MemInstrument):
         p = self.vm.run()
         # connect qemu with gdb, set breakpoint at kasan_report()
         self.logger.info("Loading kernel into angr")
-        self.vm.gdb_connect(self.gdb_port)
+        if not self.vm.gdb_connect(self.gdb_port):
+            self.logger.error("SyzScope does not support current gdb, please change to pwndbg in ~/.gdbinit")
+            p.kill()
+            return None
         if not self.vm.set_checkpoint():
             self.logger.error("No kasan_report() found")
             p.kill()

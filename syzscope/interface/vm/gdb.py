@@ -40,6 +40,15 @@ class GDBHelper:
             logger.setLevel(logging.DEBUG)
         return logger
     
+    def is_pwndbg(self):
+        raw = self.sendline('version')
+        for line in raw.split('\n'):
+            line = line.strip('\n')
+            versions = line.split(':')
+            if 'Pwndbg' in versions[0]:
+                return True
+        return False
+    
     def connect(self, port):
         self.sendline('target remote :{}'.format(port))
     
