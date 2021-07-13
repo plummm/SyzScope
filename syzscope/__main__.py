@@ -111,6 +111,8 @@ def args_parse():
                         help="Being a bully will kill the proc that occupies the port")
     parser.add_argument('--SE-PoC', nargs='?', action='store',
                         help='The path to a PoC that will be used by symbolic execution')
+    parser.add_argument('--include-high-risk', action='store_true',
+                        help='Include high risk bugs for analysis')
 
     args = parser.parse_args()
     return args
@@ -254,7 +256,7 @@ if __name__ == '__main__':
         print("Can not use cache when specifying inputs")
         sys.exit(1)
     crawler = Crawler(url=args.url, keyword=args.key, max_retrieve=int(args.max), 
-        filter_by_reported=int(args.filter_by_reported), filter_by_closed=int(args.filter_by_closed), debug=args.debug)
+        filter_by_reported=int(args.filter_by_reported), filter_by_closed=int(args.filter_by_closed), include_high_risk=args.include_high_risk, debug=args.debug)
     if args.replay != None:
         for url in urlsOfCases(args.replay):
             crawler.run_one_case(url)

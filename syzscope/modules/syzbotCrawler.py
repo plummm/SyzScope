@@ -15,7 +15,7 @@ class Crawler:
     def __init__(self,
                  url="https://syzkaller.appspot.com/upstream/fixed",
                  keyword=[''], max_retrieve=10, filter_by_reported=-1, 
-                 filter_by_closed=-1, debug=False):
+                 filter_by_closed=-1, include_high_risk=False, debug=False):
         self.url = url
         if type(keyword) == list:
             self.keyword = keyword
@@ -26,6 +26,7 @@ class Crawler:
         self.patches = {}
         self.logger = None
         self.logger2file = None
+        self.include_high_risk = include_high_risk
         self.init_logger(debug)
         self.filter_by_reported = filter_by_reported
         self.filter_by_closed = filter_by_closed
@@ -53,7 +54,8 @@ class Crawler:
         for each in cases_hash:
             if 'Patch' in each:
                 patch_url = each['Patch']
-                if patch_url in self.patches or patch_url in high_risk_impacts:
+                if patch_url in self.patches or \
+                    (patch_url in high_risk_impacts and not self.include_high_risk):
                     continue
                 self.patches[patch_url] = True
             if self.retreive_case(each['Hash']) != -1:
