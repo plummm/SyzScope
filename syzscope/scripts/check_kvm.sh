@@ -9,12 +9,12 @@ function add_user_to_kvm_group() {
     set -x
     sudo usermod -a -G kvm $(whoami)
     set +x
-    echo "Re-login and run SyzbotAnalyzer again"
+    echo "Re-login and run SyzScope again"
     exit 1
 }
 
 if [ ! -e "/dev/kvm" ]; then
-  echo "This machine do not support KVM. SyzbotAnalyzer cannot run on it."
+  echo "This machine do not support KVM. SyzScope cannot run on it."
   exit 1
 fi
 

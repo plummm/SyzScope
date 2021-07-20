@@ -12,8 +12,8 @@ from syzscope.interface.utilities import urlsOfCases, urlsOfCases, FOLDER, CASE
 def args_parse():
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
                                      description='Analyze crash cases from syzbot\n'
-                                                 'eg. python main.py -i 7fd1cbe3e1d2b3f0366d5026854ee5754d451405\n'
-                                                 'eg. python main.py -k "slab-out-of-bounds Read" "slab-out-of-bounds Write"')
+                                                 'eg. python syzscope -i 7fd1cbe3e1d2b3f0366d5026854ee5754d451405\n'
+                                                 'eg. python syzscope -k "slab-out-of-bounds Read" "slab-out-of-bounds Write"')
     parser.add_argument('-i', '--input', nargs='?', action='store',
                         help='The input should be a valid hash or a file contains multiple hashs. -u, -m ,and -k will be ignored if -i is enabled.')
     parser.add_argument('-u', '--url', nargs='?', action='store',

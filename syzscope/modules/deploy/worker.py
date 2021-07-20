@@ -23,7 +23,7 @@ TIMEOUT_DYNAMIC_VALIDATION=60*60
 TIMEOUT_STATIC_ANALYSIS=60*30
 
 class Workers(Case):
-    def __init__(self, index, parallel_max, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=False, reproduce=False, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None, guided=False, be_bully=False, se_poc=''):
+    def __init__(self, index, parallel_max, debug=False, force=False, port=53777, replay='incomplete', linux_index=-1, time=8, kernel_fuzzing=False, reproduce=False, alert=[], static_analysis=False, symbolic_execution=False, gdb_port=1235, qemu_monitor_port=9700, max_compiling_kernel=-1, timeout_dynamic_validation=None, timeout_static_analysis=None, timeout_symbolic_execution=None, guided=False, be_bully=False, se_poc=None):
         Case.__init__(self, index, parallel_max, debug, force, port, replay, linux_index, time, kernel_fuzzing, reproduce, alert, static_analysis, symbolic_execution, gdb_port, qemu_monitor_port, max_compiling_kernel)
         if timeout_dynamic_validation == None:
             self.timeout_dynamic_validation=TIMEOUT_DYNAMIC_VALIDATION
@@ -160,7 +160,7 @@ class Workers(Case):
                 del sym
                 continue
             sym_logger.info("Uploading poc and triggering the crash")
-            if self.se_poc == '':
+            if self.se_poc == None:
                 ok = self.crash_checker.upload_exp(context['repro'], self.ssh_port, case["syzkaller"], context['type'], context["c_repro"], i386, 0, sym_logger)
                 if ok == 0:
                     self.logger.error("Error occur at upload exp")
