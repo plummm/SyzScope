@@ -76,7 +76,7 @@ def args_parse():
     parser.add_argument('--qemu-monitor', nargs='?',
                         default='9700',
                         help='Default port of qemu monitor')
-    parser.add_argument('-max', '--max-compiling-kernel-concurrently', nargs='?',
+    parser.add_argument('-M', '--max-compiling-kernel-concurrently', nargs='?',
                         default='-1',
                         help='maximum of kernel that compiling at the same time. Default is unlimited.')
     parser.add_argument('--filter-by-reported', nargs='?',
