@@ -57,7 +57,7 @@ smmap==3.0.5
 sortedcontainers==2.3.0
 soupsieve==2.0.1
 unicorn==1.0.2rc4
-urllib3==1.25.9
+urllib3==1.26.5
 wllvm==1.2.8
 z3-solver==4.8.10.0
 zope.interface==5.1.0
