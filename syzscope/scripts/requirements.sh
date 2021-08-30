@@ -5,7 +5,7 @@
 
 if [ ! -f "$(pwd)/tools/.stamp/ENV_SETUP" ]; then
   sudo apt-get update
-  sudo apt-get -y install git qemu-system-x86 debootstrap flex bison libssl-dev libelf-dev cmake libxml2-dev
+  sudo apt-get -y install git wget qemu-system-x86 debootstrap flex bison libssl-dev libelf-dev cmake libxml2-dev
 fi
 
 if [ ! -d "work/completed" ]; then
