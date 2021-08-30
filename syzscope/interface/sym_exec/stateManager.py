@@ -18,7 +18,7 @@ class StateManager:
     FINITE_ADDR_WRITE = 1 << 3
     CONTROL_FLOW_HIJACK = 1 << 4
     OOB_UAF_WRITE = 1 << 5
-    DOUBLE_FREE = 1 << 6
+    INVALID_FREE = 1 << 6
 
     def __init__(self, index, workdir):
         self.index = index
@@ -147,11 +147,11 @@ class StateManager:
             prim_name = "{}-{}-{}".format("OUW", func_name, hex(state.scratch.ins_addr)) + target_sign + "-" + str(index)
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("OOB UAF write found!")
-        if impact_type == StateManager.DOUBLE_FREE:
+        if impact_type == StateManager.INVALID_FREE:
             self.state_privilege |= impact_type
-            prim_name = "{}-{}-{}".format("DF", func_name, hex(state.scratch.ins_addr)) + target_sign + "-" + str(index)
+            prim_name = "{}-{}-{}".format("IF", func_name, hex(state.scratch.ins_addr)) + target_sign + "-" + str(index)
             prim_logger = self.init_primitive_logger(prim_name)
-            prim_logger.warning("Double free found!")
+            prim_logger.warning("Invalid free found!")
             """
             for addr in state.globals['sym']:
                 size = state.globals['sym'][addr]

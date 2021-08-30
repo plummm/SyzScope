@@ -42,9 +42,9 @@ class VMState:
         self.gdb = self.kernel.gdbhelper
         self.waitfor_pwndbg()
         self.gdb.connect(port)
-        self.waitfor_pwndbg()
-        if not self.gdb.is_pwndbg():
-            return False
+        #self.waitfor_pwndbg()
+        #if not self.gdb.is_pwndbg():
+        #    return False
         return True
     
     def mon_connect(self, port):

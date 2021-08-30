@@ -24,6 +24,7 @@ FIXED=$9
 GCCVERSION=${10}
 EXITCODE=3
 PROJECT_PATH=`pwd`
+BIN_PATH=$CASE_PATH/gopath/src/github.com/google/syzkaller
 GCC=`pwd`/tools/$GCCVERSION/bin/gcc
 export GOROOT=`pwd`/tools/goroot
 export PATH=$GOROOT/bin:$PATH
@@ -66,6 +67,7 @@ if [ "$FIXED" == "0" ]; then
     fi
     export GOPATH=$CASE_PATH/poc/gopath
     mkdir -p $GOPATH/src/github.com/google/ || echo "Dir exists"
+    BIN_PATH=$CASE_PATH/poc
     cd $GOPATH/src/github.com/google/
     if [ ! -d "$GOPATH/src/github.com/google/syzkaller" ]; then
         cp -r $PROJECT_PATH/tools/gopath/src/github.com/google/syzkaller ./
@@ -75,6 +77,14 @@ if [ "$FIXED" == "0" ]; then
         git checkout -f $SYZKALLER || (git pull https://github.com/google/syzkaller.git master > /dev/null 2>&1 && git checkout -f $SYZKALLER)
         git rev-list HEAD | grep $(git rev-parse dfd609eca1871f01757d6b04b19fc273c87c14e5) || EXITCODE=2
         make TARGETARCH=$ARCH TARGETVMARCH=amd64 execprog executor
+        if [ -d "bin/linux_amd64" ]; then
+            cp bin/linux_amd64/syz-execprog $BIN_PATH
+            cp bin/linux_$ARCH/syz-executor $BIN_PATH
+        else
+            cp bin/syz-execprog $BIN_PATH
+            cp bin/syz-executor $BIN_PATH
+        fi
+        rm -rf $GOPATH/src/github.com/google/syzkaller/*
         touch MAKE_COMPLETED
     else
         for i in {1..20}
@@ -84,20 +94,16 @@ if [ "$FIXED" == "0" ]; then
             fi
             sleep 10
         done
-        cd $GOPATH/src/github.com/google/syzkaller
+        #cd $GOPATH/src/github.com/google/syzkaller
     fi
 else
     cd $CASE_PATH/gopath/src/github.com/google/syzkaller
 fi
-if [ -d "bin/linux_amd64" ]; then
-    CMD="scp -F /dev/null -o UserKnownHostsFile=/dev/null \
-        -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-        -i $IMAGE_PATH/stretch.img.key -P $PORT bin/linux_amd64/syz-execprog bin/linux_$ARCH/syz-executor root@localhost:/"
-else
-    CMD="scp -F /dev/null -o UserKnownHostsFile=/dev/null \
-        -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-        -i $IMAGE_PATH/stretch.img.key -P $PORT bin/syz-execprog bin/syz-executor root@localhost:/"
-fi
+
+CMD="scp -F /dev/null -o UserKnownHostsFile=/dev/null \
+    -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+    -i $IMAGE_PATH/stretch.img.key -P $PORT $BIN_PATH/syz-execprog $BIN_PATH/syz-executor root@localhost:/"
+
 $CMD
 echo $CMD > upload-exp.sh
 exit $EXITCODE

@@ -177,7 +177,7 @@ class SymExec(MemInstrument):
             self.logger.info("There is no primitive found")
             return self.state_privilege
         self.logger.info("Total {} primitives found during symbolic execution\n".format(len(self.impacts_collector)))
-        n_OUW, n_AAW, n_AVW, n_FAW, n_FVW, n_CFH, n_DF= 0, 0, 0, 0, 0, 0, 0
+        n_OUW, n_AAW, n_AVW, n_FAW, n_FVW, n_CFH, n_IF= 0, 0, 0, 0, 0, 0, 0
         for addr in self.impacts_collector:
             each_primitive = self.impacts_collector[addr]
             if each_primitive == StateManager.OOB_UAF_WRITE:
@@ -192,15 +192,15 @@ class SymExec(MemInstrument):
                 n_FVW += 1
             if each_primitive == StateManager.CONTROL_FLOW_HIJACK:
                 n_CFH += 1
-            if each_primitive == StateManager.DOUBLE_FREE:
-                n_DF += 1
+            if each_primitive == StateManager.INVALID_FREE:
+                n_IF += 1
         self.logger.info("The number of OOB/UAF write is {}\n".format(n_OUW))
         self.logger.info("The number of arbitrary address write is {}\n".format(n_AAW))
         self.logger.info("The number of constrained address write is {}\n".format(n_FAW))
         self.logger.info("The number of arbitrary value write is {}\n".format(n_AVW))
         self.logger.info("The number of constrained value write is {}\n".format(n_FVW))
         self.logger.info("The number of control flow hijacking is {}\n".format(n_CFH))
-        self.logger.info("The number of Double free is {}\n".format(n_DF))
+        self.logger.info("The number of invalid free is {}\n".format(n_IF))
         self.logger.info("************************************************\n")
 
         return self.state_privilege

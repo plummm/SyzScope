@@ -409,7 +409,7 @@ class Kfree(HookInst):
         addr = self.state.solver.eval(obj)
         if self.mem.is_symbolic(obj) or \
                 addr >= self.mem.vul_mem_start and addr <= self.mem.vul_mem_end and self.state.solver.unique(obj):
-            self.mem.wrap_high_risk_state(self.state, StateManager.DOUBLE_FREE)
+            self.mem.wrap_high_risk_state(self.state, StateManager.INVALID_FREE)
 
 class MemCopy(HookInst):
     def __init__(self, mem_handler):

@@ -238,8 +238,8 @@ class Workers(Case):
             self.logger.warning("Finite address write found")
         if result & StateManager.OOB_UAF_WRITE:
             self.logger.warning("OOB/UAF write found")
-        if result & StateManager.DOUBLE_FREE:
-            self.logger.warning("Double free found")
+        if result & StateManager.INVALID_FREE:
+            self.logger.warning("Invalid free found")
         """if is_propagating_global:
             if raw_tracing:
                 self.logger.warning("{} access to global/local variables on symbolic tracing".format(self.hash_val))
@@ -341,6 +341,7 @@ class Workers(Case):
         if trigger:
             hunted_type_without_mutating, title = self.KasanChecker(report, hash_val)
         self.create_reproduced_ori_poc_stamp()
+        self.remove_gopath(os.path.join(self.current_case_path, "poc"))
         return hunted_type_without_mutating, title
     
     def KasanChecker(self, report, hash_val):
@@ -469,6 +470,13 @@ class Workers(Case):
                     pid = int(line)
                     call("kill -9 {}".format(pid), shell=True)
                     break
+    
+    def remove_gopath(self, src):
+        gopath = os.path.join(src, "gopath")
+        try:
+            shutil.rmtree(gopath)
+        except Exception as e:
+            self.logger.error("Fail to remove {}".format(gopath))
     
     def init_crash_checker(self, port):
         self.crash_checker = CrashChecker(

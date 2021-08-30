@@ -122,9 +122,9 @@ class Crawler:
                             commit_list = case.find('td', {"class": "commit_list"})
                             try:
                                 patch_url = commit_list.contents[1].contents[1].attrs['href']
+                                high_risk_impacts[patch_url] = True
                             except:
-                                continue
-                            high_risk_impacts[patch_url] = True
+                                pass
                         if keyword in low_case_title or keyword=='':
                             crash = {}
                             commit_list = case.find('td', {"class": "commit_list"})
