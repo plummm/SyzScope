@@ -5,7 +5,7 @@
 
 if [ ! -f "$(pwd)/tools/.stamp/ENV_SETUP" ]; then
   sudo apt-get update
-  sudo apt-get -y install git wget qemu-system-x86 debootstrap flex bison libssl-dev libelf-dev cmake libxml2-dev
+  sudo apt-get -y install gdb curl git wget qemu-system-x86 debootstrap flex bison libssl-dev libelf-dev locales cmake libxml2-dev libz3-dev bc
 fi
 
 if [ ! -d "work/completed" ]; then
@@ -17,6 +17,7 @@ if [ ! -d "work/incomplete" ]; then
 fi
 
 TOOLS_PATH="$(pwd)/tools"
+SYZSCOPE_PATH="$(pwd)/syzscope"
 if [ ! -d "$TOOLS_PATH/.stamp" ]; then
   mkdir -p $TOOLS_PATH/.stamp
 fi
@@ -112,7 +113,7 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_LLVM" ]; then
   make -j16
 
   touch $TOOLS_PATH/.stamp/BUILD_LLVM
-  cd ..
+  cd $TOOLS_PATH
 fi
 
 echo "[+] Build static analysis tool"
@@ -122,14 +123,20 @@ if [ ! -f "$TOOLS_PATH/.stamp/BUILD_STATIC_ANALYSIS" ]; then
   git checkout taint-analysis-on-llvm-10
   cd ..
   touch $TOOLS_PATH/.stamp/BUILD_STATIC_ANALYSIS
-  cd ..
 fi
 
 echo "[+] Download pwndbg"
 if [ ! -f "$TOOLS_PATH/.stamp/SETUP_PWNDBG" ]; then
   git clone https://github.com/plummm/pwndbg_linux_kernel.git pwndbg
   cd pwndbg
+  git checkout 4d213a1f90dd1b2f285947cf959f617f85ca5d98
+  patch -p1 -i $SYZSCOPE_PATH/patches/pwndbg.patch
   ./setup.sh
+  pip3 install unicorn==1.0.2rc4
+  locale-gen
+  sudo sed -i "s/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/g" /etc/locale.gen
+  locale-gen
+
   touch $TOOLS_PATH/.stamp/SETUP_PWNDBG
   cd ..
 fi
@@ -157,6 +164,10 @@ if [ ! -f "$TOOLS_PATH/.stamp/SETUP_SYZKALLER" ]; then
 fi
 
 touch $TOOLS_PATH/.stamp/ENV_SETUP
+
+if [ -f "/usr/lib/x86_64-linux-gnu/libmpfr.so.6" ] && [ ! -f "/usr/lib/x86_64-linux-gnu/libmpfr.so.4" ]; then
+  sudo ln -s /usr/lib/x86_64-linux-gnu/libmpfr.so.6 /usr/lib/x86_64-linux-gnu/libmpfr.so.4
+fi
 
 #BUG: If multiple instances are running, may clean up others' flag
 echo "[+] Clean unfinished jobs"
