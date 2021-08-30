@@ -1,0 +1,15 @@
+diff --git a/pwndbg/vmmap.py b/pwndbg/vmmap.py
+index be89b47..b224ecb 100644
+--- a/pwndbg/vmmap.py
++++ b/pwndbg/vmmap.py
+@@ -48,7 +48,8 @@ def get():
+     pages.extend(proc_pid_maps())
+ 
+     if not pages and pwndbg.arch.current in ('i386', 'x86-64') and pwndbg.qemu.is_qemu():
+-        pages.extend(monitor_info_mem())
++        #pages.extend(monitor_info_mem())
++        pass
+ 
+     if not pages:
+         # If debugee is launched from a symlink the debugee memory maps will be
+ 
