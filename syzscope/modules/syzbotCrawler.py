@@ -60,12 +60,17 @@ class Crawler:
                 self.patches[patch_url] = True
             if self.retreive_case(each['Hash']) != -1:
                 self.cases[each['Hash']]['title'] = each['Title']
+                if 'Patch' in each:
+                    self.cases[each['Hash']]['patch'] = each['Patch']
 
     def run_one_case(self, hash):
         self.logger.info("retreive one case: %s",hash)
         if self.retreive_case(hash) == -1:
             return
         self.cases[hash]['title'] = self.get_title_of_case(hash)
+        patch = self.get_patch_of_case(hash)
+        if patch != None:
+            self.cases[hash]['patch'] = patch
     
     def get_title_of_case(self, hash=None, text=None):
         if hash==None and text==None:
@@ -79,6 +84,18 @@ class Crawler:
             soup = BeautifulSoup(text, "html.parser")
         title = soup.body.b.contents[0]
         return title
+    
+    def get_patch_of_case(self, hash):
+        patch = None
+        url = syzbot_host_url + syzbot_bug_base_url + hash
+        req = requests.request(method='GET', url=url)
+        soup = BeautifulSoup(req.text, "html.parser")
+        mono = soup.find("span", {"class": "mono"})
+        if mono == None:
+            return patch
+        patch = mono.contents[1].contents[0]
+        return patch
+
 
     def retreive_case(self, hash):
         self.cases[hash] = {}

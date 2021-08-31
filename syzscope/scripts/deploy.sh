@@ -125,7 +125,8 @@ cd ..
 # Check for golang environment
 export GOPATH=$CASE_PATH/gopath
 export GOROOT=$PROJECT_PATH/tools/goroot
-export PATH=$GOROOT/bin:$PATH
+export LLVM_BIN=$PROJECT_PATH/tools/llvm/build/bin
+export PATH=$GOROOT/bin:$LLVM_BIN:$PATH
 echo "[+] Downloading golang"
 go version || build_golang
 

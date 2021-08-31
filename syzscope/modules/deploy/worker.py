@@ -474,6 +474,7 @@ class Workers(Case):
         gopath = os.path.join(src, "gopath")
         try:
             shutil.rmtree(gopath)
+            self.logger.info("remove gopath from poc")
         except Exception as e:
             self.logger.error("Fail to remove {}".format(gopath))
     

@@ -84,7 +84,6 @@ if [ "$FIXED" == "0" ]; then
             cp bin/syz-execprog $BIN_PATH
             cp bin/syz-executor $BIN_PATH
         fi
-        rm -rf $GOPATH/src/github.com/google/syzkaller/*
         touch MAKE_COMPLETED
     else
         for i in {1..20}

@@ -13,6 +13,9 @@ SYZ_PATH=$CASE_PATH/gopath/src/github.com/google/syzkaller
 ARCH=$2
 
 export GOPATH=$CASE_PATH/gopath
+export GOROOT=`pwd`/tools/goroot
+export LLVM_BIN=`pwd`/tools/llvm/build/bin
+export PATH=$GOROOT/bin:$LLVM_BIN:$PATH
 
 cd $SYZ_PATH
 make generate || exit 1
