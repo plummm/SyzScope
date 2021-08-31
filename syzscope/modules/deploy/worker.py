@@ -341,7 +341,6 @@ class Workers(Case):
         if trigger:
             hunted_type_without_mutating, title = self.KasanChecker(report, hash_val)
         self.create_reproduced_ori_poc_stamp()
-        self.remove_gopath(os.path.join(self.current_case_path, "poc"))
         return hunted_type_without_mutating, title
     
     def KasanChecker(self, report, hash_val):
@@ -475,6 +474,7 @@ class Workers(Case):
         gopath = os.path.join(src, "gopath")
         try:
             shutil.rmtree(gopath)
+            self.logger.info("remove gopath from poc")
         except Exception as e:
             self.logger.error("Fail to remove {}".format(gopath))
     

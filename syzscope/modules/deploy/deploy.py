@@ -118,6 +118,7 @@ class Deployer(Workers):
             return
 
         req = requests.request(method='GET', url=case["syz_repro"])
+        is_error = 0
         self.__write_config(req.content.decode("utf-8"), hash_val[:7])
         if self.kernel_fuzzing:
             title = None
@@ -128,14 +129,18 @@ class Deployer(Workers):
                 if 'patch' in case:
                     limitedMutation = False
                 exitcode = self.run_syzkaller(hash_val, limitedMutation)
-                self.save_case(hash_val, exitcode, case, limitedMutation, impact_without_mutating, title=title)
+                self.remove_gopath(os.path.join(self.current_case_path, "poc"))
+                is_error = self.save_case(hash_val, exitcode, case, limitedMutation, impact_without_mutating, title=title)
             else:
                 self.logger.info("{} has finished fuzzing".format(hash_val[:7]))
         elif self.reproduce_ori_bug:
             if not self.reproduced_ori_poc(hash_val, 'incomplete'):
                 impact_without_mutating, title = self.do_reproducing_ori_poc(case, hash_val, i386)
-                self.save_case(hash_val, 0, case, False, impact_without_mutating, title=title)
+                self.remove_gopath(os.path.join(self.current_case_path, "poc"))
+                is_error = self.save_case(hash_val, 0, case, False, impact_without_mutating, title=title)
 
+        if is_error:
+            return
         valid_contexts = self.get_buggy_contexts(case)
         if len(valid_contexts) == 0:
             self.logger.info("No valid buggy context")
@@ -177,8 +182,11 @@ class Deployer(Workers):
 
         if succeed:
             self.__move_to_succeed(0)
+        elif is_error:
+            self.__save_error(hash_val)
         else:
             self.__move_to_completed()
+        
         return self.index
 
     def clone_linux(self):
@@ -229,7 +237,7 @@ class Deployer(Workers):
         if exitcode == 3:
             #Failed to parse the testcase
             if self.correctTemplate() and self.compileTemplate():
-                exitcode = self.run_syzkaller(hash_val)
+                exitcode = self.run_syzkaller(hash_val, limitedMutation)
         return exitcode
     
     def compileTemplate(self):
@@ -330,8 +338,6 @@ class Deployer(Workers):
         for file_name in os.listdir(dst):
             if file_name.endswith(ends):
                 #print(file_name)
-                if file_name == "socket_netlink_route_sched.txt":
-                    print('break')
                 find_it = False
                 start = 0
                 end = 0
@@ -670,11 +676,11 @@ class Deployer(Workers):
                     #self.__move_to_succeed(new_impact_type)
                 else:
                     if exitcode !=0:
-                        self.__save_error(hash_val)
+                        return 1
         elif impact_without_mutating:
             self.copy_new_impact(case, impact_without_mutating, title)
             #self.__move_to_succeed(new_impact_type)
-        return
+        return 0
 
     def copy_new_impact(self, path, impact_without_mutating, title):
         output = os.path.join(self.current_case_path, "output")

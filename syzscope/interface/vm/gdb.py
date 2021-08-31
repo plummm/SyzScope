@@ -1,7 +1,7 @@
 import logging
 import time
 import pexpect
-import math
+import math, re
 import syzscope.interface.utilities as utilities
 
 from subprocess import Popen, PIPE, STDOUT, TimeoutExpired
@@ -176,6 +176,7 @@ class GDBHelper:
         ret = None
         for line in raw.split('\n'):
             line = line.strip('\n')
+            line = self._escape_ansi(line)
             name = utilities.regx_get(func_name_regx, line, 0)
             if name != None:
                 ret = name
@@ -213,6 +214,10 @@ class GDBHelper:
 
     def _sendline(self, cmd):
         self.gdb_inst.sendline(cmd)
+    
+    def _escape_ansi(self, line):
+        ansi_escape = re.compile(r'(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]')
+        return ansi_escape.sub('', line)
 
     def command(self, cmd):
         ret = list()
