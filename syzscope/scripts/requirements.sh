@@ -129,10 +129,7 @@ echo "[+] Download pwndbg"
 if [ ! -f "$TOOLS_PATH/.stamp/SETUP_PWNDBG" ]; then
   git clone https://github.com/plummm/pwndbg_linux_kernel.git pwndbg
   cd pwndbg
-  git checkout 4d213a1f90dd1b2f285947cf959f617f85ca5d98
-  patch -p1 -i $SYZSCOPE_PATH/patches/pwndbg.patch
   ./setup.sh
-  pip3 install unicorn==1.0.2rc4
   locale-gen
   sudo sed -i "s/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/g" /etc/locale.gen
   locale-gen
