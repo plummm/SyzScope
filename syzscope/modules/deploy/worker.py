@@ -120,8 +120,8 @@ class Workers(Case):
         exception_count = 0
         flag_stop_execution = False
         if terminating_func == '' and self.guided_execution:
-            self.logger.info("No terminating function found")
-            return 1
+            self.logger.info("No terminating function found, switch to unguided symbolic execution")
+            paths = []
         for i in range(0, max_round):
             cur_sym_log = sym_folder + "/symbolic_execution.log" + "-" + str(i)
             sym_logger = self.__init_logger(cur_sym_log)
