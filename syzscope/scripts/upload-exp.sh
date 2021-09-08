@@ -99,6 +99,16 @@ else
     cd $CASE_PATH/gopath/src/github.com/google/syzkaller
 fi
 
+if [ ! -f "$BIN_PATH/syz-execprog" ]; then
+    if [ -d "bin/linux_amd64" ]; then
+        cp bin/linux_amd64/syz-execprog $BIN_PATH
+        cp bin/linux_$ARCH/syz-executor $BIN_PATH
+    else
+        cp bin/syz-execprog $BIN_PATH
+        cp bin/syz-executor $BIN_PATH
+    fi
+fi
+
 CMD="scp -F /dev/null -o UserKnownHostsFile=/dev/null \
     -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
     -i $IMAGE_PATH/stretch.img.key -P $PORT $BIN_PATH/syz-execprog $BIN_PATH/syz-executor root@localhost:/"
