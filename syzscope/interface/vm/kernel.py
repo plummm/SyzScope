@@ -1,4 +1,4 @@
-from syzscope.interface.vm.error import AngrRefuseToLoadKernel
+from syzscope.interface.vm.error import AngrRefuseToLoadKernel, KasanReportEntryNotFound
 import angr
 import json
 import re
@@ -161,15 +161,27 @@ class Kernel:
         if self._kasan_ret != [] or self._kasan_report != 0:
             return self._kasan_report, self._kasan_ret
 
-        kasan_report = self.find_symbol("__kasan_report")
-        if kasan_report is None:
-            kasan_report = self.find_symbol("kasan_report")
-        if kasan_report == None:
-            return None, None
+        report_enabled = self.find_symbol("report_enabled")
+        if report_enabled != None:
+            kasan_report = self.find_symbol("__kasan_report")
+            if kasan_report == None:
+                raise KasanReportEntryNotFound
+        else:
+            kasan_report = self.find_symbol("__kasan_report")
+            if kasan_report is None:
+                kasan_report = self.find_symbol("kasan_report")
+            if kasan_report == None:
+                return None, None
         start = kasan_report.rebased_addr
         end = start + kasan_report.size
         kasan_report = 0
         kasan_ret = []
+        if report_enabled != None:
+            self._kasan_report = start
+            kasan_report = self.find_symbol("kasan_report")
+            start = kasan_report.rebased_addr
+            end = start + kasan_report.size
+            kasan_report = 0
         while start < end:
             block = self.getBlock(start)
             if len(block.capstone.insns) == 0:
@@ -177,7 +189,7 @@ class Kernel:
                 continue
             inst = block.capstone.insns[0]
             # first check
-            if kasan_report == 0:
+            if kasan_report == 0 and report_enabled == None:
                 if inst.mnemonic == "jne":
                     kasan_report = start + inst.size
                     #kasan_ret = self.getTarget(inst.operands[0])
@@ -190,8 +202,12 @@ class Kernel:
                 kasan_ret.append(start)
             start += inst.size
 
-        self._kasan_report, self._kasan_ret = kasan_report, kasan_ret
-        return kasan_report, kasan_ret
+        if self._kasan_report == 0:
+            self._kasan_report = self._kasan_report
+        self._kasan_ret = kasan_ret
+        if self._kasan_report == 0 or self._kasan_ret == []:
+            raise KasanReportEntryNotFound
+        return self._kasan_report, self._kasan_ret
 
     def instVisitor(self, funcName, handler):
         sym = self.find_symbol(funcName)

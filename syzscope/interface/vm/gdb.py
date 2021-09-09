@@ -50,7 +50,7 @@ class GDBHelper:
         return False
     
     def connect(self, port):
-        self.sendline('target remote :{}'.format(port))
+        self.sendline('target remote :{}'.format(port), timeout=10)
     
     def set_breakpoint(self, addr):
         self.sendline('break *{}'.format(addr))

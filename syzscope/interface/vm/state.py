@@ -40,7 +40,7 @@ class VMState:
             print("Loading kernel, this process may take a while")
         self.kernel = Kernel(self.linux, self.addr_bytes, self._proj_path, self.log_suffix, self.debug)
         self.gdb = self.kernel.gdbhelper
-        self.waitfor_pwndbg()
+        self.waitfor_pwndbg(timeout=10)
         self.gdb.connect(port)
         #self.waitfor_pwndbg()
         #if not self.gdb.is_pwndbg():

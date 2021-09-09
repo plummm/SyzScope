@@ -17,7 +17,7 @@ from dateutil import parser as time_parser
 from .case import Case, stamp_build_kernel, stamp_build_syzkaller, stamp_finish_fuzzing, stamp_reproduce_ori_poc, stamp_symbolic_execution, stamp_static_analysis
 from syzscope.interface.sym_exec.error import VulnerabilityNotTrigger, ExecutionError, AbnormalGDBBehavior, InvalidCPU
 from syzscope.interface.static_analysis.error import CompilingError
-from syzscope.interface.vm.error import QemuIsDead, AngrRefuseToLoadKernel
+from syzscope.interface.vm.error import QemuIsDead, AngrRefuseToLoadKernel, KasanReportEntryNotFound
 
 TIMEOUT_DYNAMIC_VALIDATION=60*60
 TIMEOUT_STATIC_ANALYSIS=60*30
@@ -207,8 +207,8 @@ class Workers(Case):
             except VulnerabilityNotTrigger:
                 self.logger.warning("Can not trigger vulnerability. Abaondoned")
                 exception_count += 1
-            except ExecutionError:
-                sym_logger.warning("Execution Error")
+            except KasanReportEntryNotFound:
+                sym_logger.warning("Kasan report entry not found")
                 exception_count += 1
             except AbnormalGDBBehavior:
                 sym_logger.warning("Abnormal GDB behavior occured")
