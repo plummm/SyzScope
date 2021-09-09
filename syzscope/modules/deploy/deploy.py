@@ -854,6 +854,7 @@ class Deployer(Workers):
                 self.case_logger.debug(line)
 
     def __new_impact(self, hash_val):
+        hash_val = hash_val[:7]
         ret = utilities.NONCRITICAL
         if self.__success_check(hash_val, "AbnormallyMemRead") and self.store_read:
             ret |= utilities.AbMemRead
@@ -864,6 +865,7 @@ class Deployer(Workers):
         return ret
 
     def __success_check(self, hash_val, name):
+        hash_val = hash_val[:7]
         success_path = "{}/work/{}".format(self.project_path, name)
         if os.path.isfile(success_path):
             f = open(success_path, "r")

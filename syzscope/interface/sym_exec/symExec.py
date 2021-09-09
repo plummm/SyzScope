@@ -239,13 +239,13 @@ class SymExec(MemInstrument):
                     self.logger.info("Switch state {} to state {}".format(last_state, cur_state))
                     last_state = cur_state
 
-            #try:
-            self.simgr.step(successor_func=self._my_successor_func)
+            try:
+                self.simgr.step(successor_func=self._my_successor_func)
             #except Exception as e:
              #   self.logger.info("Unexpected error occur: {}".format(str(e)))
               #  raise ExecutionError
-            #except ExecutionError:
-            #    self.logger.error("Let's continue")
+            except ExecutionError:
+                self.stop_execution = True
             
             if self.debug and len(self.simgr.active) == 1:
                 #self.logger.info("=======dump========")
