@@ -203,7 +203,7 @@ class Kernel:
             start += inst.size
 
         if self._kasan_report == 0:
-            self._kasan_report = self._kasan_report
+            self._kasan_report = kasan_report
         self._kasan_ret = kasan_ret
         if self._kasan_report == 0 or self._kasan_ret == []:
             raise KasanReportEntryNotFound

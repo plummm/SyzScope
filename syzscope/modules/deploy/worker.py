@@ -140,6 +140,11 @@ class Workers(Case):
                 sym.cleanup()
                 del sym
                 continue
+            except KasanReportEntryNotFound:
+                sym_logger.warning("Kasan report entry not found")
+                sym.cleanup()
+                del sym
+                continue
             except Exception as e:
                 self.logger.error("Unknown error occur: {}".format(e))
                 sym.cleanup()
@@ -206,9 +211,6 @@ class Workers(Case):
                 #    is_propagating_global = True
             except VulnerabilityNotTrigger:
                 self.logger.warning("Can not trigger vulnerability. Abaondoned")
-                exception_count += 1
-            except KasanReportEntryNotFound:
-                sym_logger.warning("Kasan report entry not found")
                 exception_count += 1
             except AbnormalGDBBehavior:
                 sym_logger.warning("Abnormal GDB behavior occured")
