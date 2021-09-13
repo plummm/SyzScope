@@ -132,17 +132,15 @@ class Crawler:
                     if title == None:
                         continue
                     for keyword in self.keyword:
-                        keyword = keyword.lower()
-                        low_case_title = title.text.lower()
-                        if 'out-of-bounds write' in low_case_title or \
-                                'use-after-free write' in low_case_title:
+                        if 'out-of-bounds write' in title.text or \
+                                'use-after-free write' in title.text:
                             commit_list = case.find('td', {"class": "commit_list"})
                             try:
                                 patch_url = commit_list.contents[1].contents[1].attrs['href']
                                 high_risk_impacts[patch_url] = True
                             except:
                                 pass
-                        if keyword in low_case_title or keyword=='':
+                        if keyword in title.text or keyword=='':
                             crash = {}
                             commit_list = case.find('td', {"class": "commit_list"})
                             crash['Title'] = title.text
@@ -165,9 +163,9 @@ class Crawler:
                                 pass
                             self.logger.debug("[{}] Find a suitable case: {}".format(count, title.text))
                             href = title.next.attrs['href']
-                            hash = href[8:]
-                            self.logger.debug("[{}] Fetch {}".format(count, hash))
-                            crash['Hash'] = hash
+                            hash_val = href[8:]
+                            self.logger.debug("[{}] Fetch {}".format(count, hash_val))
+                            crash['Hash'] = hash_val
                             res.append(crash)
                             count += 1
                             break

@@ -119,7 +119,7 @@ class StateManager:
         index = len(self.exploitable_state)
         if impact_type == StateManager.FINITE_ADDR_WRITE:
             self.state_privilege |= impact_type
-            prim_name = "{}-{}-{}".format("FAW", func_name, hex(state.scratch.ins_addr)) + target_sign + "-" + str(index)
+            prim_name = "{}-{}-{}".format("CAW", func_name, hex(state.scratch.ins_addr)) + target_sign + "-" + str(index)
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("Finite address write found")
         if impact_type == StateManager.ARBITRARY_ADDR_WRITE:
@@ -129,7 +129,7 @@ class StateManager:
             prim_logger.warning("Arbitrary address write found")
         if impact_type == StateManager.FINITE_VALUE_WRITE:
             self.state_privilege |= impact_type
-            prim_name = "{}-{}-{}".format("FVW", func_name, hex(state.scratch.ins_addr)) + target_sign + "-" + str(index)
+            prim_name = "{}-{}-{}".format("CVW", func_name, hex(state.scratch.ins_addr)) + target_sign + "-" + str(index)
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("Finite value write found")
         if impact_type == StateManager.ARBITRARY_VALUE_WRITE:
@@ -139,7 +139,7 @@ class StateManager:
             prim_logger.warning("Arbitrary value write found")
         if impact_type == StateManager.CONTROL_FLOW_HIJACK:
             self.state_privilege |= impact_type
-            prim_name = "{}-{}-{}".format("CFH", func_name, hex(state.scratch.ins_addr)) + target_sign + "-" + str(index)
+            prim_name = "{}-{}-{}".format("FPD", func_name, hex(state.scratch.ins_addr)) + target_sign + "-" + str(index)
             prim_logger = self.init_primitive_logger(prim_name)
             prim_logger.warning("Control flow hijack found!")
         if impact_type == StateManager.OOB_UAF_WRITE:

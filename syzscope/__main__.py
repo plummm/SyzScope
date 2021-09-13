@@ -13,7 +13,7 @@ def args_parse():
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
                                      description='Analyze crash cases from syzbot\n'
                                                  'eg. python syzscope -i 7fd1cbe3e1d2b3f0366d5026854ee5754d451405\n'
-                                                 'eg. python syzscope -k "slab-out-of-bounds Read" "slab-out-of-bounds Write"')
+                                                 'eg. python syzscope -k="slab-out-of-bounds Read" -k="slab-out-of-bounds Write"')
     parser.add_argument('-i', '--input', nargs='?', action='store',
                         help='The input should be a valid hash or a file contains multiple hashs. -u, -m ,and -k will be ignored if -i is enabled.')
     parser.add_argument('-u', '--url', nargs='?', action='store',
@@ -24,8 +24,7 @@ def args_parse():
                         default='9999',
                         help='The maximum of cases for retrieving\n'
                              '(By default all the cases will be retrieved)')
-    parser.add_argument('-k', '--key', nargs='*', action='store',
-                        default=[''],
+    parser.add_argument('-k', '--key', action='append',
                         help='The keywords for detecting cases.\n'
                              '(By default, it retrieve all cases)\n'
                              'This argument could be multiple values')
