@@ -3,7 +3,7 @@ import logging
 import os
 import re
 
-from syzscope.interface.utilities import request_get, extract_vul_obj_offset_and_size
+from syzscope.interface.utilities import request_get, extract_vul_obj_offset_and_size, regx_get
 from bs4 import BeautifulSoup
 from bs4 import element
 
@@ -54,14 +54,17 @@ class Crawler:
         for each in cases_hash:
             if 'Patch' in each:
                 patch_url = each['Patch']
-                if patch_url in self.patches or \
-                    (patch_url in high_risk_impacts and not self.include_high_risk):
+                commit = regx_get(r"https:\/\/git\.kernel\.org\/pub\/scm\/linux\/kernel\/git\/torvalds\/linux\.git\/commit\/\?id=(\w+)", patch_url, 0)
+                self.patches[commit] = True
+                if commit in self.patches or \
+                    (commit in high_risk_impacts and not self.include_high_risk):
                     continue
-                self.patches[patch_url] = True
+                self.patches[commit] = True
             if self.retreive_case(each['Hash']) != -1:
                 self.cases[each['Hash']]['title'] = each['Title']
                 if 'Patch' in each:
                     self.cases[each['Hash']]['patch'] = each['Patch']
+        return
 
     def run_one_case(self, hash):
         self.logger.info("retreive one case: %s",hash)

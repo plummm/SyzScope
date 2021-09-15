@@ -235,6 +235,8 @@ def args_dependencies():
 
 if __name__ == '__main__':
     args = args_parse()
+    if args.key == None:
+        args.key = ['']
     print_args_info(args)
     check_kvm()
     args_dependencies()
