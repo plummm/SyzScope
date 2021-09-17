@@ -55,7 +55,6 @@ class Crawler:
             if 'Patch' in each:
                 patch_url = each['Patch']
                 commit = regx_get(r"https:\/\/git\.kernel\.org\/pub\/scm\/linux\/kernel\/git\/torvalds\/linux\.git\/commit\/\?id=(\w+)", patch_url, 0)
-                self.patches[commit] = True
                 if commit in self.patches or \
                     (commit in high_risk_impacts and not self.include_high_risk):
                     continue
