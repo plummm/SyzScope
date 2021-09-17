@@ -42,6 +42,11 @@ function copy_log_then_exit() {
   exit 1
 }
 
+function try_patch_kernel() {
+  patch -p1 -i $PROJECT_PATH/syzscope/patches/760f8.patch || copy_log_then_exit make.log
+  make -j$N_CORES CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
+}
+
 function set_git_config() {
   set +x
   echo "set user.email for git config"
@@ -273,7 +278,7 @@ CONFIG_BOOTPARAM_HUNG_TASK_PANIC
 
   make olddefconfig CC=$COMPILER
   #wait_for_other_compiling
-  make -j$N_CORES CC=$COMPILER > make.log 2>&1 || copy_log_then_exit make.log
+  make -j$N_CORES CC=$COMPILER > make.log 2>&1 || try_patch_kernel
   rm $CASE_PATH/config || echo "It's ok"
   cp .config $CASE_PATH/config
   touch THIS_KERNEL_IS_BEING_USED
