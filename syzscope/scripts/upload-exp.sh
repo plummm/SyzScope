@@ -77,7 +77,7 @@ if [ "$FIXED" == "0" ]; then
         git checkout -f $SYZKALLER || (git pull https://github.com/google/syzkaller.git master > /dev/null 2>&1 && git checkout -f $SYZKALLER)
         git rev-list HEAD | grep $(git rev-parse dfd609eca1871f01757d6b04b19fc273c87c14e5) || EXITCODE=2
         make TARGETARCH=$ARCH TARGETVMARCH=amd64 execprog executor
-        if [ -d "bin/linux_amd64" ]; then
+        if [ -d "bin/linux_$ARCH" ]; then
             cp bin/linux_amd64/syz-execprog $BIN_PATH
             cp bin/linux_$ARCH/syz-executor $BIN_PATH
         else
@@ -100,12 +100,13 @@ else
 fi
 
 if [ ! -f "$BIN_PATH/syz-execprog" ]; then
-    if [ -d "bin/linux_amd64" ]; then
-        cp bin/linux_amd64/syz-execprog $BIN_PATH
-        cp bin/linux_$ARCH/syz-executor $BIN_PATH
+    SYZ_PATH=$GOPATH/src/github.com/google/syzkaller/
+    if [ -d "$SYZ_PATH/bin/linux_$ARCH" ]; then
+        cp $SYZ_PATH/bin/linux_amd64/syz-execprog $BIN_PATH
+        cp $SYZ_PATH/bin/linux_$ARCH/syz-executor $BIN_PATH
     else
-        cp bin/syz-execprog $BIN_PATH
-        cp bin/syz-executor $BIN_PATH
+        cp $SYZ_PATH/bin/syz-execprog $BIN_PATH
+        cp $SYZ_PATH/bin/syz-executor $BIN_PATH
     fi
 fi
 
