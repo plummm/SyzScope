@@ -223,7 +223,7 @@ def install_requirments():
     requirements_path = os.path.join(proj_path, "scripts/requirements.sh")
     st = os.stat(requirements_path)
     os.chmod(requirements_path, st.st_mode | stat.S_IEXEC)
-    call([requirements_path], shell=False)
+    return call([requirements_path], shell=False)
 
 def args_dependencies():
     if args.debug:
@@ -275,7 +275,9 @@ if __name__ == '__main__':
             crawler.cases = read_cases_from_cache()
         else:
             crawler.run()
-    install_requirments()
+    if install_requirments() != 0:
+        print("Fail to install requirements.")
+        exit(0)
     if not args.use_cache:
         cache_cases(crawler.cases)
     if args.dynamic_validation:

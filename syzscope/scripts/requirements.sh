@@ -3,6 +3,7 @@
 #
 # Usage ./requirements.sh
 
+sudo || echo "Install sudo before run SyzScope" && exit 1
 if [ ! -f "$(pwd)/tools/.stamp/ENV_SETUP" ]; then
   sudo apt-get update
   sudo apt-get -y install gdb curl git wget qemu-system-x86 debootstrap flex bison libssl-dev libelf-dev locales cmake libxml2-dev libz3-dev bc
@@ -170,3 +171,5 @@ fi
 echo "[+] Clean unfinished jobs"
 rm linux-*/.git/index.lock || echo "Removing index.lock"
 rm linux-*/THIS_KERNEL_IS_BEING_USED || echo "All set"
+
+exit 0 
