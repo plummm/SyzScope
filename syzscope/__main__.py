@@ -49,6 +49,8 @@ def args_parse():
                         '(default value is 33777)')
     parser.add_argument('--ignore', nargs='?', action='store',
                         help='A file contains cases hashs which are ignored. One line for each hash.')
+    parser.add_argument('--ignore-batch', nargs='?', action='store',
+                        help='A file contains cases hashs which are ignored. This argument will ignore all other cases share the same patch')
     parser.add_argument('--alert', nargs='*', action='store',
                         default=[''],
                         help='Set alert for specific crash description')
@@ -242,6 +244,8 @@ if __name__ == '__main__':
     args = args_parse()
     if args.key == None:
         args.key = ['']
+    if args.deduplicate == None:
+        args.deduplicate = []
     print_args_info(args)
     check_kvm()
     args_dependencies()
@@ -258,10 +262,17 @@ if __name__ == '__main__':
             for line in text:
                 line = line.strip('\n')
                 ignore.append(line)
+    ignore_batch = []
+    if args.ignore_batch != None:
+        with open(args.ignore_batch, "r") as f:
+            text = f.readlines()
+            for line in text:
+                line = line.strip('\n')
+                ignore_batch.append(line)
     if args.input != None and args.use_cache:
         print("Can not use cache when specifying inputs")
         sys.exit(1)
-    crawler = Crawler(url=args.url, keyword=args.key, max_retrieve=int(args.max), deduplicate=args.deduplicate,
+    crawler = Crawler(url=args.url, keyword=args.key, max_retrieve=int(args.max), deduplicate=args.deduplicate, ignore_batch=ignore_batch,
         filter_by_reported=int(args.filter_by_reported), filter_by_closed=int(args.filter_by_closed), include_high_risk=args.include_high_risk, debug=args.debug)
     if args.replay != None:
         for url in urlsOfCases(args.replay):

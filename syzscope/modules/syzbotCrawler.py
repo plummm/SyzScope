@@ -14,7 +14,7 @@ num_of_elements = 8
 class Crawler:
     def __init__(self,
                  url="https://syzkaller.appspot.com/upstream/fixed",
-                 keyword=[''], max_retrieve=10, deduplicate=[''], filter_by_reported=-1, 
+                 keyword=[''], max_retrieve=10, deduplicate=[''], ignore_batch=[], filter_by_reported=-1, 
                  filter_by_closed=-1, include_high_risk=False, debug=False):
         self.url = url
         if type(keyword) == list:
@@ -25,6 +25,7 @@ class Crawler:
             self.deduplicate = deduplicate
         else:
             print("deduplication keyword must be a list")
+        self.ignore_batch = ignore_batch
         self.max_retrieve = max_retrieve
         self.cases = {}
         self.patches = {}
@@ -54,6 +55,13 @@ class Crawler:
         self.logger2file.addHandler(handler)
 
     def run(self):
+        if len(self.ignore_batch) > 0:
+            for hash_val in self.ignore_batch:
+                patch_url = self.get_patch_of_case(hash_val)
+                commit = regx_get(r"https:\/\/git\.kernel\.org\/pub\/scm\/linux\/kernel\/git\/torvalds\/linux\.git\/commit\/\?id=(\w+)", patch_url, 0)
+                if commit in self.patches:
+                    continue
+                self.patches[commit] = True
         cases_hash, high_risk_impacts = self.gather_cases()
         for each in cases_hash:
             if 'Patch' in each:
@@ -99,7 +107,7 @@ class Crawler:
         mono = soup.find("span", {"class": "mono"})
         if mono == None:
             return patch
-        patch = mono.contents[1].contents[0]
+        patch = mono.contents[1].attrs['href']
         return patch
 
 

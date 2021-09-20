@@ -846,11 +846,14 @@ if __name__ == '__main__':
     day = int(regx_get('(\d+)d', reported_days, 0))
     print("{} days with {} bugs: {} bugs/day".format(day, len(cases), round(len(cases)/day, 2)))
     """
-    base = '/home/xzou017/projects/result_syzbot/Debian_bugs/succeed'
-    files = os.listdir(base)
-    for each in files:
-        r = get_hash_from_log(os.path.join(base, '{}/log'.format(each)))
-        print(r)
+    base = '/home/xzou017/projects/results_of_syzbot_analysis/UAF_OOB_FIXED_9-12-2021-Camera_ready'
+    dirs = ['completed', 'error', 'succeed', 'incomplete']
+    for each in dirs:
+        case_path = os.path.join(base, each)
+        for each in os.listdir(case_path):
+            r = get_hash_from_log(case_path+"/{}/log".format(each))
+            print(r)
+        
     
 
     
