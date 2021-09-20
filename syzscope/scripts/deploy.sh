@@ -144,7 +144,7 @@ if [ ! -d "compiler" ]; then
   mkdir compiler
 fi
 cd compiler
-if [ ! -f "$CASE_PATH/compiler/compiler" ]; then
+if [ ! -L "$CASE_PATH/compiler/compiler" ]; then
   ln -s $COMPILER ./compiler
 fi
 
@@ -184,10 +184,10 @@ if [ ! -d "$CASE_PATH/img" ]; then
   mkdir -p $CASE_PATH/img
 fi
 cd img
-if [ ! -f "$CASE_PATH/img/stretch.img" ]; then
+if [ ! -L "$CASE_PATH/img/stretch.img" ]; then
   ln -s $PROJECT_PATH/tools/img/$IMAGE.img ./stretch.img
 fi
-if [ ! -f "$CASE_PATH/img/stretch.img.key" ]; then
+if [ ! -L "$CASE_PATH/img/stretch.img.key" ]; then
   ln -s $PROJECT_PATH/tools/img/$IMAGE.img.key ./stretch.img.key
 fi
 cd ..
