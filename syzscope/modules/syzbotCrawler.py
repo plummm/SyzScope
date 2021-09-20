@@ -14,13 +14,17 @@ num_of_elements = 8
 class Crawler:
     def __init__(self,
                  url="https://syzkaller.appspot.com/upstream/fixed",
-                 keyword=[''], max_retrieve=10, filter_by_reported=-1, 
+                 keyword=[''], max_retrieve=10, deduplicate=[''], filter_by_reported=-1, 
                  filter_by_closed=-1, include_high_risk=False, debug=False):
         self.url = url
         if type(keyword) == list:
             self.keyword = keyword
         else:
             print("keyword must be a list")
+        if type(deduplicate) == list:
+            self.deduplicate = deduplicate
+        else:
+            print("deduplication keyword must be a list")
         self.max_retrieve = max_retrieve
         self.cases = {}
         self.patches = {}
@@ -133,6 +137,16 @@ class Crawler:
                     title = case.find('td', {"class": "title"})
                     if title == None:
                         continue
+                    for keyword in self.deduplicate:
+                        if keyword in title.text:
+                            try:
+                                commit = regx_get(r"https:\/\/git\.kernel\.org\/pub\/scm\/linux\/kernel\/git\/torvalds\/linux\.git\/commit\/\?id=(\w+)", patch_url, 0)
+                                if commit in self.patches or \
+                                    (commit in high_risk_impacts and not self.include_high_risk):
+                                    continue
+                                self.patches[commit] = True
+                            except:
+                                pass
                     for keyword in self.keyword:
                         if 'out-of-bounds write' in title.text or \
                                 'use-after-free write' in title.text:

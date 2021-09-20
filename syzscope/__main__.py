@@ -28,6 +28,10 @@ def args_parse():
                         help='The keywords for detecting cases.\n'
                              '(By default, it retrieve all cases)\n'
                              'This argument could be multiple values')
+    parser.add_argument('-de', '--deduplicate', action='append',
+                        help='The keywords for deduplicating.\n'
+                             'eg. -de="use-after-free" will ignore cases that already had "use-after-free" contexts\n'
+                             'This argument could be multiple values')
     parser.add_argument('-pm', '--parallel-max', nargs='?', action='store',
                         default='1', help='The maximum of parallel processes\n'
                                         '(default valus is 1)')
@@ -256,7 +260,7 @@ if __name__ == '__main__':
     if args.input != None and args.use_cache:
         print("Can not use cache when specifying inputs")
         sys.exit(1)
-    crawler = Crawler(url=args.url, keyword=args.key, max_retrieve=int(args.max), 
+    crawler = Crawler(url=args.url, keyword=args.key, max_retrieve=int(args.max), deduplicate=args.deduplicate,
         filter_by_reported=int(args.filter_by_reported), filter_by_closed=int(args.filter_by_closed), include_high_risk=args.include_high_risk, debug=args.debug)
     if args.replay != None:
         for url in urlsOfCases(args.replay):
