@@ -125,6 +125,7 @@ def print_args_info(args):
     print("[*] url: {}".format(args.url))
     print("[*] max: {}".format(args.max))
     print("[*] key: {}".format(args.key))
+    print("[*] deduplcate: {}".format(args.deduplcate))
     print("[*] alert: {}".format(args.alert))
 
     try:
