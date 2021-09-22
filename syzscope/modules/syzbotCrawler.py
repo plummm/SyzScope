@@ -64,7 +64,7 @@ class Crawler:
                 if commit in self.patches:
                     continue
                 self.patches[commit] = True
-            print("Ignore {} patches".format(len(self.patches))
+            print("Ignore {} patches".format(len(self.patches)))
         cases_hash, high_risk_impacts = self.gather_cases()
         for each in cases_hash:
             if 'Patch' in each:
