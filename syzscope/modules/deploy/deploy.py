@@ -198,7 +198,7 @@ class Deployer(Workers):
         exitcode = 4
         # First round, we only enable limited syscalls.
         # If failed to trigger a write crash, we enable more syscalls to run it again
-        while(exitcode == 4):
+        for _ in range(0, 3):
             if self.logger.level == logging.DEBUG:
                 p = Popen([syzkaller, "--config={}/workdir/{}-poc.cfg".format(self.syzkaller_path, hash_val[:7]), "-debug", "-poc"],
                     stdout=PIPE,
@@ -233,6 +233,8 @@ class Deployer(Workers):
                     with p.stdout:
                         self.__log_subprocess_output(p.stdout, logging.INFO)
                 exitcode = p.wait()
+            if exitcode != 4:
+                break
         self.logger.info("syzkaller is done with exitcode {}".format(exitcode))
         if exitcode == 3:
             #Failed to parse the testcase
