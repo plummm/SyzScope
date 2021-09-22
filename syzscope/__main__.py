@@ -118,6 +118,8 @@ def args_parse():
                         help='The path to a PoC that will be used by symbolic execution')
     parser.add_argument('--include-high-risk', action='store_true',
                         help='Include high risk bugs for analysis')
+    parser.add_argument('--install-requirements', action='store_true',
+                        help='Install required packages and compile essential tools')
 
     args = parser.parse_args()
     return args
@@ -232,6 +234,12 @@ def install_requirments():
     os.chmod(requirements_path, st.st_mode | stat.S_IEXEC)
     return call([requirements_path], shell=False)
 
+def check_requirements():
+    stamp = "ENV_SETUP"
+    tools_path = os.path.join(os.getcwd(), "tools")
+    env_stamp = os.path.join(tools_path, ".stamp/ENV_SETUP")
+    return os.path.isfile(env_stamp)
+
 def args_dependencies():
     if args.debug:
         print("debug mode runs on single thread")
@@ -246,6 +254,14 @@ if __name__ == '__main__':
         args.key = ['']
     if args.deduplicate == None:
         args.deduplicate = []
+    if args.install_requirements:
+        if install_requirments() != 0:
+            print("Fail to install requirements.")
+        exit(0)
+    elif not check_requirements():
+        print("No essential components found. Install them by --install-requirements")
+        exit(0)
+
     print_args_info(args)
     check_kvm()
     args_dependencies()
@@ -291,9 +307,6 @@ if __name__ == '__main__':
             crawler.cases = read_cases_from_cache()
         else:
             crawler.run()
-    if install_requirments() != 0:
-        print("Fail to install requirements.")
-        exit(0)
     if not args.use_cache:
         cache_cases(crawler.cases)
     if args.dynamic_validation:
