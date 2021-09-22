@@ -107,7 +107,10 @@ class Crawler:
         mono = soup.find("span", {"class": "mono"})
         if mono == None:
             return patch
-        patch = mono.contents[1].attrs['href']
+        try:
+            patch = mono.contents[1].attrs['href']
+        except:
+            pass 
         return patch
 
 
