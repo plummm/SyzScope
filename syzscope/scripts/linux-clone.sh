@@ -15,5 +15,9 @@ if [ -d "tools/$1-$2" ]; then
 fi
 mkdir tools || echo "Directory exists\n"
 cd tools || exit 1
-git clone https://github.com/torvalds/linux.git $1-$2
+if [ ! -d "linux-0" ]; then
+  git clone https://github.com/torvalds/linux.git $1-$2
+else
+  cp -r linux-0 $1-$2
+fi
 echo "Linux cloned to $1-$2"
