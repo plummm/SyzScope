@@ -58,10 +58,13 @@ class Crawler:
         if len(self.ignore_batch) > 0:
             for hash_val in self.ignore_batch:
                 patch_url = self.get_patch_of_case(hash_val)
+                if patch_url == None:
+                    continue
                 commit = regx_get(r"https:\/\/git\.kernel\.org\/pub\/scm\/linux\/kernel\/git\/torvalds\/linux\.git\/commit\/\?id=(\w+)", patch_url, 0)
                 if commit in self.patches:
                     continue
                 self.patches[commit] = True
+            print("Ignore {} patches".format(len(self.patches))
         cases_hash, high_risk_impacts = self.gather_cases()
         for each in cases_hash:
             if 'Patch' in each:
