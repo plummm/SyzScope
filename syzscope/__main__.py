@@ -235,10 +235,17 @@ def install_requirments():
     return call([requirements_path], shell=False)
 
 def check_requirements():
-    stamp = "ENV_SETUP"
     tools_path = os.path.join(os.getcwd(), "tools")
     env_stamp = os.path.join(tools_path, ".stamp/ENV_SETUP")
     return os.path.isfile(env_stamp)
+
+def build_work_dir():
+    work_path = os.path.join(os.getcwd(), "work")
+    os.makedirs(work_path, exist_ok=True)
+    incomp = os.path.join(os.getcwd(), "incomplete")
+    comp = os.path.join(os.getcwd(), "completed")
+    os.makedirs(incomp, exist_ok=True)
+    os.makedirs(comp, exist_ok=True)
 
 def args_dependencies():
     if args.debug:
@@ -271,6 +278,7 @@ if __name__ == '__main__':
         sys.exit(0)
 
     ignore = []
+    build_work_dir()
     manager = multiprocessing.Manager()
     if args.ignore != None:
         with open(args.ignore, "r") as f:
