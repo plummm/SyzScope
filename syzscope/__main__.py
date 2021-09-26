@@ -261,11 +261,12 @@ if __name__ == '__main__':
         args.key = ['']
     if args.deduplicate == None:
         args.deduplicate = []
-    if args.install_requirements:
-        if install_requirments() != 0:
-            print("Fail to install requirements.")
+    if install_requirments() != 0:
+        print("Fail to install requirements.")
         exit(0)
-    elif not check_requirements():
+    if args.install_requirements:
+        exit(0)
+    if not check_requirements():
         print("No essential components found. Install them by --install-requirements")
         exit(0)
 

@@ -141,6 +141,9 @@ class Deployer(Workers):
 
         if is_error:
             return
+        if self.__success_check(hash_val, "ConfirmedDoubleFree") or \
+            self.__success_check(hash_val, "ConfirmedAbnormallyMemWrite"):
+            succeed = True
         valid_contexts = self.get_buggy_contexts(case)
         if len(valid_contexts) == 0:
             self.logger.info("No valid buggy context")
@@ -149,11 +152,7 @@ class Deployer(Workers):
                  ((context['type'] == utilities.CASE and not os.path.exists(context['repro'])) or\
                   (context['type'] == utilities.URL and context['repro'] == None)):
                 title = context['title']
-                if self.__success_check(hash_val, "ConfirmedDoubleFree") or \
-                   self.__success_check(hash_val, "ConfirmedAbnormallyMemWrite"):
-                    succeed = True
-                else:
-                    self.case_logger.info("skip an invalid context")
+                self.case_logger.info("skip an invalid context")
                 continue
 
             self.logger.info("Dynamic validate {}".format(context['workdir']))

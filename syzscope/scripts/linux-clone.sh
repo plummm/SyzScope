@@ -13,7 +13,9 @@ fi
 if [ -d "tools/$1-$2" ]; then
   exit 0
 fi
-mkdir tools || echo "Directory exists\n"
+if [ ! -d "tools" ]; then
+  mkdir tools
+fi
 cd tools || exit 1
 if [ ! -d "linux-0" ]; then
   git clone https://github.com/torvalds/linux.git $1-$2
