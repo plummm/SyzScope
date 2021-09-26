@@ -166,14 +166,17 @@ class Workers(Case):
                 continue
             sym_logger.info("Uploading poc and triggering the crash")
             if self.se_poc == None:
-                ok = self.crash_checker.upload_exp(context['repro'], self.ssh_port, case["syzkaller"], context['type'], context["c_repro"], i386, 0, sym_logger)
+                ok = self.crash_checker.upload_exp(context['repro'], self.ssh_port, case["syzkaller"], context['type'], context["c_repro"], i386, 0, sym.vm.qemu_logger)
                 if ok == 0:
                     self.logger.error("Error occur at upload exp")
                     sym.cleanup()
                     del sym
                     continue
-
-                self.crash_checker.run_exp(case["syz_repro"], self.ssh_port, utilities.URL, ok, i386, 0, sym_logger)
+                
+                if context['command'] != '':
+                    self.crash_checker.run_exp(context['command'], self.ssh_port, utilities.CASE, ok, i386, 0, sym.vm.qemu_logger)
+                else:
+                    self.crash_checker.run_exp(case['syz_repro'], self.ssh_port, utilities.URL, ok, i386, 0, sym.vm.qemu_logger)
             else:
                 ok = self.crash_checker.upload_custom_exp(self.se_poc, self.ssh_port, sym_logger)
                 if ok != 0:
@@ -395,7 +398,7 @@ class Workers(Case):
             size = case["obj_size"]
             if offset != None and size != None:
                 ori_ready = True
-                ret.append({'title':case["title"], 'workdir': 'ori', 'offset': offset, 'size': size, 'repro': case["syz_repro"], 'report': case['report'], 'type': utilities.URL, 'c_repro': case["syz_repro"]})
+                ret.append({'title':case["title"], 'workdir': 'ori', 'offset': offset, 'size': size, 'repro': case["syz_repro"], 'report': case['report'], 'type': utilities.URL, 'c_repro': case["syz_repro"], 'command': ''})
         output = os.path.join(self.current_case_path, "output")
         if os.path.exists(output):
             all_cases = os.listdir(output)
@@ -417,7 +420,10 @@ class Workers(Case):
                     texts = f.readlines()
                     offset, size = utilities.extract_vul_obj_offset_and_size(texts)
                     prog = os.path.join(case_base, "repro.prog")
-                    ret.append({'title':title, 'workdir': each_case[:7], 'offset': offset, 'size': size, 'repro': prog,  'report': report, 'type': utilities.CASE, 'c_repro': None})
+                    command = os.path.join(case_base, "repro.command")
+                    if not os.path.isfile(command):
+                        command = ''
+                    ret.append({'title':title, 'workdir': each_case[:7], 'offset': offset, 'size': size, 'repro': prog,  'report': report, 'type': utilities.CASE, 'c_repro': None, 'command': command})
         return ret
     
     def copy_only_impact(self, input_log, output_log):

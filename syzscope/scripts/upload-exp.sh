@@ -100,7 +100,7 @@ else
 fi
 
 if [ ! -f "$BIN_PATH/syz-execprog" ]; then
-    SYZ_PATH=$GOPATH/src/github.com/google/syzkaller/
+    SYZ_PATH=$CASE_PATH/poc/gopath/src/github.com/google/syzkaller/
     if [ -d "$SYZ_PATH/bin/linux_$ARCH" ]; then
         cp $SYZ_PATH/bin/linux_amd64/syz-execprog $BIN_PATH
         cp $SYZ_PATH/bin/linux_$ARCH/syz-executor $BIN_PATH

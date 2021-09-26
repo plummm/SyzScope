@@ -510,10 +510,14 @@ class CrashChecker:
 
     def make_commands(self, text, support_enable_features, i386):
         command = "/syz-execprog -executor=/syz-executor "
+        if text[0][:len(command)] == command:
+            # If read from repro.command, text[0] was already the command
+            return text[0]
         enabled = "-enable="
         normal_pm = {"arch":"amd64", "threaded":"false", "collide":"false", "sandbox":"none", "fault_call":"-1", "fault_nth":"0"}
         for line in text:
             if line.find('{') != -1 and line.find('}') != -1:
+                line = line.lower()
                 pm = {}
                 try:
                     pm = json.loads(line[1:])
