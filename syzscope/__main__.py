@@ -242,8 +242,8 @@ def check_requirements():
 def build_work_dir():
     work_path = os.path.join(os.getcwd(), "work")
     os.makedirs(work_path, exist_ok=True)
-    incomp = os.path.join(os.getcwd(), "incomplete")
-    comp = os.path.join(os.getcwd(), "completed")
+    incomp = os.path.join(work_path, "incomplete")
+    comp = os.path.join(work_path, "completed")
     os.makedirs(incomp, exist_ok=True)
     os.makedirs(comp, exist_ok=True)
 
