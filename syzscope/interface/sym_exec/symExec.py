@@ -381,7 +381,7 @@ class SymExec(MemInstrument):
         val = self.vm.gdb.get_register('rip')
         if val != None:
             pc = val
-        if self.vm.addr_bytes == 4:
+        if val == None and self.vm.addr_bytes == 4:
             val = self.vm.gdb.get_register('eip')
             if val != None:
                 pc = val

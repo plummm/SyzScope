@@ -536,7 +536,7 @@ class CrashChecker:
                     num = int(pm["procs"])
                     command += "-procs=" + str(num*2) + " "
                 else:
-                    command += "-procs=" + str(pm["procs"]) + " "
+                    command += "-procs=1" + " "
                 if "repeat" in pm and pm["repeat"] != "":
                     command += "-repeat=" + "0 "
                 if "slowdown" in pm and pm["slowdown"] != "":

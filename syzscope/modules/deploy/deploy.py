@@ -168,7 +168,7 @@ class Deployer(Workers):
 
             if self.symbolic_execution:
                 if not self.finished_symbolic_execution(hash_val, 'incomplete'):
-                    r = self.do_symbolic_execution(case, context, i386)
+                    r = self.do_symbolic_execution(case, context, i386, max_round=5)
                     if r == 0:
                         succeed = True
                 else:
