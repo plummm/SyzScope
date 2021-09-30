@@ -25,9 +25,9 @@ class VMState:
         self.debug = debug
         self.addr_info = {}
         VMState.KERNEL_BASE = 0x7fffffffffffffff
-        if arch == 'i386':
+        """if arch == 'i386':
             self.addr_bytes = 4
-            VMState.KERNEL_BASE = 0x7fffffff
+            VMState.KERNEL_BASE = 0x7fffffff"""
         self._sections = None
         self.stack_addr = [0,0]
         self.kasan_addr = [0,[]]
@@ -121,7 +121,7 @@ class VMState:
         if self.__check_initialization():
             return
         if len(self.kasan_addr[1]) > 0:
-            self.del_breakpoint()
+            self.gdb.del_breakpoint()
             for each in self.kasan_addr[1]:
                 self.gdb.set_breakpoint(each)
         self.gdb.resume()
