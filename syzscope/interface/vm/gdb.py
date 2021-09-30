@@ -54,6 +54,12 @@ class GDBHelper:
     
     def set_breakpoint(self, addr):
         self.sendline('break *{}'.format(addr))
+    
+    def del_breakpoint(self, num=-1):
+        if num == -1:
+            self.sendline("d")
+        else:
+            self.sendline('d {}'.format(num))
 
     def resume(self):
         self._sendline('continue')

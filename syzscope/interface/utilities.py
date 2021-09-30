@@ -846,13 +846,20 @@ if __name__ == '__main__':
     day = int(regx_get('(\d+)d', reported_days, 0))
     print("{} days with {} bugs: {} bugs/day".format(day, len(cases), round(len(cases)/day, 2)))
     """
-    base = '/home/xzou017/projects/results_of_syzbot_analysis/UAF_OOB_FIXED_9-12-2021-Camera_ready'
+    base = '/home/xzou017/projects/results_of_syzbot_analysis/GPF_BUG_FIXED_9-20-2021-Camera_ready'
+    d = {}
+    with open(base+'/ConfirmedAbnormallyMemRead', 'r') as f:
+        text = f.readlines()
+        for line in text:
+            line = line.strip()
+            d[line] = 1
     dirs = ['completed', 'error', 'succeed', 'incomplete']
     for each in dirs:
         case_path = os.path.join(base, each)
         for each in os.listdir(case_path):
             r = get_hash_from_log(case_path+"/{}/log".format(each))
-            print(r)
+            if r[:7] in d:
+                print(r)
         
     
 

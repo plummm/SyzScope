@@ -121,6 +121,7 @@ class VMState:
         if self.__check_initialization():
             return
         if len(self.kasan_addr[1]) > 0:
+            self.del_breakpoint()
             for each in self.kasan_addr[1]:
                 self.gdb.set_breakpoint(each)
         self.gdb.resume()
