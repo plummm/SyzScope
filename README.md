@@ -11,7 +11,7 @@
 		2. [image - mini](#Dokcer_mini)
 	2. [Manually setup](#Manually_setup)
 		1. [Let's warm up](#warm_up)
-		2. [Installrequirements](#install_requirements)
+		2. [Install requirements](#install_requirements)
 		3. [Tweak pwntools](#Tweak_pwntools)
 		4. [Using UTF-8 encoding](#Using_UTF_8_encoding)
 5. [Tutorial](#tutorial)
@@ -46,7 +46,7 @@ Access our paper []
 
 <a name="Dokcer"></a>
 
-##### Image - ready2go(13.3 Gb)
+##### Image - ready2go(18.39 Gb)
 
 <a name="Dokcer_ready2go"></a>
 
@@ -176,7 +176,7 @@ export LC_ALL=en_US.UTF-8
 
 [PoC Reproduce](tutorial/poc_repro.md)
 
-Static Analysis
+[Static Taint Analysis](tutorial/static_taint_analysis.md)
 
 [Symbolic Execution](tutorial/sym_exec.md)
 
@@ -185,3 +185,4 @@ Static Analysis
 #### Example
 
 [WARNING: held lock freed! (CVE-2018-25015)](tutorial/examples/WARNING_held_lock_freed.md)
+
