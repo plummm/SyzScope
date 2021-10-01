@@ -46,7 +46,7 @@ Access our paper []
 
 <a name="Dokcer"></a>
 
-##### Image - ready2go(37 Gb)
+##### Image - ready2go(13.3 Gb)
 
 <a name="Dokcer_ready2go"></a>
 
