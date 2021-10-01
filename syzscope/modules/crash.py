@@ -517,7 +517,6 @@ class CrashChecker:
         normal_pm = {"arch":"amd64", "threaded":"false", "collide":"false", "sandbox":"none", "fault_call":"-1", "fault_nth":"0"}
         for line in text:
             if line.find('{') != -1 and line.find('}') != -1:
-                line = line.lower()
                 pm = {}
                 try:
                     pm = json.loads(line[1:])
