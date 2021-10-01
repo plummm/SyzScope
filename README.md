@@ -7,14 +7,14 @@
 3. [Access the paper](#access_the_paper)
 4. [Setup](#Setup)
 	1. [Dokcer - Recommend](#Dokcer)
-		1. [Inside docker container](#Inside_docker_container)
+		1. [image - ready2go](#Dokcer_ready2go)
+		2. [image - mini](#Dokcer_mini)
 	2. [Manually setup](#Manually_setup)
 		1. [Let's warm up](#warm_up)
 		2. [Installrequirements](#install_requirements)
 		3. [Tweak pwntools](#Tweak_pwntools)
 		4. [Using UTF-8 encoding](#Using_UTF_8_encoding)
-5. [Test run](#Test_run)
-6. [Construction Zone](#Construction_Zone)
+5. [Tutorial](#tutorial)
 
 ### What is SyzScope?
 
@@ -46,20 +46,46 @@ Access our paper []
 
 <a name="Dokcer"></a>
 
+##### Image - ready2go(37 Gb)
+
+<a name="Dokcer_ready2go"></a>
+
 ```bash
-docker pull syzscope:mini
+docker pull etenal/syzscope:ready2go
+docker run -it -d --name syzscope -p 2222:22 --privileged syzscope:mini
+docker attach syzscope
+```
+
+
+
+###### Inside docker container
+
+Everything is ready to go
+
+```bash
+cd /root/SyzScope
+git pull
+```
+
+
+
+##### Image - mini(400 MB)
+
+<a name="Dokcer_mini"></a>
+
+```bash
+docker pull etenal/syzscope:mini
 docker run -it -d --name syzscope --privileged syzscope:mini
 docker attach syzscope
 ```
 
 
 
-##### Inside docker container
-
-<a name="Inside_docker_container"></a>
+###### Inside docker container
 
 ```bash
 cd /root/SyzScope
+git pull
 . venv/bin/activate
 python3 syzscope --install-requirements
 ```
@@ -142,23 +168,20 @@ export LC_ALL=en_US.UTF-8
 
 ------
 
-### Test run
+### Tutorial
 
-<a name="Test_run"></a>
+<a name="tutorial"></a>
 
-Let try an existing bug on Syzbot: [KASAN: use-after-free Read in macvlan_dev_get_iflink](https://syzkaller.appspot.com/bug?id=60e32439364a1e4048e5586aac5b374fb494ebac). 
+[Folder Structure](tutorial/folder_structure.md)
+
+[PoC Reproduce](tutorial/poc_repro.md)
+
+Static Analysis
+
+[Symbolic Execution](tutorial/sym_exec.md)
 
 
 
-```bash
-python3 syzscope -i 60e32439364a1e4048e5586aac5b374fb494ebac -KF -SE --timeout-kernel-fuzzing 1 --timeout-symbolic-execution 3600
-```
+#### Example
 
-------
-
-### Construction Zone
-
-<a name="Construction_Zone"></a>
-
-- [ ] Add detailed running sample and explanation
-- [ ] Add instruction of reading the report
+[WARNING: held lock freed! (CVE-2018-25015)](tutorial/examples/WARNING_held_lock_freed.md)
