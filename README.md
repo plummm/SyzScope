@@ -176,6 +176,8 @@ export LC_ALL=en_US.UTF-8
 
 [PoC Reproduce](tutorial/poc_repro.md)
 
+[Fuzzing](tutorial/fuzzing.md)
+
 [Static Taint Analysis](tutorial/static_taint_analysis.md)
 
 [Symbolic Execution](tutorial/sym_exec.md)
