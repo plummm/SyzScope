@@ -153,7 +153,7 @@ class CrashChecker:
                     self.logger.info("Invalid crash: {} unreproduceable on both fixed and unfixed kernel".format(key))
                 if reproduceable[key] == SUSPICIOUS:
                     self.logger.info("Suspicious crash: {} triggered a crash but doesn't belong to OOB/UAF write".format(key))
-        exitcode = self.deploy_linux(patch_commit, config, 0)
+        exitcode = self.deploy_linux(linux_commit, config, 0)
         return res
     
     def patch_applying_check(self, linux_commit, config, patch_commit):
