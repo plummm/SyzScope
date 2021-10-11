@@ -1,4 +1,4 @@
-### How to inspect the results
+### Inspect results
 
 
 
@@ -6,7 +6,7 @@
 
 
 
-After running SyzScope for the first time, it generated a main `work` folder under the current path. You can check the detailed structure of main `work` folder on [Workzone Structure](./workzone_structure.md).
+After running SyzScope for the first time, it generated a main `work` folder under the project folder. Please check the detailed structure of main `work` folder on [Workzone Structure](./workzone_structure.md).
 
 
 
