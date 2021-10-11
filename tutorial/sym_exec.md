@@ -3,15 +3,15 @@
 ------
 
 ```
-├── sym-xxx							Folder. Symbolic execution results
+├── sym-xxx						Folder. Symbolic execution results
     ├── gdb.log-0					File. GDB log
     ├── mon.log-0					File. Qemu monitor log
     ├── vm.log-0					File. Qemu log
-    ├── symbolic_execution.log-0	File. Symbolic execution log
-    ├── launch_vm.sh				File. For launching qemu
+    ├── symbolic_execution.log-0			File. Symbolic execution log
+    ├── launch_vm.sh					File. For launching qemu
     └── primitives					Folder. Contain high-risk impacts
         ├── ...
-        └── FPD-xxx-14				File. A func-ptr-def impact
+        └── FPD-xxx-14					File. A func-ptr-def impact
 ```
 
 `sym-xxx` folder contains all info from symbolic execution. `vm.log` logs full stdout message comes from QEMU and log from `upload-exp.sh` when upload the PoC, it's useful when inspecting bug triggering status.

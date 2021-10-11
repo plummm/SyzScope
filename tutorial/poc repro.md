@@ -3,17 +3,17 @@
 ------
 
 ```
-├──	poc								Folder. For PoC testing
+├── poc						Folder. For PoC testing
     ├── crash_log-ori				File. Contain high-risk impact
     ├── launch_vm.sh				File. Use for launch qemu
-    ├──	log							File. Reproduce PoC log
+    ├──	log					File. Reproduce PoC log
     ├── qemu-xxx-ori.log			File. Qemu running log
     ├── run-script.sh				File. Use for reproduce crash
-    ├── run.sh						File. Use for running PoC
+    ├── run.sh					File. Use for running PoC
     ├── syz-execprog				Binary. Syzkaller component
     ├── syz-executor				Binary. Syzkaller component
-    ├── testcase					File. Syzkaller style test case
-    └── gopath						Folder. Contain syzkaller
+    ├── testcase				File. Syzkaller style test case
+    └── gopath					Folder. Contain syzkaller
 ```
 
 
