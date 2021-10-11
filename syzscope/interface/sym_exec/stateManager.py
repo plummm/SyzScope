@@ -11,6 +11,7 @@ class StateManager:
     G_RET = 2
     G_BB = 3
     MAX_BB_WITHOUT_SYM = 10000
+    MAX_FORK_LOOP = 7
     NO_ADDITIONAL_USE = 0
     ARBITRARY_VALUE_WRITE = 1 << 0
     FINITE_VALUE_WRITE = 1 << 1

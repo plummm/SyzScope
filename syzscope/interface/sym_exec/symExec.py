@@ -32,6 +32,7 @@ class SymExec(MemInstrument):
         self._init_state = None
         self._timeout=None
         self._context_ready = False
+        self._fallen_state = False
         self.cus_sections = sections
         self.impacts_collector = {}
         self._branches = None
@@ -160,7 +161,7 @@ class SymExec(MemInstrument):
 
         self._init_state.inspect.b('mem_read', when=angr.BP_BEFORE, action=self.track_mem_read)
         self._init_state.inspect.b('mem_write', when=angr.BP_BEFORE, action=self.track_mem_write)
-        self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff841a9e80)
+        self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff85328139)
         self._init_state.inspect.b('symbolic_variable', when=angr.BP_BOTH, action=self.track_symbolic_variable)
         self._init_state.inspect.b('call', when=angr.BP_BEFORE, action=self.track_call)
         #self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff81005672)
@@ -533,7 +534,9 @@ class SymExec(MemInstrument):
                 self.logger.info(code)
             self.logger.error(e)
             self.kill_current_state = False
-            raise ExecutionError
+            succ = self.proj.factory.successors()
+            self._fallen_state = True
+            #raise ExecutionError
         if self._is_fallen_state(state):
             self.logger.warning("kill a fallen state")
             succ.flat_successors = []
@@ -612,7 +615,7 @@ class SymExec(MemInstrument):
             return False
         if stack[2] not in self.fork_countor[stack[0]][stack[1]]:
             return False
-        return self.fork_countor[stack[0]][stack[1]][stack[2]] > 3
+        return self.fork_countor[stack[0]][stack[1]][stack[2]] >= StateManager.MAX_FORK_LOOP
     
     def _update_fork_countor(self, state):
         callstack = state.callstack
@@ -649,6 +652,9 @@ class SymExec(MemInstrument):
         return last_inst.mnemonic[0] == 'j' and last_inst.mnemonic != 'jmp'
     
     def _is_fallen_state(self, state):
+        if self._fallen_state:
+            self._fallen_state = False
+            return True
         if self.out_of_scope:
             self.update_states_globals(0, 0, StateManager.G_BB)
             n = self.get_states_globals(0, StateManager.G_BB)

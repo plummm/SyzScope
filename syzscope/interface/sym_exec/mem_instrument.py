@@ -10,10 +10,10 @@ from .stateManager import StateManager
 from capstone.x86_const import X86_REG_GS, X86_REG_CS, X86_REG_SS, X86_REG_DS, X86_REG_ES, X86_REG_FS, X86_OP_MEM
 
 class MemInstrument(StateManager):
-    USER_PAGE_START = 0x40000000
+    USER_PAGE_START = 0x20000000
     USER_PAGE_END = 0x80000000
     MAX_OBJ_SIZE = 0x2000
-    CTR_ADDR = 0x40000000
+    CTR_ADDR = 0x30000000
 
     def __init__(self, index, workdir, logger=None):
         StateManager.__init__(self, index, workdir)
@@ -315,6 +315,8 @@ class MemInstrument(StateManager):
             ret = self.proj.hook_symbol(func_name, hook_class)
             if ret != None:
                 self.logger.info("Hook {} at {}".format(func_name, hex(ret)))
+                return True
+        return False
 
     def _validate_inst(self, state):
         ins_addr = state.scratch.ins_addr
