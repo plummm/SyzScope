@@ -172,7 +172,9 @@ export LC_ALL=en_US.UTF-8
 
 <a name="tutorial"></a>
 
-[Folder Structure](tutorial/folder_structure.md)
+[Getting started](tutorial/Getting_started.md)
+
+[Workzone Structure](tutorial/workzone_structure.md)
 
 [PoC Reproduce](tutorial/poc_repro.md)
 
