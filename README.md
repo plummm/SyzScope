@@ -176,6 +176,8 @@ export LC_ALL=en_US.UTF-8
 
 [Workzone Structure](tutorial/workzone_structure.md)
 
+[Inpsect results](tutorial/inspect results.md)
+
 [PoC Reproduce](tutorial/poc_repro.md)
 
 [Fuzzing](tutorial/fuzzing.md)
