@@ -15,6 +15,7 @@
 		3. [Tweak pwntools](#Tweak_pwntools)
 		4. [Using UTF-8 encoding](#Using_UTF_8_encoding)
 5. [Tutorial](#tutorial)
+6. [Common Issues](#common_issues)
 
 ### What is SyzScope?
 
