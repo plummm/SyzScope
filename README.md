@@ -192,3 +192,13 @@ export LC_ALL=en_US.UTF-8
 
 [WARNING: held lock freed! (CVE-2018-25015)](tutorial/examples/WARNING_held_lock_freed.md)
 
+
+
+------
+
+### Common Issues
+
+<a name="common_issues"></a>
+
+Check out [common issues](tutorial/common_issues.md)
+
