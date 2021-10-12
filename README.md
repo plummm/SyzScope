@@ -55,7 +55,7 @@ Access our paper []
 
 ```bash
 docker pull etenal/syzscope:ready2go
-docker run -it -d --name syzscope -p 2222:22 --privileged syzscope:ready2go
+docker run -it -d --name syzscope -p 2222:22 --privileged etenal/syzscope:ready2go
 docker attach syzscope
 ```
 
@@ -78,7 +78,7 @@ git pull
 
 ```bash
 docker pull etenal/syzscope:mini
-docker run -it -d --name syzscope --privileged syzscope:mini
+docker run -it -d --name syzscope --privileged etenal/syzscope:mini
 docker attach syzscope
 ```
 
