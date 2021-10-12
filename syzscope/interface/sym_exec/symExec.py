@@ -33,6 +33,7 @@ class SymExec(MemInstrument):
         self._timeout=None
         self._context_ready = False
         self._fallen_state = False
+        self._out_of_time = False
         self.cus_sections = sections
         self.impacts_collector = {}
         self._branches = None
@@ -40,6 +41,7 @@ class SymExec(MemInstrument):
         self.terminating_func = None
         self.start_time = None
         self.state_tracking = []
+        self.out_loop_states = []
         if logger == None:
             self.logger = logging
         else:
@@ -161,11 +163,9 @@ class SymExec(MemInstrument):
 
         self._init_state.inspect.b('mem_read', when=angr.BP_BEFORE, action=self.track_mem_read)
         self._init_state.inspect.b('mem_write', when=angr.BP_BEFORE, action=self.track_mem_write)
-        self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff85328139)
         self._init_state.inspect.b('symbolic_variable', when=angr.BP_BOTH, action=self.track_symbolic_variable)
         self._init_state.inspect.b('call', when=angr.BP_BEFORE, action=self.track_call)
         #self._init_state.inspect.b('instruction', when=angr.BP_BEFORE, action=self.track_instruction, instruction=0xffffffff81005672)
-        #self._init_state.inspect.b('constraints', when=angr.BP_BEFORE, action=self.track_contraint)
 
         self.terminating_func = terminating_func
         self.start_time = time.time()
@@ -229,6 +229,9 @@ class SymExec(MemInstrument):
                     self.logger.info("{} seconds left".format(self._timeout - (meta_time - self.start_time)))
                     meta_time = current_time + 60*60
                 #self.logger.info("time left: {}".format(current_time - start_time))
+                if not self._out_of_time and current_time - self.start_time >= self._timeout / 2:
+                    self.logger.info("We are out of time")
+                    self._out_of_time = True
                 if current_time - self.start_time > self._timeout:
                     self.logger.info("Timeout, stop symbolic execution")
                     self.stop_execution = True
@@ -534,7 +537,7 @@ class SymExec(MemInstrument):
                 self.logger.info(code)
             self.logger.error(e)
             self.kill_current_state = False
-            succ = self.proj.factory.successors()
+            succ = self.proj.factory.successors(state)
             self._fallen_state = True
             #raise ExecutionError
         if self._is_fallen_state(state):
@@ -575,9 +578,10 @@ class SymExec(MemInstrument):
             for i in range(0, len(successors)):
                 successors[i].globals['bb'] = 0
             self._update_fork_countor(state)
-            if self._is_loop_fork(state):
+            if self._is_loop_fork(state, successors):
                 self.logger.info("kill a loop forking at {}".format(hex(state.addr)))
                 dead_states.extend(successors)
+                dead_states.extend(self.out_loop_states)
         # kill states on particular branches
         if len(self._branches) > 0 and self._is_branch(state.addr) and len(successors) == 2:
             wrong_state = self._match_next_bb_on_path(state, successors)
@@ -594,7 +598,7 @@ class SymExec(MemInstrument):
 
         return succ
 
-    def _is_loop_fork(self, state):
+    def _is_loop_fork(self, state, successors):
         callstack = state.callstack
         stack = [state.addr]
         while True:
@@ -615,6 +619,13 @@ class SymExec(MemInstrument):
             return False
         if stack[2] not in self.fork_countor[stack[0]][stack[1]]:
             return False
+        if not self._out_of_time:
+            self.out_loop_states.extend(successors)
+            self._mark_out_loop_state(successors)
+            if self.fork_countor[stack[0]][stack[1]][stack[2]] >= StateManager.MAX_FORK_LOOP*2:
+                return True
+            else:
+                return False
         return self.fork_countor[stack[0]][stack[1]][stack[2]] >= StateManager.MAX_FORK_LOOP
     
     def _update_fork_countor(self, state):
@@ -675,12 +686,16 @@ class SymExec(MemInstrument):
                 return False
             return False
     
+    def _mark_out_loop_state(self, successors):
+        for each_state in successors:
+            self.update_states_globals(0, True, StateManager.G_LOOP, state=each_state)
+    
     def _after_gdb_resume(self, timeout):
         self.vm.gdb.waitfor("Continuing")
         self.vm.gdb.waitfor("pwndbg>", timeout=timeout)
 
     def _read_vul_mem(self):
-        self._after_gdb_resume(300)
+        self._after_gdb_resume(10*60)
         self.vm.gdb.waitfor("pwndbg>")
         rdi_val = self.vm.gdb.get_register('rdi')
         return rdi_val

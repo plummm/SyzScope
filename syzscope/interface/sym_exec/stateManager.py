@@ -10,8 +10,9 @@ class StateManager:
     G_SYM = 1
     G_RET = 2
     G_BB = 3
+    G_LOOP = 4
     MAX_BB_WITHOUT_SYM = 10000
-    MAX_FORK_LOOP = 7
+    MAX_FORK_LOOP = 10
     NO_ADDITIONAL_USE = 0
     ARBITRARY_VALUE_WRITE = 1 << 0
     FINITE_VALUE_WRITE = 1 << 1
@@ -175,32 +176,38 @@ class StateManager:
             self.state_logger[state] = self.state_counter
         else:
             self.state_logger[state] = index
-    
-    def update_states_globals(self, addr, val, key):
+
+    def update_states_globals(self, addr, val, key, state=None):
         n = 0
+        if state == None:
+            state = self._current_state
         if key == StateManager.G_MEM:
-            if 'mem' not in self._current_state.globals:
-                self._current_state.globals['mem'] = {}
-            self._current_state.globals['mem'][addr] = val
-            n = len(self._current_state.globals['mem'])
+            if 'mem' not in state.globals:
+                state.globals['mem'] = {}
+            state.globals['mem'][addr] = val
+            n = len(state.globals['mem'])
         if key == StateManager.G_SYM:
-            if 'sym' not in self._current_state.globals:
-                self._current_state.globals['sym'] = {}
-            self._current_state.globals['sym'][addr] = val
-            n = len(self._current_state.globals['sym'])
-            if 'mem' not in self._current_state.globals:
-                self._current_state.globals['mem'] = {}
-            self._current_state.globals['mem'][addr] = val
+            if 'sym' not in state.globals:
+                state.globals['sym'] = {}
+            state.globals['sym'][addr] = val
+            n = len(state.globals['sym'])
+            if 'mem' not in state.globals:
+                state.globals['mem'] = {}
+            state.globals['mem'][addr] = val
         if key == StateManager.G_RET:
-            if 'ret' not in self._current_state.globals:
-                self._current_state.globals['ret'] = []
-            self._current_state.globals['ret'].append(val)
-            n = len(self._current_state.globals['ret'])
+            if 'ret' not in state.globals:
+                state.globals['ret'] = []
+            state.globals['ret'].append(val)
+            n = len(state.globals['ret'])
         if key == StateManager.G_BB:
-            if 'bb' not in self._current_state.globals:
-                self._current_state.globals['bb'] = 0
-            self._current_state.globals['bb'] += 1
+            if 'bb' not in state.globals:
+                state.globals['bb'] = 0
+            state.globals['bb'] += 1
             n = 0
+        if key == StateManager.G_LOOP:
+            if 'out_loop' not in state.globals:
+                state.globals['out_loop'] = False
+            state.globals['out_loop'] = val
         return n
     
     def get_states_globals(self, addr, key):

@@ -239,6 +239,10 @@ class MemInstrument(StateManager):
                 successors[i].globals['ret'] = state.globals['ret'].copy()
             if 'bb' in state.globals:
                 successors[i].globals['bb'] = state.globals['bb'] + 1
+            if 'out_loop' in state.globals:
+                successors[i].globals['out_loop'] = state.globals['out_loop']
+                if successors[i].globals['out_loop'] and successors[i] not in self.out_loop_states:
+                    self.out_loop_states.append(successors[i])
     
     def _instrument_mem_read(self, state, bv_addr, size):
         addrs = []
