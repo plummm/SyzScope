@@ -54,7 +54,7 @@ Access our paper []
 
 ```bash
 docker pull etenal/syzscope:ready2go
-docker run -it -d --name syzscope -p 2222:22 --privileged syzscope:mini
+docker run -it -d --name syzscope -p 2222:22 --privileged syzscope:ready2go
 docker attach syzscope
 ```
 
@@ -98,7 +98,7 @@ python3 syzscope --install-requirements
 
 <a name="Manually_setup"></a>
 
-**Note**: SyzScope was only test on Ubuntu 18.04.
+**Note**: SyzScope was only tested on Ubuntu 18.04.
 
 
 
