@@ -96,7 +96,7 @@ python3 syzscope --install-requirements
 
 <a name="Manually_setup"></a>
 
-**Note**: SyzScope was only test on Ubuntu 18.04.
+**Note**: SyzScope was only tested on Ubuntu 18.04.
 
 
 
