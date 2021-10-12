@@ -16,6 +16,8 @@
 		4. [Using UTF-8 encoding](#Using_UTF_8_encoding)
 5. [Tutorial](#tutorial)
 
+## THIS VERSION CONDUCTED ALL EXPERIMENT FOR USENIX SECURITY 22. PURSUING UPDATE, FOLLOW MAIN REPO -> [SyzScope](https://github.com/plummm/SyzScope) ##
+
 ### What is SyzScope?
 
 <a name="What_is_SyzScope"></a>
