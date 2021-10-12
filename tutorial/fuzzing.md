@@ -2,7 +2,19 @@
 
 ------
 
-Under `work` folder
+We built our kernel fuzzer on top of syzkaller. It locates at `gopath` folder under each case folder. Please note that there are two `gopath` folder, one is under the main case folder and the other is under `poc` folder. The one in main case folder contains the modified syzkaller, it's used for kernel fuzzing. The one in `poc` folder is the version that trigger the original bug on syzbot, we use it to compile the particular version of `syz-execprog` and `syz-executor` for bug reproducing.
+
+```
+├── gopath					Folder. Contain modified syzkaller
+├── poc						Folder. For PoC testing
+    ...
+    └── gopath					Folder. Contain syzkaller
+```
+
+
+
+There are several important files under `work` folder
+
 ```
 ├── AbnormallyMemRead						File. Bug with memory read
 ├── AbnormallyMemWrite						File. Bug with memory write

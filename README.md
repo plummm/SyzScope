@@ -15,6 +15,7 @@
 		3. [Tweak pwntools](#Tweak_pwntools)
 		4. [Using UTF-8 encoding](#Using_UTF_8_encoding)
 5. [Tutorial](#tutorial)
+6. [Common Issues](#common_issues)
 
 ### What is SyzScope?
 
@@ -52,7 +53,7 @@ Access our paper []
 
 ```bash
 docker pull etenal/syzscope:ready2go
-docker run -it -d --name syzscope -p 2222:22 --privileged syzscope:mini
+docker run -it -d --name syzscope -p 2222:22 --privileged syzscope:ready2go
 docker attach syzscope
 ```
 
@@ -96,7 +97,7 @@ python3 syzscope --install-requirements
 
 <a name="Manually_setup"></a>
 
-**Note**: SyzScope was only test on Ubuntu 18.04.
+**Note**: SyzScope was only tested on Ubuntu 18.04.
 
 
 
@@ -172,7 +173,11 @@ export LC_ALL=en_US.UTF-8
 
 <a name="tutorial"></a>
 
-[Folder Structure](tutorial/folder_structure.md)
+[Getting started](tutorial/Getting_started.md)
+
+[Workzone Structure](tutorial/workzone_structure.md)
+
+[Inpsect results](tutorial/inspect_results.md)
 
 [PoC Reproduce](tutorial/poc_repro.md)
 
@@ -187,4 +192,14 @@ export LC_ALL=en_US.UTF-8
 #### Example
 
 [WARNING: held lock freed! (CVE-2018-25015)](tutorial/examples/WARNING_held_lock_freed.md)
+
+
+
+------
+
+### Common Issues
+
+<a name="common_issues"></a>
+
+Check out [common issues](tutorial/common_issues.md)
 
