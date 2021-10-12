@@ -15,6 +15,7 @@
 		3. [Tweak pwntools](#Tweak_pwntools)
 		4. [Using UTF-8 encoding](#Using_UTF_8_encoding)
 5. [Tutorial](#tutorial)
+6. [Common Issues](#common_issues)
 
 ## THIS VERSION CONDUCTED ALL EXPERIMENT FOR USENIX SECURITY 22. PURSUING UPDATE, FOLLOW MAIN REPO -> [SyzScope](https://github.com/plummm/SyzScope) ##
 
@@ -193,4 +194,14 @@ export LC_ALL=en_US.UTF-8
 #### Example
 
 [WARNING: held lock freed! (CVE-2018-25015)](tutorial/examples/WARNING_held_lock_freed.md)
+
+
+
+------
+
+### Common Issues
+
+<a name="common_issues"></a>
+
+Check out [common issues](tutorial/common_issues.md)
 

@@ -12,7 +12,18 @@ Static taint analysis preserves in `static-xxx` folder.
    		└── TerminatingFunc			File. Termination func for sym exec
 ```
 
-`CallTrace` is essential when doing static taint analysis. It replies on call trace to determine the analysis order. We will locate the vulnerable object by its `size`, `offset`, and `debug info`. The vulnerable object usually locates on the top function on the call trace. When the analysis continue, it returns from the top function and back to its caller. The analysis will end if neither the arguments nor any pointer in current function do not have tainted data, and pick this function as Termination function for symbolic execution.
+`CallTrace` is essential when doing static taint analysis. It relies on call trace to determine the analysis order.  The following block shows a sample `Calltrace` for static analysis, the order top to bottom is the order from callee to caller. Each line includes 
+
+`function_name   source_code_line   func_start_line    func_end_line`
+
+```
+task_work_run kernel/task_work.c:144 108 146
+exit_to_user_mode_prepare arch/x86/include/asm/current.h:15 13 16
+syscall_exit_to_user_mode_prepare kernel/entry/common.c:216 213 234
+syscall_exit_to_user_mode kernel/entry/common.c:239 213 244
+```
+
+We will locate the vulnerable object by its `size`, `offset`, and `debug info`. The vulnerable object usually locates on the top function on the call trace. When the analysis continue, it returns from the top function and back to its caller. The analysis will end if neither the arguments nor any pointer in current function do not have tainted data, and pick this function as Termination function for symbolic execution.
 
 Each path title contains impact `FuncPtrDef`, number of top-level basic block `40`, and the order of discovery `52`. Let's jump to the details.
 
