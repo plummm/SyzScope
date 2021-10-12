@@ -1,19 +1,19 @@
 # Common issues
 
-[Fail to compile kernel](#fail_to_compile_kernel)
+1. [Fail to compile kernel](#fail_to_compile_kernel)
 
 	1. [No pahole or pahole version is too old](#pahole_issues)
 
-[Fail to run kernel fuzzing](#fail_to_run_kernel_fuzzing)
+2. [Fail to run kernel fuzzing](#fail_to_run_kernel_fuzzing)
 
-​	1. [Fail to parse testcase](#fail_parse_testcase)
+	1. [Fail to parse testcase](#fail_parse_testcase)
 
-[Fail to run static taint analysis](#fail_to_run_static_analysis)
+3. [Fail to run static taint analysis](#fail_to_run_static_analysis)
 
 	1. [Error occur at saveCallTrace2File](#error_save_calltrace)
  	2. [Error occur during taint analysis](#error_static_analysis)
 
-[Fail to run symbolic execution](#fail_to_run_symbolic_execution)
+4. [Fail to run symbolic execution](#fail_to_run_symbolic_execution)
 
 	1. [Cannot_trigger_vulnerability](#cannot_trigger_bug)
  	2. [Error occur at upload exp](#error_upload_exp)
@@ -53,7 +53,7 @@
 
 <a name="fail_parse_testcase"></a>
 
-	1. `Fail to parse testcase`
+1. `Fail to parse testcase`
 
 When the kernel fuzzer exitcode is 3, it means some syscall template does not exist in current syzkaller. Since we build our own kernel fuzzer on top of a particular version of syzkaller, the porting process is hard to be automated. Therefore we use one particular version with all our modification to do all kernel fuzzing. 
 
@@ -67,7 +67,7 @@ But not all cases can be successfully ported, you can check the fuzzing log in m
 
 <a name="error_save_calltrace"></a>
 
- 	1. `Error occur at saveCallTrace2File`
+ 1. `Error occur at saveCallTrace2File`
 
 `CallTrace` is an necessary component in static taint analysis. We need the call trace to simulate the control flow. In order to determine the static taint analysis scope, debug information is provided during the analysis as well as the function start line and end line.
 
@@ -83,7 +83,7 @@ rm work/completed/xxx/.stamp/FINISH_STATIC_ANALYSIS && python3 syzscope -i xxx -
 
 <a name="error_static_analysis"></a>
 
-​	2. `Error occur during taint analysis`
+2. `Error occur during taint analysis`
 
 Most errors happen during static analysis are due to poor implementation and corner case in Linux kernel. You can check out the log of static analysis in the main case log file (`log` under the case folder). If you indeed see `Stack dump:` in the log, it means static taint analysis was interrupted by some internal bug, you might want to skip static taint analysis for this case.
 
@@ -109,7 +109,7 @@ python3 syzscope -i xxx -SE --force ...
 
 <a name="error_upload_exp"></a>
 
-​	2. `Error occur at upload exp`
+2. `Error occur at upload exp`
 
 Uploading exp is essential for bug reproducing. This step is powered by `scripts/upload-exp.sh`. 
 
