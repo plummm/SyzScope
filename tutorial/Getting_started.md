@@ -17,7 +17,7 @@
 ### Run one case
 
 ```bash
-python syzscope -i f99edaeec58ad40380ed5813d89e205861be2896 ...
+python3 syzscope -i f99edaeec58ad40380ed5813d89e205861be2896 ...
 ```
 
 
@@ -27,7 +27,7 @@ python syzscope -i f99edaeec58ad40380ed5813d89e205861be2896 ...
 ### Run multiple cases
 
 ```bash
-python syzscope -i dataset ...
+python3 syzscope -i dataset ...
 ```
 
 
@@ -71,7 +71,7 @@ python3 syzscope -k="WARNING" -k="INFO:" --ignore-batch ignore_UAF_OOB ...
 Every time SyzScope runs new cases, it store the case info into `cases.json`. By using `--use-cache`, we can import the case info directly from cache without crawling syzbot again.
 
 ```bash
-python syzscope --use-cache ...
+python3 syzscope --use-cache ...
 ```
 
 
@@ -83,7 +83,7 @@ python syzscope --use-cache ...
 Fuzzing used to capture the very first bug impact, but SyzScope allows to capture multiple impacts without panic the kernel. To find out if any high-risk impacts are right behind a low-risk impact, we can simply reproduce a bug by using `--reproduce` or `-RP`.
 
 ```bash
-python syzscope -i f99edaeec58ad40380ed5813d89e205861be2896 -RP
+python3 syzscope -i f99edaeec58ad40380ed5813d89e205861be2896 -RP
 ```
 
 If reproducing a bug find at least one high-risk impact behind the low-risk impact, SyzScope will write the bug hash into confirmed impact file (`ConfirmedAbnormallyMemWrite`, `ConfirmedDoubleFree`)
@@ -135,7 +135,7 @@ Due to some internal bugs in Z3 solver, symbolic execution may be interrupted an
 SyzScope can terminate old frozen QEMU at once we found it's unused by providing `--be-bully`.
 
 ```bash
-python3 syzscope -k="WARNING" -k="INFO:" -RP -KF --timeout-kernel-fuzzing 3 -SE --timeout-symbolic-execution 14400 --guided --be-bully
+python3 syzscope -k="WARNING" -k="INFO:" -RP -KF --timeout-kernel-fuzzing 3 -SE --timeout-symbolic-execution 14400 --be-bully
 ```
 
 
