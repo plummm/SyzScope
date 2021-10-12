@@ -52,7 +52,7 @@ Access our paper []
 
 ```bash
 docker pull etenal/syzscope:ready2go
-docker run -it -d --name syzscope -p 2222:22 --privileged syzscope:mini
+docker run -it -d --name syzscope -p 2222:22 --privileged syzscope:ready2go
 docker attach syzscope
 ```
 
