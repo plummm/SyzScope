@@ -96,8 +96,6 @@ def args_parse():
                         'default timeout is 3 hour')
     parser.add_argument('--timeout-dynamic-validation', nargs='?',
                         help='The timeout(by second) of static analysis and symbolic execution\n'
-                            'If you specify the timeout of static analysis or symbolic execution individually\n'
-                            'the the rest time is for the other one\n'
                             'If you specify the timeout of both static analysis or symbolic execution'
                             'This arugment will be ignored'
                             'Default timeout is 60 mins')

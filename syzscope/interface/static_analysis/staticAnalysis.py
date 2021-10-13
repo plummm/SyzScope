@@ -239,6 +239,9 @@ class StaticAnalysis:
         last_inline = ''
         flag_stop = False
         err = False
+        path = os.path.join(self.work_path, "CallTrace")
+        if os.path.exists(path):
+            return err
         for each in trace:
             if utilities.extract_debug_info(each) == vul_site and not flag_record:
                 flag_record ^= 1
@@ -274,7 +277,6 @@ class StaticAnalysis:
                 # Sometimes an inline function will appear at the next line of calltrace as a non-inlined function
                 if not utilities.isInline(each) and last_inline == func:
                     text.pop()
-        path = os.path.join(self.work_path, "CallTrace")
         f = open(path, "w")
         f.writelines("\n".join(text))
         f.truncate()
