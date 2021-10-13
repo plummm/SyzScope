@@ -33,7 +33,7 @@ A major problem of current fuzzing platforms is that they neglect a critical fun
 
 <a name="access_the_paper"></a>
 
-Access our paper []
+Access our paper [here](tutorial/resource/SyzScope-final.pdf)
 
 ------
 
