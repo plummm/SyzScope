@@ -29,7 +29,7 @@ After fuzzing is over, we apply corresponding patches on target kernel, and repr
 The ones that fail to trigger after patches applied will considered as confirmed new contexts. Then we write the case hash into `ConfirmedAbnormallyMemRead`, `ConfirmedAbnormallyMemWrite`, and `ConfirmedDoubleFree`.
 
 ```
-├── output							Folder. Confirmed crashes
+├── output						Folder. Confirmed crashes
     ├── xxx						Folder. Crash hash
 	├── description					File. Crash description
 	├── repro.log					File. Crash raw log
