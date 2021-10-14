@@ -17,10 +17,13 @@ Static taint analysis preserves in `static-xxx` folder.
 `function_name   source_code_line   func_start_line    func_end_line`
 
 ```
-task_work_run kernel/task_work.c:144 108 146
-exit_to_user_mode_prepare arch/x86/include/asm/current.h:15 13 16
-syscall_exit_to_user_mode_prepare kernel/entry/common.c:216 213 234
-syscall_exit_to_user_mode kernel/entry/common.c:239 213 244
+__vb2_perform_fileio drivers/media/common/videobuf2/videobuf2-core.c:2391 2298 2552
+vb2_read drivers/media/common/videobuf2/videobuf2-core.c:2502 2440 2552
+vb2_fop_read drivers/media/common/videobuf2/videobuf2-v4l2.c:898 898 901
+v4l2_read drivers/media/v4l2-core/v4l2-dev.c:317 308 323
+__vfs_read fs/read_write.c:416 412 421
+vfs_read fs/read_write.c:452 437 461
+ksys_read fs/read_write.c:578 571 584
 ```
 
 We will locate the vulnerable object by its `size`, `offset`, and `debug info`. The vulnerable object usually locates on the top function on the call trace. When the analysis continue, it returns from the top function and back to its caller. The analysis will end if neither the arguments nor any pointer in current function do not have tainted data, and pick this function as Termination function for symbolic execution.
