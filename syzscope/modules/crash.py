@@ -407,6 +407,8 @@ class CrashChecker:
                         if self.store_read and utilities.regx_match(read_regx, line):
                             read_flag = 1
                         if record_flag or kasan_flag:
+                            if crash == []:
+                                crash.append(boundary_regx)
                             crash.append(line)
                     out_begin = out_end
         except Exception as e:
