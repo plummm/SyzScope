@@ -35,6 +35,8 @@ A major problem of current fuzzing platforms is that they neglect a critical fun
 
 Access our paper [here](tutorial/resource/SyzScope-final.pdf)
 
+We noticed that some URL in our paper seemed to be broken due to the finishing slash([Issue](https://github.com/plummm/SyzScope/issues/2)). Removing the finishing slash fixs this problem.
+
 ------
 
 ### Setup
