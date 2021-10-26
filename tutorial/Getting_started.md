@@ -29,7 +29,7 @@ python3 syzscope -i f99edaeec58ad40380ed5813d89e205861be2896 ...
 ```bash
 python3 syzscope -i dataset ...
 ```
-
+`dataset` contains multiple lines of case hash.
 
 
 <a name="Filter_cases_by_string_match"></a>
