@@ -516,7 +516,7 @@ class CrashChecker:
             # If read from repro.command, text[0] was already the command
             return text[0]
         enabled = "-enable="
-        normal_pm = {"arch":"amd64", "threaded":"false", "collide":"false", "sandbox":"none", "fault_call":"-1", "fault_nth":"0"}
+        normal_pm = {"arch":"amd64", "threaded":"false", "collide":"false", "sandbox":"none"}
         for line in text:
             if line.find('{') != -1 and line.find('}') != -1:
                 pm = {}
