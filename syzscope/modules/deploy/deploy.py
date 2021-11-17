@@ -129,14 +129,14 @@ class Deployer(Workers):
                 if 'patch' in case:
                     limitedMutation = False
                 exitcode = self.run_syzkaller(hash_val, limitedMutation)
-                self.remove_gopath(os.path.join(self.current_case_path, "poc"))
+                #self.remove_gopath(os.path.join(self.current_case_path, "poc"))
                 is_error = self.save_case(hash_val, exitcode, case, limitedMutation, impact_without_mutating, title=title)
             else:
                 self.logger.info("{} has finished fuzzing".format(hash_val[:7]))
         elif self.reproduce_ori_bug:
             if not self.reproduced_ori_poc(hash_val, 'incomplete'):
                 impact_without_mutating, title = self.do_reproducing_ori_poc(case, hash_val, i386)
-                self.remove_gopath(os.path.join(self.current_case_path, "poc"))
+                #self.remove_gopath(os.path.join(self.current_case_path, "poc"))
                 is_error = self.save_case(hash_val, 0, case, False, impact_without_mutating, title=title)
 
         if is_error:

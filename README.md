@@ -35,6 +35,20 @@ A major problem of current fuzzing platforms is that they neglect a critical fun
 
 Access our paper [here](tutorial/resource/SyzScope-final.pdf)
 
+We noticed that some URL in our paper seemed to be broken due to the finishing slash([Issue](https://github.com/plummm/SyzScope/issues/2)). Removing the finishing slash fixs this problem.
+
+```
+@inproceedings {277242,
+title = {{SyzScope}: Revealing {High-Risk} Security Impacts of {Fuzzer-Exposed} Bugs in Linux kernel},
+booktitle = {31st USENIX Security Symposium (USENIX Security 22)},
+year = {2022},
+address = {Boston, MA},
+url = {https://www.usenix.org/conference/usenixsecurity22/presentation/zou},
+publisher = {USENIX Association},
+month = aug,
+}
+```
+
 ------
 
 ### Setup
