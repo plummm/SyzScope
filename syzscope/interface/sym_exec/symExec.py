@@ -40,6 +40,7 @@ class SymExec(MemInstrument):
         self.target_site = None
         self.terminating_func = None
         self.start_time = None
+        self.rel_type = -1
         self.state_tracking = []
         self.out_loop_states = []
         if logger == None:
@@ -131,9 +132,7 @@ class SymExec(MemInstrument):
                 raise VulnerabilityNotTrigger   
             self.vm.back_to_kasan_ret()
             self._after_gdb_resume(300)
-            self._read_offset_and_size()
-            self.vul_mem_start = vul_mem - self.vul_mem_offset
-            self.vul_mem_end = self.vul_mem_start + self.vul_mem_size
+            self._find_vul_mem_bound(vul_mem)
             self.logger.info("Vuln mem: {} to {}".format(hex(self.vul_mem_start), hex(self.vul_mem_end)))
             self._context_ready = True
         return self.symbolic_execute(path, terminating_func, dfs=dfs, raw_tracing=raw_tracing)
@@ -700,8 +699,47 @@ class SymExec(MemInstrument):
         rdi_val = self.vm.gdb.get_register('rdi')
         return rdi_val
     
-    def _read_offset_and_size(self):
-        self.vul_mem_offset, self.vul_mem_size = utilities.extract_vul_obj_offset_and_size(self.vm.output)
+    def _find_vul_mem_bound(self, vul_mem):
+        self.vul_mem_offset, self.vul_mem_size, self.rel_type = utilities.extract_vul_obj_offset_and_size(self.vm.output)
         if self.vul_mem_offset == None or self.vul_mem_size == None:
             self.logger.error("vulnerable oject offset or size is incorrect: {} {}".format(self.vul_mem_offset, self.vul_mem_size))
-            raise VulnerabilityNotTrigger   
+            self.vul_mem_start = self._find_start_in_shadow_mem(vul_mem)
+            self.vul_mem_end = self._find_end_in_shadow_mem(vul_mem)
+            return 
+        if self.rel_type == 0:
+            self.vul_mem_start = vul_mem - self.vul_mem_offset
+            self.vul_mem_end = self._find_end_in_shadow_mem(self.vul_mem_start + self.vul_mem_size)
+        elif self.rel_type == 1:
+            self.vul_mem_start = vul_mem - self.vul_mem_offset
+            self.vul_mem_end = self._find_end_in_shadow_mem(self.vul_mem_start)
+        elif self.rel_type == 2:
+            self.vul_mem_start = vul_mem + self.vul_mem_offset - self.vul_mem_size
+            self.vul_mem_end = self.vul_mem_start + self.vul_mem_size
+        return
+    
+    def _find_start_in_shadow_mem(self, start):
+        shadow_mem = utilities.kasan_mem_to_shadow(start)
+        page = 4096
+        for i in range(0, page): 
+            t = self.vm.read_mem(shadow_mem-i, 1)
+            if len(t) == 1:
+                if t[0] == 0xfb or t[0] == 0xfc or t[0] == 0xfe or t[0] == 0xff:
+                    start -= 8
+                if t[0] >= 0 and t[0] <= 7:
+                    start -= (8 - t[0])
+                    break
+        return start
+
+    def _find_end_in_shadow_mem(self, start):
+        end = start
+        shadow_mem = utilities.kasan_mem_to_shadow(start)
+        page = 4096
+        for i in range(0, page): 
+            t = self.vm.read_mem(shadow_mem+i, 1)
+            if len(t) == 1:
+                if t[0] == 0xfb or t[0] == 0xfc or t[0] == 0xfe or t[0] == 0xff:
+                    end += 8
+                if t[0] >= 0 and t[0] <= 7:
+                    break
+        return end
+

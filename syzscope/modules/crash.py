@@ -516,7 +516,7 @@ class CrashChecker:
             # If read from repro.command, text[0] was already the command
             return text[0]
         enabled = "-enable="
-        normal_pm = {"arch":"amd64", "threaded":"false", "collide":"false", "sandbox":"none"}
+        normal_pm = {"arch":"amd64", "threaded":"false", "collide":"false", "sandbox":"none", "fault_call":"-1"}
         for line in text:
             if line.find('{') != -1 and line.find('}') != -1:
                 pm = {}
@@ -542,6 +542,8 @@ class CrashChecker:
                     command += "-repeat=" + "0 "
                 if "slowdown" in pm and pm["slowdown"] != "":
                     command += "-slowdown=" + "1 "
+                if "fault_nth" in pm and pm["fault_nth"] != "":
+                    command += "-fault_nth=" + str(pm["fault_nth"]) + " "
                 #It makes no sense that limiting the features of syz-execrpog, just enable them all
                 
                 if support_enable_features != 2:

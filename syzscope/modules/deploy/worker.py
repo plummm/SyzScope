@@ -418,7 +418,7 @@ class Workers(Case):
                         continue
                     f = open(report, 'r')
                     texts = f.readlines()
-                    offset, size = utilities.extract_vul_obj_offset_and_size(texts)
+                    offset, size, _ = utilities.extract_vul_obj_offset_and_size(texts)
                     prog = os.path.join(case_base, "repro.prog")
                     command = os.path.join(case_base, "repro.command")
                     if not os.path.isfile(command):

@@ -244,7 +244,7 @@ class Crawler:
                             self.logger.debug("Log URL: {}".format(report))
                             r = request_get(report)
                             report_list = r.text.split('\n')
-                            offset, size = extract_vul_obj_offset_and_size(report_list)
+                            offset, size, _ = extract_vul_obj_offset_and_size(report_list)
                             try:
                                 syz_repro = syzbot_host_url + repros[2].next.attrs['href']
                                 self.logger.debug("Testcase URL: {}".format(syz_repro))

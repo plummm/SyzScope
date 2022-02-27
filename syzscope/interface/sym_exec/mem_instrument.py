@@ -99,8 +99,8 @@ class MemInstrument(StateManager):
                     #self.dump_state(state)
         for i in range(0, size):
             self.update_states_globals(addr+i, 0, StateManager.G_MEM)
-        if self.is_symbolic(bv_expr):
-            self.update_states_globals(addr, size, StateManager.G_SYM)
+            if self.is_symbolic(bv_expr):
+                self.update_states_globals(addr+i, 1, StateManager.G_SYM)
     
     def track_call(self, state):
         if state.regs.rip.symbolic and state.solver.unique(state.regs.rip) and state.scratch.ins_addr not in self.exploitable_state:
@@ -210,9 +210,9 @@ class MemInstrument(StateManager):
             if name == None:
                 name = "s_{}".format(hex(addr))
             sym = state.solver.BVS(name, size * 8, inspect=False)
-            self.update_states_globals(addr, size, StateManager.G_SYM)
             for i in range(0, size):
                 self.update_states_globals(addr+i, 0, StateManager.G_MEM)
+                self.update_states_globals(addr+i, 1, StateManager.G_SYM)
             state.memory.store(addr, sym, inspect=False, endness=archinfo.Endness.LE)
         else:
             index = 0
@@ -223,9 +223,9 @@ class MemInstrument(StateManager):
                 else:
                     name = "{}_{}".format(name, math.ceil(index / 8))
                 sym = state.solver.BVS(name, alignment * 8, inspect=False)
-                self.update_states_globals(addr+index, alignment, StateManager.G_SYM)
                 for i in range(0, alignment):
                     self.update_states_globals(addr+index+i, 0, StateManager.G_MEM)
+                    self.update_states_globals(addr+index+i, 1, StateManager.G_SYM)
                 state.memory.store(addr+index, sym, inspect=False, endness=archinfo.Endness.LE)
                 index += 8
     
@@ -437,8 +437,7 @@ class MemCopy(HookInst):
                         base_size = each_slab
                     elif base_size != 1024*2:
                         break
-                if base_size == 1024*2:
-                    self.mem.make_symbolic(self.state, des, base_size)
+                self.mem.make_symbolic(self.state, des, base_size)
                 #self.mem.purge_current_state()
             else:
                 self.mem.make_symbolic(self.state, des, size)
@@ -459,14 +458,14 @@ class MemCopy(HookInst):
                     sym = self.state.memory.load(src+index, sym_size, inspect=False, endness=archinfo.Endness.LE)
                     for i in range(0, sym_size):
                         self.mem.update_states_globals(des+index+i, 0, StateManager.G_MEM)
-                    self.mem.update_states_globals(des+index, sym_size, StateManager.G_SYM)
-                    self.state.memory.store(des, sym, inspect=False, endness=archinfo.Endness.LE)
+                        self.mem.update_states_globals(des+index+i, i, StateManager.G_SYM)
+                    self.state.memory.store(des+index, sym, inspect=False, endness=archinfo.Endness.LE)
                     index += sym_size
                 else:
                     val = self.state.memory.load(src+index, alignment_size, endness=archinfo.Endness.LE)
                     if self.mem.is_symbolic(val):
                         print("Something wrong")
-                    self.state.memory.store(des, val, endness=archinfo.Endness.LE)
+                    self.state.memory.store(des+index, val, endness=archinfo.Endness.LE)
                     index += alignment_size
 
 class KasanAccess(HookInst):
