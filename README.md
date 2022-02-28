@@ -27,7 +27,7 @@ SyzScope is a system that can automatically uncover *high-risk* impacts given a 
 
 <a name="Why_did_we_develop_SyzScope"></a>
 
-A major problem of current fuzzing platforms is that they neglect a critical function that should have been built-in: ***evaluation of a bug's security impact***. It is well-known that the lack of understanding of security impact can lead to delayed bug fixes as well as patch propagation. Therefore, we developed SyzScope to reveal the potential high-risk bugs among seemingly low-risk bugs on syzbot.
+A major problem of current fuzzing platforms is that they neglect a critical function that should have been built-in: ***evaluation of a bug's security impact***. It is well-known that the lack of understanding of security impact can lead to delayed bug fixes as well as patch propagation. Therefore, we developed SyzScope to reveal the potential high-risk bugs among seemingly low-risk bugs from [syzbot](https://syzkaller.appspot.com/upstream).
 
 ### More details?
 
@@ -142,7 +142,7 @@ python3 syzscope --install-requirements
 
 <a name="Tweak_pwntools"></a>
 
-`Pwntools` print unnecessary debug information when starting or stoping new process (e.g., gdb), or opening new connection (e.g., connect to QEMU monitor). To disable such info, we add one line in its source code.
+`Pwntools` print unnecessary debug information when starting or stoping new process (e.g., gdb), or opening new connection (e.g., connect to QEMU monitor). To disable such info, we insert one line of new code.
 
 ```bash
 vim venv/lib/<YOUR_PYTHON>/site-packages/pwnlib/log.py
