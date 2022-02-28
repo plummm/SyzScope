@@ -4,7 +4,7 @@
 
 1. [What is SyzScope?](#What_is_SyzScope)
 2. [Why did we develop SyzScope?](#Why_did_we_develop_SyzScope)
-3. [Access the paper](#access_the_paper)
+3. [Access our paper](#access_the_paper)
 4. [Setup](#Setup)
 	1. [Dokcer - Recommend](#Dokcer)
 		1. [image - ready2go](#Dokcer_ready2go)
