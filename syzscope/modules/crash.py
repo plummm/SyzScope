@@ -544,6 +544,8 @@ class CrashChecker:
                     command += "-slowdown=" + "1 "
                 if "fault_nth" in pm and pm["fault_nth"] != "":
                     command += "-fault_nth=" + str(pm["fault_nth"]) + " "
+                if "fault_call" in pm and pm["fault_call"] != "":
+                    command += "-fault_call=" + str(pm["fault_call"]) + " "
                 #It makes no sense that limiting the features of syz-execrpog, just enable them all
                 
                 if support_enable_features != 2:
