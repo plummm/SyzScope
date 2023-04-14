@@ -192,7 +192,13 @@ class Crawler:
                                 # patch only works on fixed cases
                                 pass
                             self.logger.debug("[{}] Find a suitable case: {}".format(count, title.text))
-                            href = title.next.attrs['href']
+                            for _ in range(0, 3):
+                                try:
+                                    ele = title.next
+                                    href = ele.attrs['href']
+                                    break
+                                except AttributeError:
+                                    title = title.next
                             hash_val = href[8:]
                             self.logger.debug("[{}] Fetch {}".format(count, hash_val))
                             crash['Hash'] = hash_val
@@ -213,7 +219,7 @@ class Crawler:
             return []
         count = 0
         for table in tables:
-            if table.caption.text.find('Crash') != -1:
+            if table.text.find('Crash') != -1:
                 for case in table.tbody.contents:
                     if type(case) == element.Tag:
                         kernel = case.find('td', {"class": "kernel"})
