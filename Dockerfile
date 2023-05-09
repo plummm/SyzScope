@@ -1,0 +1,37 @@
+### Usage:
+###   docker build -t syzscope --build-arg UID=$(id -u) --build-arg GID=$(id -g) .
+###   docker run --rm --privileged -ti -p 2222:22 syzscope 
+FROM ubuntu:20.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+# Set TZ and install tzdata early so 'requirements.sh' will not wait forever to prompt.
+ENV TZ=Etc/UTC
+
+RUN apt-get update -y && apt-get upgrade -y
+RUN apt-get install -y git \
+    python3 python3-pip \
+    python3-venv sudo \
+    tzdata
+
+ARG UNAME=user
+ARG UID=1000
+ARG GID=1000
+RUN set -x && groupadd -g ${GID} -o ${UNAME} && \
+    useradd -u ${UID} -g ${GID} -G sudo -ms /bin/bash ${UNAME} && \
+    echo "${UNAME} ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+USER ${UNAME}
+WORKDIR /home/${UNAME}
+RUN cd /home/${UNAME} && git clone https://github.com/plummm/SyzScope.git
+# Install SyzScope python dependencies
+RUN cd /home/${UNAME}/SyzScope/ && pip3 install -r requirements.txt
+# Install SyzScope system dependencies
+#RUN cd /home/${UNAME}/SyzScope/ && python3 syzscope --install-requirements
+RUN cd /home/${UNAME}/SyzScope/syzscope/scripts/ && bash -x requirements.sh
+
+# Modify shell encoding for running 'pwndbg'
+RUN echo "export LANG=en_US.UTF-8" >> /home/${UNAME}/.bashrc
+RUN echo "export LC_ALL=en_US.UTF-8" >> /home/${UNAME}/.bashrc
+
+WORKDIR /home/${UNAME}/SyzScope
+CMD ["bash"]
