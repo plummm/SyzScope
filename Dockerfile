@@ -39,9 +39,10 @@ WORKDIR /home/${UNAME}
 RUN cd /home/${UNAME} && git clone https://github.com/plummm/SyzScope.git
 # Install SyzScope python dependencies
 RUN cd /home/${UNAME}/SyzScope/ && pip3 install -r requirements.txt
-# Install SyzScope system dependencies
+
+# FIXME: Install SyzScope system dependencies
 #RUN cd /home/${UNAME}/SyzScope/ && python3 syzscope --install-requirements
-RUN cd /home/${UNAME}/SyzScope/syzscope/scripts/ && bash -x requirements.sh
+#RUN cd /home/${UNAME}/SyzScope/syzscope/scripts/ && bash -x requirements.sh
 
 WORKDIR /home/${UNAME}/SyzScope
 CMD ["bash"]
