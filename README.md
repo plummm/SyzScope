@@ -105,7 +105,7 @@ git pull
 python3 syzscope --install-requirements
 ```
 
-##### Image - syzscope(14 GB)
+##### Image - syzscope(16.5 GB)
 
 <a name="Docker_syzscope"></a>
 
