@@ -3,6 +3,18 @@
 #
 # Usage ./requirements.sh
 
+# Expected pwd is ~/SyzScope/
+TOOLS_PATH="$(pwd)/tools"
+SYZSCOPE_PATH="$(pwd)/syzscope"
+if [ ! -d "$TOOLS_PATH/.stamp" ]; then
+  mkdir -p $TOOLS_PATH/.stamp
+fi
+
+if [ ! -d "${TOOLS_PATH}" ]; then
+  echo "${TOOLS_PATH} can not be accessed!"
+  exit 1
+fi
+
 if [ ! -f "$(pwd)/tools/.stamp/ENV_SETUP" ]; then
   sudo apt-get update || exit 1
   sudo apt-get -y install gdb curl git wget qemu-system-x86 debootstrap flex bison libssl-dev libelf-dev locales cmake libxml2-dev libz3-dev bc libncurses5 gcc-multilib g++-multilib dwarves
@@ -16,11 +28,6 @@ if [ ! -d "work/incomplete" ]; then
   mkdir -p work/incomplete
 fi
 
-TOOLS_PATH="$(pwd)/tools"
-SYZSCOPE_PATH="$(pwd)/syzscope"
-if [ ! -d "$TOOLS_PATH/.stamp" ]; then
-  mkdir -p $TOOLS_PATH/.stamp
-fi
 # Check for image
 echo "[+] Building image"
 cd $TOOLS_PATH
