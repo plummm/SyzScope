@@ -9,6 +9,7 @@
 	1. [Dokcer - Recommend](#Dokcer)
 		1. [image - ready2go](#Dokcer_ready2go)
 		2. [image - mini](#Dokcer_mini)
+		3. [image - syzscope](#Docker_syzscope)
 	2. [Manually setup](#Manually_setup)
 		1. [Let's warm up](#warm_up)
 		2. [Install requirements](#install_requirements)
@@ -104,7 +105,17 @@ git pull
 python3 syzscope --install-requirements
 ```
 
+##### Image - syzscope(14 GB)
 
+<a name="Docker_syzscope"></a>
+
+The ready2go docker image contains pre-built syzkaller binaries and a pre-built Linux kernel for analyzing CVE-2018-25015.
+
+As an alternative, the syzscope docker image can be built using the following `docker build` command.
+
+`docker build -t syzscope --build-arg UID=$(id -u) --build-arg GID=$(id -g) .`
+
+This container image has all python and system dependencies for running `syzscope`; however, syzkaller and the target Linux kernel will be built at run-time.
 
 #### Manually setup
 
