@@ -6,9 +6,10 @@
 2. [Why did we develop SyzScope?](#Why_did_we_develop_SyzScope)
 3. [Access our paper](#access_the_paper)
 4. [Setup](#Setup)
-	1. [Dokcer - Recommend](#Dokcer)
-		1. [image - ready2go](#Dokcer_ready2go)
-		2. [image - mini](#Dokcer_mini)
+	1. [Docker - Recommend](#Docker)
+		1. [image - ready2go](#Docker_ready2go)
+		2. [image - mini](#Docker_mini)
+		3. [image - syzscope](#Docker_syzscope)
 	2. [Manually setup](#Manually_setup)
 		1. [Let's warm up](#warm_up)
 		2. [Install requirements](#install_requirements)
@@ -56,13 +57,13 @@ month = aug,
 
 
 
-#### Dokcer - Recommend 
+#### Docker - Recommend 
 
-<a name="Dokcer"></a>
+<a name="Docker"></a>
 
 ##### Image - ready2go(18.39 Gb)
 
-<a name="Dokcer_ready2go"></a>
+<a name="Docker_ready2go"></a>
 
 ```bash
 docker pull etenal/syzscope:ready2go
@@ -85,7 +86,7 @@ git pull
 
 ##### Image - mini(400 MB)
 
-<a name="Dokcer_mini"></a>
+<a name="Docker_mini"></a>
 
 ```bash
 docker pull etenal/syzscope:mini
@@ -104,7 +105,17 @@ git pull
 python3 syzscope --install-requirements
 ```
 
+##### Image - syzscope(16.5 GB)
 
+<a name="Docker_syzscope"></a>
+
+The ready2go docker image contains pre-built syzkaller binaries and a pre-built Linux kernel for analyzing CVE-2018-25015.
+
+As an alternative, the syzscope docker image can be built using the following `docker build` command.
+
+`docker build -t syzscope --build-arg UID=$(id -u) --build-arg GID=$(id -g) .`
+
+This container image has all python and system dependencies for running `syzscope`; however, syzkaller and the target Linux kernel will be built at run-time.
 
 #### Manually setup
 

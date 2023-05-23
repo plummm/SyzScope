@@ -37,12 +37,12 @@ RUN echo "export LC_ALL=en_US.UTF-8" >> /home/${UNAME}/.bashrc
 
 WORKDIR /home/${UNAME}
 RUN cd /home/${UNAME} && git clone https://github.com/plummm/SyzScope.git
-# Install SyzScope python dependencies
-RUN cd /home/${UNAME}/SyzScope/ && pip3 install -r requirements.txt
-
-# FIXME: Install SyzScope system dependencies
-#RUN cd /home/${UNAME}/SyzScope/ && python3 syzscope --install-requirements
-#RUN cd /home/${UNAME}/SyzScope/syzscope/scripts/ && bash -x requirements.sh
 
 WORKDIR /home/${UNAME}/SyzScope
+# Install SyzScope python dependencies
+RUN pip3 install -r requirements.txt
+
+# Install SyzScope system dependencies
+RUN cd /home/${UNAME}/SyzScope/ && bash -ex syzscope/scripts/requirements.sh
+
 CMD ["bash"]
