@@ -76,7 +76,7 @@ if [ "$FIXED" == "0" ]; then
 
         git checkout -f $SYZKALLER || (git pull https://github.com/google/syzkaller.git master > /dev/null 2>&1 && git checkout -f $SYZKALLER)
         git rev-list HEAD | grep $(git rev-parse dfd609eca1871f01757d6b04b19fc273c87c14e5) || EXITCODE=2
-        make TARGETARCH=$ARCH TARGETVMARCH=amd64 execprog executor
+        make TARGETARCH=$ARCH TARGETVMARCH=amd64 CFLAGS="-fpermissive" CXXFLAGS="-fpermissive"  execprog executor
         if [ -d "bin/linux_$ARCH" ]; then
             cp bin/linux_amd64/syz-execprog $BIN_PATH
             cp bin/linux_$ARCH/syz-executor $BIN_PATH
@@ -110,7 +110,7 @@ if [ ! -f "$BIN_PATH/syz-execprog" ]; then
     fi
 fi
 
-CMD="scp -F /dev/null -o UserKnownHostsFile=/dev/null \
+CMD="scp -F /dev/null -o PubkeyAcceptedKeyTypes=ssh-rsa,ssh-ed25519 -o HostKeyAlgorithms=+ssh-rsa -o UserKnownHostsFile=/dev/null \
     -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
     -i $IMAGE_PATH/stretch.img.key -P $PORT $BIN_PATH/syz-execprog $BIN_PATH/syz-executor root@localhost:/"
 
