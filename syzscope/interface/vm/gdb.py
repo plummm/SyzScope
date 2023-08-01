@@ -44,6 +44,7 @@ class GDBHelper:
         raw = self.sendline('version')
         for line in raw.split('\n'):
             line = line.strip('\n')
+            line = line.strip()
             versions = line.split(':')
             if 'Pwndbg' in versions[0]:
                 return True
@@ -210,7 +211,7 @@ class GDBHelper:
         #print("send", cmd)
         self._sendline(cmd)
         raw = self.waitfor("pwndbg>", timeout)
-        return raw
+        return self._escape_ansi(raw)
     
     def recv(self):
         return self.gdb_inst.recv()
