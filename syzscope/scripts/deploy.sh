@@ -63,13 +63,13 @@ function set_git_config() {
 function build_golang() {
   echo "setup golang environment"
   rm goroot || echo "clean goroot"
-  wget https://dl.google.com/go/go1.14.2.linux-amd64.tar.gz
-  tar -xf go1.14.2.linux-amd64.tar.gz
+  wget https://go.dev/dl/go1.20.4.linux-amd64.tar.gz
+  tar -xf go1.20.4.linux-amd64.tar.gz
   mv go goroot
   if [ ! -d "gopath" ]; then
     mkdir gopath
   fi
-  rm go1.14.2.linux-amd64.tar.gz
+  rm go1.20.4.linux-amd64.tar.gz
 }
 
 function back_to_newest_version() {
