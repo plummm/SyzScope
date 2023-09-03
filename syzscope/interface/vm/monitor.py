@@ -154,7 +154,7 @@ class Monitor:
     
     def waitfor(self, pattern):
         try:
-            text = self.mon_inst.recvuntil(pattern)
+            text = self.mon_inst.recvuntil(pattern.encode())
         except EOFError:
             raise QemuIsDead
         self.logger.info(text.decode("utf-8"))
@@ -166,4 +166,4 @@ class Monitor:
         self.mon_inst.close()
 
     def _sendline(self, cmd):
-        self.mon_inst.sendline(cmd)
+        self.mon_inst.sendline(cmd.encode())

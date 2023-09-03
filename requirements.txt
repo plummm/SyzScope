@@ -61,4 +61,4 @@ urllib3==1.25.9
 wllvm==1.2.8
 z3-solver==4.8.10.0
 zope.interface==5.1.0
-pwntools==4.2.2
+pwntools==4.10.0

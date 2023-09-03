@@ -162,26 +162,19 @@ class Kernel:
             return self._kasan_report, self._kasan_ret
 
         report_enabled = self.find_symbol("report_enabled")
-        if report_enabled != None:
-            kasan_report = self.find_symbol("__kasan_report")
-            if kasan_report == None:
-                raise KasanReportEntryNotFound
-        else:
-            kasan_report = self.find_symbol("__kasan_report")
-            if kasan_report is None:
-                kasan_report = self.find_symbol("kasan_report")
-            if kasan_report == None:
-                return None, None
+        kasan_report = self.find_symbol("__kasan_report")
+        if kasan_report is None:
+            kasan_report = self.find_symbol("kasan_report")
+        if kasan_report == None:
+            raise KasanReportEntryNotFound
         start = kasan_report.rebased_addr
         end = start + kasan_report.size
         kasan_report = 0
         kasan_ret = []
         if report_enabled != None:
-            self._kasan_report = start
-            kasan_report = self.find_symbol("kasan_report")
-            start = kasan_report.rebased_addr
-            end = start + kasan_report.size
-            kasan_report = 0
+            if self.find_symbol("kasan_report") != None:
+                if self.find_symbol("__kasan_report") != None:
+                    self._kasan_report = start
         while start < end:
             block = self.getBlock(start)
             if len(block.capstone.insns) == 0:
@@ -189,7 +182,7 @@ class Kernel:
                 continue
             inst = block.capstone.insns[0]
             # first check
-            if kasan_report == 0 and report_enabled == None:
+            if kasan_report == 0 and self._kasan_report == 0:
                 if inst.mnemonic == "jne":
                     kasan_report = start + inst.size
                     #kasan_ret = self.getTarget(inst.operands[0])

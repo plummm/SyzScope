@@ -68,7 +68,7 @@ class GDBHelper:
     
     def waitfor(self, pattern, timeout=5):
         try:
-            text = self.gdb_inst.recvuntil(pattern, timeout=timeout)
+            text = self.gdb_inst.recvuntil(pattern.encode(), timeout=timeout)
         except EOFError:
             raise QemuIsDead
         self.logger.info(text.decode("utf-8"))
@@ -220,7 +220,7 @@ class GDBHelper:
         self.gdb_inst.kill()
 
     def _sendline(self, cmd):
-        self.gdb_inst.sendline(cmd)
+        self.gdb_inst.sendline(cmd.encode())
     
     def _escape_ansi(self, line):
         ansi_escape = re.compile(r'(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]')
