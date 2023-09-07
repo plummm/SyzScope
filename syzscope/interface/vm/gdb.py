@@ -191,14 +191,15 @@ class GDBHelper:
         return ret
     
     def get_dbg_info(self, addr):
-        cmd = 'b *{}'.format(addr)
+        cmd = 'info line *{}'.format(addr)
         raw = self.sendline(cmd)
-        dbg_info_regx = r'Breakpoint \d+ at 0x[a-f0-9]+: file (([A-Za-z0-9_\-.]+\/)+[A-Za-z0-9_.\-]+), line (\d+)'
+        #example input: 'Line 2852 of "net/core/skbuff.c" starts at address 0xffffffff83f0ad69 <skb_queue_purge+25> and ends at 0xffffffff83f0ad79 <skb_queue_purge+41>.\npwndbg>'
+        dbg_info_regx = r'Line (\d+) of "(.+)" starts at address'
         ret = []
         for line in raw.split('\n'):
             line = line.strip('\n')
-            dbg_file = utilities.regx_get(dbg_info_regx, line, 0)
-            dbg_line = utilities.regx_get(dbg_info_regx, line, 2)
+            dbg_file = utilities.regx_get(dbg_info_regx, line, 1)
+            dbg_line = utilities.regx_get(dbg_info_regx, line, 0)
             if dbg_file != None and dbg_line != None:
                 ret.append(dbg_file)
                 ret.append(dbg_line)
