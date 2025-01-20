@@ -39,13 +39,16 @@ Access our paper [here](tutorial/resource/SyzScope-final.pdf)
 
 ```
 @inproceedings {277242,
+author = {Xiaochen Zou and Guoren Li and Weiteng Chen and Hang Zhang and Zhiyun Qian},
 title = {{SyzScope}: Revealing {High-Risk} Security Impacts of {Fuzzer-Exposed} Bugs in Linux kernel},
 booktitle = {31st USENIX Security Symposium (USENIX Security 22)},
 year = {2022},
+isbn = {978-1-939133-31-1},
 address = {Boston, MA},
+pages = {3201--3217},
 url = {https://www.usenix.org/conference/usenixsecurity22/presentation/zou},
 publisher = {USENIX Association},
-month = aug,
+month = aug
 }
 ```
 
